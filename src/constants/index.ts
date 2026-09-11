@@ -1,7 +1,7 @@
 export default {
   SWAGGER: {
-    TITLE: 'Carline API',
-    DESCRIPTION: 'API documentation for Carline System',
+    TITLE: 'Carline Main API',
+    DESCRIPTION: 'API documentation for Carline Main System',
     VERSION: '1.0',
     SERVER_URL: '',
   },

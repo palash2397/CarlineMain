@@ -1,9 +1,0 @@
-export enum PaymentType {
-  CASH = 'CASH',
-  CARD = 'CARD',
-  CREDIT_CARD = 'CREDIT_CARD',
-  CUSTOMER_ACCOUNT = 'CUSTOMER_ACCOUNT',
-  VOUCHER = 'VOUCHER',
-  COUPON = 'COUPON',
-  REFUND = 'REFUND',
-}
