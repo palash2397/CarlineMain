@@ -1,0 +1,43 @@
+name: carline CI/CD
+
+on:
+  push:
+    branches: ['main']
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm install --prefer-offline --no-audit
+
+      - name: Create .env file safely
+        run: |
+          rm -f .env
+          printf "%s" "${{ secrets.PROD_ENV_FILE }}" > .env
+          chmod 600 .env
+
+      - name: Add Node & PM2 to PATH
+        run: echo "/home/nodeteam/.local/share/fnm/node-versions/v22.21.1/installation/bin" >> $GITHUB_PATH
+
+      - name: run carline backend
+        run: npm run build
+
+      - name: Run backend
+        run: |
+          pm2 delete carline-main || true
+          pm2 start dist/main.js --name carline-main
+          pm2 save
