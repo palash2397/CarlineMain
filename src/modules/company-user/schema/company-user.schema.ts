@@ -3,6 +3,8 @@ import { HydratedDocument } from 'mongoose';
 import { UserRole } from 'src/common/enums/user/role.enum';
 import * as bcrypt from 'bcrypt';
 
+import { StatusEnum } from 'src/common/enums/general/status-enum';
+
 export type CompanyUserDocument = HydratedDocument<CompanyUser>;
 
 @Schema({
@@ -71,10 +73,10 @@ export class CompanyUser {
 
   @Prop({
     type: String,
-    enum: ['Active', 'Inactive'],
-    default: 'Active',
+    enum: StatusEnum,
+    default: StatusEnum.ACTIVE,
   })
-  status: string;
+  status: StatusEnum;
 
   @Prop({
     type: Boolean,

@@ -46,10 +46,15 @@ export class SuperAdminService implements OnModuleInit {
       const hasOldEmailIndex = indexes.some((idx) => idx.name === 'email_1');
       if (hasOldEmailIndex) {
         await this.companyModel.collection.dropIndex('email_1');
-        console.log('✅ Dropped obsolete index email_1 from companies collection');
+        console.log(
+          '✅ Dropped obsolete index email_1 from companies collection',
+        );
       }
     } catch (error: any) {
-      console.log('Note: Error checking/dropping company indexes:', error?.message);
+      console.log(
+        'Note: Error checking/dropping company indexes:',
+        error?.message,
+      );
     }
   }
 

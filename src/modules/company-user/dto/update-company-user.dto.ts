@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
 import { AllowedCompanyUserRoles } from './create-company-user.dto';
+import { StatusEnum } from 'src/common/enums/general/status-enum';
 
 export class UpdateCompanyUserDto {
   @ApiPropertyOptional({
@@ -38,13 +39,11 @@ export class UpdateCompanyUserDto {
   @ApiPropertyOptional({
     example: 'Active',
     description: 'Account status (Active / Inactive)',
-    enum: ['Active', 'Inactive'],
+    enum: [StatusEnum.ACTIVE, StatusEnum.INACTIVE],
   })
   @IsOptional()
-  @IsEnum(['Active', 'Inactive'], {
-    message: 'Status must be Active or Inactive',
-  })
-  status?: string;
+  @IsEnum(StatusEnum)
+  status?: StatusEnum;
 
   @ApiPropertyOptional({
     example: '+91 9876543210',

@@ -14,6 +14,7 @@ import { CreateCompanyUserDto } from './dto/create-company-user.dto';
 import { UpdateCompanyUserDto } from './dto/update-company-user.dto';
 import { UpdateCompanyUserStatusDto } from './dto/update-company-user-status.dto';
 import { GetCompanyUsersQueryDto } from './dto/get-company-users-query.dto';
+import { StatusEnum } from 'src/common/enums/general/status-enum';
 
 @Injectable()
 export class CompanyUserService {
@@ -117,8 +118,8 @@ export class CompanyUserService {
         password: tempPassword,
         role: role as UserRole,
         companyId: company._id.toString(),
-        status: dto.status || 'Active',
-        isActive: dto.status !== 'Inactive',
+        status: dto.status || StatusEnum.ACTIVE,
+        isActive: dto.status !== StatusEnum.INACTIVE,
         isVerified: true,
       });
 
@@ -223,7 +224,8 @@ export class CompanyUserService {
         email: u.email,
         phoneNumber: u.phoneNumber,
         role: u.role,
-        status: u.status || (u.isActive ? 'Active' : 'Inactive'),
+        status:
+          u.status || (u.isActive ? StatusEnum.ACTIVE : StatusEnum.INACTIVE),
         companyId: u.companyId,
         avatar: u.avatar || null,
         createdAt: (u as any).createdAt,
@@ -248,10 +250,6 @@ export class CompanyUserService {
 
   async getCompanyUserById(id: string, currentUserOrId: any) {
     try {
-      if (!isValidObjectId(id)) {
-        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
-      }
-
       const companyId = await this.resolveCompanyId(currentUserOrId);
       if (!companyId) {
         return new ApiResponse(400, {}, Msg.COMPANY_CONTEXT_REQUIRED);
@@ -287,10 +285,6 @@ export class CompanyUserService {
 
   async updateCompanyUser(dto: UpdateCompanyUserDto, currentUserOrId: any) {
     try {
-      if (!isValidObjectId(dto.id)) {
-        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
-      }
-
       const companyId = await this.resolveCompanyId(currentUserOrId);
       if (!companyId) {
         return new ApiResponse(400, {}, Msg.COMPANY_CONTEXT_REQUIRED);
@@ -333,7 +327,7 @@ export class CompanyUserService {
 
       if (dto.status !== undefined) {
         user.status = dto.status;
-        user.isActive = dto.status === 'Active';
+        user.isActive = dto.status === StatusEnum.ACTIVE;
       }
 
       if (dto.phoneNumber !== undefined) {
@@ -381,7 +375,7 @@ export class CompanyUserService {
       }
 
       user.status = dto.status;
-      user.isActive = dto.status === 'Active';
+      user.isActive = dto.status === StatusEnum.ACTIVE;
       await user.save();
 
       return new ApiResponse(

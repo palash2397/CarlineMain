@@ -30,7 +30,8 @@ export class CreateCompanyUserDto {
 
   @ApiProperty({
     example: 'rahul@example.com',
-    description: 'Email address of the team member (used for login & credentials)',
+    description:
+      'Email address of the team member (used for login & credentials)',
   })
   @IsNotEmpty({ message: 'Email address is required' })
   @IsEmail({}, { message: 'Invalid email address' })
@@ -52,7 +53,9 @@ export class CreateCompanyUserDto {
     default: 'Active',
   })
   @IsOptional()
-  @IsEnum(['Active', 'Inactive'], { message: 'Status must be Active or Inactive' })
+  @IsEnum(['Active', 'Inactive'], {
+    message: 'Status must be Active or Inactive',
+  })
   status?: string;
 
   @ApiPropertyOptional({
