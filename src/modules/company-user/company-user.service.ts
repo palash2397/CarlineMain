@@ -84,8 +84,11 @@ export class CompanyUserService {
       const existingInUser = await this.userModel.findOne({
         email: normalizedEmail,
       });
+      const existingInCompany = await this.companyModel.findOne({
+        'primaryContact.email': normalizedEmail,
+      });
 
-      if (existingInCompanyUser || existingInUser) {
+      if (existingInCompanyUser || existingInUser || existingInCompany) {
         return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
       }
 
@@ -200,7 +203,13 @@ export class CompanyUserService {
       }
 
       if (query.status && query.status !== 'All') {
-        filter.status = query.status;
+        const normalizedStatus = query.status.toUpperCase();
+        if (
+          normalizedStatus === StatusEnum.ACTIVE ||
+          normalizedStatus === StatusEnum.INACTIVE
+        ) {
+          filter.status = normalizedStatus;
+        }
       }
 
       const [users, total] = await Promise.all([

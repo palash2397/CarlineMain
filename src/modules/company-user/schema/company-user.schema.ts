@@ -73,7 +73,14 @@ export class CompanyUser {
 
   @Prop({
     type: String,
-    enum: StatusEnum,
+    enum: [
+      StatusEnum.ACTIVE,
+      StatusEnum.INACTIVE,
+      'Active',
+      'Inactive',
+      'active',
+      'inactive',
+    ],
     default: StatusEnum.ACTIVE,
   })
   status: StatusEnum;
@@ -118,6 +125,11 @@ export class CompanyUser {
 export const CompanyUserSchema = SchemaFactory.createForClass(CompanyUser);
 
 CompanyUserSchema.pre('save', async function (next) {
+  if (this.status) {
+    const s = String(this.status).toUpperCase();
+    if (s === 'ACTIVE') this.status = StatusEnum.ACTIVE;
+    else if (s === 'INACTIVE') this.status = StatusEnum.INACTIVE;
+  }
   if (!this.isModified('password') || !this.password) {
     return;
   }

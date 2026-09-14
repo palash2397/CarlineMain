@@ -26,6 +26,7 @@ import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import { StatusEnum } from 'src/common/enums/general/status-enum';
 
 @ApiTags('Company Users')
 @ApiBearerAuth('access-token')
@@ -37,6 +38,8 @@ export class CompanyUserController {
 
   @Post()
   async createCompanyUser(@Body() dto: CreateCompanyUserDto, @Req() req: any) {
+    console.log(dto, 'this is user');
+
     return this.companyUserService.createCompanyUser(dto, req.user);
   }
 
@@ -48,7 +51,7 @@ export class CompanyUserController {
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ['All', 'Active', 'Inactive'],
+    enum: ['All', StatusEnum.ACTIVE, StatusEnum.INACTIVE],
   })
   async getCompanyUsers(
     @Query() query: GetCompanyUsersQueryDto,

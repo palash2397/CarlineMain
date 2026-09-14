@@ -22,6 +22,10 @@ import {
   CompanyUser,
   CompanyUserDocument,
 } from '../company-user/schema/company-user.schema';
+import {
+  Company,
+  CompanyDocument,
+} from '../super-admin/schema/company.schema';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -31,6 +35,8 @@ export class UserService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
+    @InjectModel(Company.name)
+    private readonly companyModel: Model<CompanyDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -46,6 +52,32 @@ export class UserService {
           .findById(userId)
           .select('-password -otp -otpExpireAt')
           .lean();
+      }
+
+      if (!user) {
+        const company: any = await this.companyModel
+          .findById(userId)
+          .select('-password -otp -otpExpireAt')
+          .lean();
+
+        if (company) {
+          user = {
+            _id: company._id,
+            firstName:
+              company.primaryContact?.name?.split(' ')[0] ||
+              company.displayName,
+            lastName:
+              company.primaryContact?.name?.split(' ').slice(1).join(' ') ||
+              '',
+            fullName: company.primaryContact?.name || company.displayName,
+            email: company.primaryContact?.email,
+            phoneNumber: company.primaryContact?.phone,
+            role: company.role || 'COMPANY_ADMIN',
+            companyId: company._id.toString(),
+            avatar: company.branding?.logo || null,
+            company,
+          };
+        }
       }
 
       if (!user) {
@@ -136,6 +168,11 @@ export class UserService {
         user = await this.companyUserModel.findOne({ email: normalizedEmail });
       }
       if (!user) {
+        user = await this.companyModel.findOne({
+          'primaryContact.email': normalizedEmail,
+        });
+      }
+      if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }
       const otp = generateOtp();
@@ -147,7 +184,8 @@ export class UserService {
 
       const recipientName =
         user.firstName ||
-        (user.fullName ? user.fullName.split(' ')[0] : 'User');
+        (user.fullName ? user.fullName.split(' ')[0] : null) ||
+        (user.primaryContact ? user.primaryContact.name : 'User');
 
       await this.mailService.sendEmail(
         normalizedEmail,
@@ -171,6 +209,11 @@ export class UserService {
       let user: any = await this.userModel.findOne({ email: normalizedEmail });
       if (!user) {
         user = await this.companyUserModel.findOne({ email: normalizedEmail });
+      }
+      if (!user) {
+        user = await this.companyModel.findOne({
+          'primaryContact.email': normalizedEmail,
+        });
       }
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);

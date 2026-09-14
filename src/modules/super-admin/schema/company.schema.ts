@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import * as bcrypt from 'bcrypt';
+import { UserRole } from 'src/common/enums/user/role.enum';
 
 export type CompanyDocument = Company & Document;
 
@@ -126,11 +128,38 @@ export class Company {
   @Prop({ type: String, default: null })
   adminUserId: string; // Link to User ID of the primary admin
 
+  @Prop({ type: String, default: null })
+  password?: string;
+
+  @Prop({ type: String, default: UserRole.COMPANY_ADMIN })
+  role: string;
+
+  @Prop({ type: Boolean, default: true })
+  isActive: boolean;
+
+  @Prop({ type: Boolean, default: true })
+  isVerified: boolean;
+
+  @Prop({ type: String, default: null })
+  otp?: string;
+
+  @Prop({ type: Date, default: null })
+  otpExpireAt?: Date;
+
+  @Prop({ type: Boolean, default: false })
+  isPasswordReset: boolean;
+
   @Prop({ type: String, default: 'SUPERADMIN' })
   createdBy: string;
 }
 
 export const CompanySchema = SchemaFactory.createForClass(Company);
+
+CompanySchema.pre('save', async function () {
+  if (this.isModified('password') && this.password) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+});
 
 CompanySchema.index({ legalName: 'text', displayName: 'text', companyCode: 'text' });
 CompanySchema.index({ 'primaryContact.email': 1 });

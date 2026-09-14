@@ -7,6 +7,8 @@ import {
   IsString,
 } from 'class-validator';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import { StatusEnum } from 'src/common/enums/general/status-enum';
+import { Transform } from 'class-transformer';
 
 export const AllowedCompanyUserRoles = [
   UserRole.DISPATCHER,
@@ -47,13 +49,16 @@ export class CreateCompanyUserDto {
   role: string;
 
   @ApiPropertyOptional({
-    example: 'Active',
+    example: StatusEnum.ACTIVE,
     description: 'Account status (Active / Inactive)',
-    enum: ['Active', 'Inactive'],
-    default: 'Active',
+    enum: StatusEnum,
+    default: StatusEnum.ACTIVE,
   })
   @IsOptional()
-  @IsEnum(['Active', 'Inactive'], {
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
+  @IsEnum(StatusEnum, {
     message: 'Status must be Active or Inactive',
   })
   status?: string;

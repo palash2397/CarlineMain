@@ -8,6 +8,10 @@ import {
   CompanyUser,
   CompanyUserSchema,
 } from '../company-user/schema/company-user.schema';
+import {
+  Company,
+  CompanySchema,
+} from '../super-admin/schema/company.schema';
 
 import { MailModule } from '../mail/mail.module';
 
@@ -18,6 +22,7 @@ import { MailModule } from '../mail/mail.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: CompanyUser.name, schema: CompanyUserSchema },
+      { name: Company.name, schema: CompanySchema },
     ]),
     MailModule,
   ],

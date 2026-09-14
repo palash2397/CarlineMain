@@ -19,6 +19,7 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyStatusDto } from './dto/update-company-status.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import { StatusEnum } from 'src/common/enums/general/status-enum';
 import { MailService } from '../mail/mail.service';
 import { getCompanyWelcomeEmailTemplate } from '../mail/template/company-welcome.template';
 import { generateRandomPassword, deleteOldFile } from '../../helpers/index';
@@ -365,11 +366,39 @@ export class SuperAdminService implements OnModuleInit {
         $or: [
           { companyCode: normalizedCode },
           { legalName: new RegExp(`^${dto.legalName.trim()}$`, 'i') },
+          { 'primaryContact.email': normalizedEmail },
         ],
       });
 
       if (existingCompany) {
-        return new ApiResponse(409, {}, Msg.COMPANY_ALREADY_EXISTS);
+        if (existingCompany.companyCode === normalizedCode) {
+          return new ApiResponse(409, {}, 'Company code already exists');
+        }
+        if (
+          existingCompany.legalName?.toLowerCase() ===
+          dto.legalName.trim().toLowerCase()
+        ) {
+          return new ApiResponse(409, {}, 'Company legal name already exists');
+        }
+        return new ApiResponse(
+          409,
+          {},
+          'A company with this primary contact email already exists',
+        );
+      }
+
+      const existingUser = await this.userModel.findOne({
+        email: normalizedEmail,
+      });
+      const existingCompanyUser = await this.companyUserModel.findOne({
+        email: normalizedEmail,
+      });
+      if (existingUser || existingCompanyUser) {
+        return new ApiResponse(
+          409,
+          {},
+          'An account with this email address already exists in the system',
+        );
       }
 
       // Generate sequence ID CMP-001, CMP-002...
@@ -389,48 +418,6 @@ export class SuperAdminService implements OnModuleInit {
 
       const tempPassword = generateRandomPassword(8);
 
-      const nameParts = dto.primaryContact.name.trim().split(' ');
-      const firstName = nameParts[0] || 'Company';
-      const lastName = nameParts.slice(1).join(' ') || 'Admin';
-
-      let companyAdminUser = await this.companyUserModel.findOne({
-        email: normalizedEmail,
-      });
-
-      if (!companyAdminUser) {
-        const phone = dto.primaryContact.phone.trim();
-        const existingPhone = await this.companyUserModel.findOne({
-          phoneNumber: phone,
-        });
-        const finalPhone = existingPhone
-          ? `${phone}-${Math.floor(100 + Math.random() * 900)}`
-          : phone;
-
-        companyAdminUser = new this.companyUserModel({
-          fullName: dto.primaryContact.name.trim(),
-          firstName,
-          lastName,
-          email: normalizedEmail,
-          phoneNumber: finalPhone,
-          password: tempPassword,
-          role: UserRole.COMPANY_ADMIN,
-          companyId: 'PENDING',
-          status: 'Active',
-          isActive: true,
-          isVerified: true,
-        });
-        await companyAdminUser.save();
-      } else {
-        companyAdminUser.fullName = dto.primaryContact.name.trim();
-        companyAdminUser.firstName = firstName;
-        companyAdminUser.lastName = lastName;
-        companyAdminUser.role = UserRole.COMPANY_ADMIN;
-        companyAdminUser.isVerified = true;
-        companyAdminUser.isActive = true;
-        companyAdminUser.password = tempPassword;
-        await companyAdminUser.save();
-      }
-
       const newCompany = new this.companyModel({
         companyId: formattedCompanyId,
         legalName: dto.legalName.trim(),
@@ -447,14 +434,14 @@ export class SuperAdminService implements OnModuleInit {
         billing: dto.billing || {},
         branding: dto.branding || {},
         documents: dto.documents || [],
-        adminUserId: companyAdminUser._id.toString(),
+        password: tempPassword,
+        role: UserRole.COMPANY_ADMIN,
+        isActive: dto.status !== 'Inactive' && dto.status !== 'Suspended',
+        isVerified: true,
         createdBy: adminUser?.email || 'SUPERADMIN',
       });
 
       await newCompany.save();
-
-      companyAdminUser.companyId = newCompany._id.toString();
-      await companyAdminUser.save();
 
       try {
         const loginUrl =
@@ -486,9 +473,9 @@ export class SuperAdminService implements OnModuleInit {
         {
           company: newCompany,
           adminAccount: {
-            _id: companyAdminUser._id,
-            email: companyAdminUser.email,
-            role: companyAdminUser.role,
+            _id: newCompany._id,
+            email: newCompany.primaryContact.email,
+            role: newCompany.role,
             temporaryPassword: tempPassword,
           },
         },
@@ -670,7 +657,8 @@ export class SuperAdminService implements OnModuleInit {
       if (company.adminUserId) {
         await this.companyUserModel.findByIdAndUpdate(company.adminUserId, {
           isActive: dto.status === 'Active',
-          status: dto.status === 'Active' ? 'Active' : 'Inactive',
+          status:
+            dto.status === 'Active' ? StatusEnum.ACTIVE : StatusEnum.INACTIVE,
         });
         await this.userModel.findByIdAndUpdate(company.adminUserId, {
           isActive: dto.status === 'Active',

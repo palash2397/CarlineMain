@@ -13,6 +13,10 @@ import {
   CompanyUser,
   CompanyUserDocument,
 } from '../company-user/schema/company-user.schema';
+import {
+  Company,
+  CompanyDocument,
+} from '../super-admin/schema/company.schema';
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
 
@@ -29,6 +33,8 @@ export class AuthService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
+    @InjectModel(Company.name)
+    private readonly companyModel: Model<CompanyDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -92,6 +98,11 @@ export class AuthService {
         });
       }
       if (!checkUser) {
+        checkUser = await this.companyModel.findOne({
+          'primaryContact.email': normalizedEmail,
+        });
+      }
+      if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 
@@ -142,6 +153,11 @@ export class AuthService {
         checkUser = await this.companyUserModel.findOne({ email: normalizedEmail });
       }
       if (!checkUser) {
+        checkUser = await this.companyModel.findOne({
+          'primaryContact.email': normalizedEmail,
+        });
+      }
+      if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 
@@ -162,7 +178,8 @@ export class AuthService {
 
       const recipientName =
         checkUser.firstName ||
-        (checkUser.fullName ? checkUser.fullName.split(' ')[0] : 'User');
+        (checkUser.fullName ? checkUser.fullName.split(' ')[0] : null) ||
+        (checkUser.primaryContact ? checkUser.primaryContact.name : 'User');
 
       await this.mailService.sendEmail(
         normalizedEmail,
@@ -181,6 +198,7 @@ export class AuthService {
   async login(dto: LoginUserDto) {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
+      let isCompanyAccount = false;
       let userData: any = await this.userModel
         .findOne({ email: normalizedEmail })
         .select('+password');
@@ -192,26 +210,45 @@ export class AuthService {
       }
 
       if (!userData) {
+        userData = await this.companyModel
+          .findOne({ 'primaryContact.email': normalizedEmail })
+          .select('+password');
+        if (userData) {
+          isCompanyAccount = true;
+        }
+      }
+
+      if (!userData) {
         return new ApiResponse(400, {}, Msg.INVALID_CREDENTIALS);
       }
 
-      if (!userData.isActive) {
+      const isAccountActive = isCompanyAccount
+        ? userData.isActive !== false &&
+          userData.status !== 'Inactive' &&
+          userData.status !== 'Suspended'
+        : userData.isActive;
+
+      if (!isAccountActive) {
         return new ApiResponse(400, {}, Msg.ACCOUNT_DEACTIVATED);
       }
 
-      if (!userData.isVerified) {
+      if (userData.isVerified === false) {
         return new ApiResponse(400, {}, Msg.USER_NOT_VERIFIED);
       }
 
+      const userRole = (
+        userData.role || (isCompanyAccount ? UserRole.COMPANY_ADMIN : '')
+      ).toUpperCase();
+
       if (dto.role) {
         let requestedRole = dto.role.toUpperCase().replace(/\s+/g, '_');
-        let userRole = (userData.role || '').toUpperCase();
+        let currentRole = userRole;
 
         // Normalize Accounting / Accountant equivalence
         if (requestedRole === 'ACCOUNTING') requestedRole = 'ACCOUNTANT';
-        if (userRole === 'ACCOUNTING') userRole = 'ACCOUNTANT';
+        if (currentRole === 'ACCOUNTING') currentRole = 'ACCOUNTANT';
 
-        if (requestedRole !== userRole && userRole !== UserRole.SUPERADMIN) {
+        if (requestedRole !== currentRole && currentRole !== UserRole.SUPERADMIN) {
           return new ApiResponse(
             403,
             {},
@@ -228,12 +265,19 @@ export class AuthService {
         return new ApiResponse(401, {}, Msg.INVALID_CREDENTIALS);
       }
 
+      const email = isCompanyAccount
+        ? userData.primaryContact.email
+        : userData.email;
+      const companyId = isCompanyAccount
+        ? userData._id.toString()
+        : userData.companyId || null;
+
       const token = jwt.sign(
         {
-          id: userData._id,
-          roles: userData.role,
-          email: userData.email,
-          companyId: userData.companyId || null,
+          id: userData._id.toString(),
+          roles: userRole,
+          email,
+          companyId,
         },
         process.env.JWT_SECRET!,
         {
@@ -241,21 +285,34 @@ export class AuthService {
         },
       );
 
-      const fullName =
-        userData.fullName ||
-        `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+      const fullName = isCompanyAccount
+        ? userData.primaryContact?.name || userData.displayName
+        : userData.fullName ||
+          `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+
+      const firstName = isCompanyAccount
+        ? userData.primaryContact?.name?.split(' ')[0] || userData.displayName
+        : userData.firstName || '';
+
+      const lastName = isCompanyAccount
+        ? userData.primaryContact?.name?.split(' ').slice(1).join(' ') || ''
+        : userData.lastName || '';
+
+      const phoneNumber = isCompanyAccount
+        ? userData.primaryContact?.phone
+        : userData.phoneNumber;
 
       const userDataResponse = {
         _id: userData._id,
-        firstName: userData.firstName || '',
-        lastName: userData.lastName || '',
+        firstName,
+        lastName,
         name: fullName,
-        fullName: fullName,
-        email: userData.email,
-        phoneNumber: userData.phoneNumber,
-        role: userData.role,
-        roles: userData.role,
-        companyId: userData.companyId || null,
+        fullName,
+        email,
+        phoneNumber,
+        role: userRole,
+        roles: userRole,
+        companyId,
         token,
       };
 

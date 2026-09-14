@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { StatusEnum } from 'src/common/enums/general/status-enum';
 
 export class UpdateCompanyUserStatusDto {
@@ -16,8 +17,11 @@ export class UpdateCompanyUserStatusDto {
     enum: StatusEnum,
   })
   @IsNotEmpty({ message: 'Status is required' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
   @IsEnum(StatusEnum, {
-    message: 'Status must be ACTIVE or INACTIVE',
+    message: 'Status must be Active or Inactive',
   })
   status: StatusEnum;
 }
