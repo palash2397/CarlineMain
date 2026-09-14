@@ -13,6 +13,7 @@ import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { MailModule } from './modules/mail/mail.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { CompanyUserModule } from './modules/company-user/company-user.module';
+import { DriverModule } from './modules/driver/driver.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CompanyUserModule } from './modules/company-user/company-user.module';
     MailModule,
     CustomerModule,
     CompanyUserModule,
+    DriverModule,
   ],
   controllers: [AppController],
   providers: [],

@@ -26,6 +26,10 @@ import {
   Company,
   CompanyDocument,
 } from '../super-admin/schema/company.schema';
+import {
+  Driver,
+  DriverDocument,
+} from '../driver/schema/driver.schema';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -37,6 +41,8 @@ export class UserService {
     private readonly companyUserModel: Model<CompanyUserDocument>,
     @InjectModel(Company.name)
     private readonly companyModel: Model<CompanyDocument>,
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -76,6 +82,28 @@ export class UserService {
             companyId: company._id.toString(),
             avatar: company.branding?.logo || null,
             company,
+          };
+        }
+      }
+
+      if (!user) {
+        const driver: any = await this.driverModel
+          .findById(userId)
+          .select('-password -otp -otpExpireAt')
+          .lean();
+
+        if (driver) {
+          user = {
+            _id: driver._id,
+            firstName: driver.firstName,
+            lastName: driver.lastName,
+            fullName: driver.fullName,
+            email: driver.email,
+            phoneNumber: driver.phoneNumber,
+            role: driver.role || 'DRIVER',
+            companyId: driver.companyId,
+            avatar: driver.avatar || null,
+            driver,
           };
         }
       }
@@ -173,6 +201,9 @@ export class UserService {
         });
       }
       if (!user) {
+        user = await this.driverModel.findOne({ email: normalizedEmail });
+      }
+      if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }
       const otp = generateOtp();
@@ -206,29 +237,39 @@ export class UserService {
       const { password } = dto;
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
 
-      let user: any = await this.userModel.findOne({ email: normalizedEmail });
+      let user: any = await this.userModel
+        .findOne({ email: normalizedEmail })
+        .select('+password');
       if (!user) {
-        user = await this.companyUserModel.findOne({ email: normalizedEmail });
+        user = await this.companyUserModel
+          .findOne({ email: normalizedEmail })
+          .select('+password');
       }
       if (!user) {
-        user = await this.companyModel.findOne({
-          'primaryContact.email': normalizedEmail,
-        });
+        user = await this.companyModel
+          .findOne({
+            'primaryContact.email': normalizedEmail,
+          })
+          .select('+password');
+      }
+      if (!user) {
+        user = await this.driverModel
+          .findOne({ email: normalizedEmail })
+          .select('+password');
       }
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password!);
-      if (isPasswordValid) {
-        return new ApiResponse(400, {}, Msg.ENTERED_OLD_PASSWORD);
-      }
-
-      console.log('user.isPasswordReset', user.isPasswordReset);
-      console.log('typeof user.isPasswordReset', typeof user.isPasswordReset);
-
       if (!user.isPasswordReset) {
         return new ApiResponse(400, {}, Msg.OTP_INVALID);
+      }
+
+      if (user.password) {
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (isPasswordValid) {
+          return new ApiResponse(400, {}, Msg.ENTERED_OLD_PASSWORD);
+        }
       }
 
       user.password = password!;

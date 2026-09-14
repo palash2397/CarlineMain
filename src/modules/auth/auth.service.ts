@@ -17,6 +17,10 @@ import {
   Company,
   CompanyDocument,
 } from '../super-admin/schema/company.schema';
+import {
+  Driver,
+  DriverDocument,
+} from '../driver/schema/driver.schema';
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
 
@@ -35,6 +39,8 @@ export class AuthService {
     private readonly companyUserModel: Model<CompanyUserDocument>,
     @InjectModel(Company.name)
     private readonly companyModel: Model<CompanyDocument>,
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -103,6 +109,11 @@ export class AuthService {
         });
       }
       if (!checkUser) {
+        checkUser = await this.driverModel.findOne({
+          email: normalizedEmail,
+        });
+      }
+      if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 
@@ -155,6 +166,11 @@ export class AuthService {
       if (!checkUser) {
         checkUser = await this.companyModel.findOne({
           'primaryContact.email': normalizedEmail,
+        });
+      }
+      if (!checkUser) {
+        checkUser = await this.driverModel.findOne({
+          email: normalizedEmail,
         });
       }
       if (!checkUser) {
@@ -218,6 +234,16 @@ export class AuthService {
         }
       }
 
+      let isDriverAccount = false;
+      if (!userData) {
+        userData = await this.driverModel
+          .findOne({ email: normalizedEmail })
+          .select('+password');
+        if (userData) {
+          isDriverAccount = true;
+        }
+      }
+
       if (!userData) {
         return new ApiResponse(400, {}, Msg.INVALID_CREDENTIALS);
       }
@@ -226,6 +252,8 @@ export class AuthService {
         ? userData.isActive !== false &&
           userData.status !== 'Inactive' &&
           userData.status !== 'Suspended'
+        : isDriverAccount
+        ? userData.isActive !== false && userData.status !== 'INACTIVE'
         : userData.isActive;
 
       if (!isAccountActive) {
@@ -237,7 +265,12 @@ export class AuthService {
       }
 
       const userRole = (
-        userData.role || (isCompanyAccount ? UserRole.COMPANY_ADMIN : '')
+        userData.role ||
+        (isCompanyAccount
+          ? UserRole.COMPANY_ADMIN
+          : isDriverAccount
+          ? UserRole.DRIVER
+          : '')
       ).toUpperCase();
 
       if (dto.role) {

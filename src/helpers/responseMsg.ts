@@ -108,6 +108,8 @@ export const Msg = {
   SUPPORT_NOT_FOUND: 'Support request not found',
 
   // Driver
+  DRIVER_CREATED: 'Driver registered successfully',
+  DRIVER_EXISTS_LICENSE: 'Driver already exists with this license number',
   DRIVER_UPDATED: 'Driver details updated successfully',
   DRIVER_FETCHED: 'Driver details fetched successfully',
   DRIVER_STATUS_UPDATED: 'Driver status updated successfully',

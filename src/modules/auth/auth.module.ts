@@ -12,6 +12,7 @@ import {
   Company,
   CompanySchema,
 } from '../super-admin/schema/company.schema';
+import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 
 import { MailModule } from '../mail/mail.module';
 
@@ -23,6 +24,7 @@ import { MailModule } from '../mail/mail.module';
       { name: User.name, schema: UserSchema },
       { name: CompanyUser.name, schema: CompanyUserSchema },
       { name: Company.name, schema: CompanySchema },
+      { name: Driver.name, schema: DriverSchema },
     ]),
     MailModule,
   ],
