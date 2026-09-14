@@ -117,8 +117,8 @@ export class UserService {
 
   async forgotPassword(dto: ForgotPasswordDto) {
     try {
-      const { email } = dto;
-      const user = await this.userModel.findOne({ email });
+      const normalizedEmail = (dto.email || '').toLowerCase().trim();
+      const user = await this.userModel.findOne({ email: normalizedEmail });
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }
@@ -130,7 +130,7 @@ export class UserService {
       // user.isPasswordReset = true;
       await user.save();
       await this.mailService.sendEmail(
-        email,
+        normalizedEmail,
         'Forgot Password',
         `Your OTP is ${otp}`,
         getOtpEmailTemplate(otp, user.firstName),
@@ -145,9 +145,10 @@ export class UserService {
 
   async resetPassword(dto: ResetPasswordDto) {
     try {
-      const { email, password } = dto;
+      const { password } = dto;
+      const normalizedEmail = (dto.email || '').toLowerCase().trim();
 
-      const user = await this.userModel.findOne({ email });
+      const user = await this.userModel.findOne({ email: normalizedEmail });
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }

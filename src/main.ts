@@ -82,6 +82,6 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 4010);
-  console.log(`🚀 Carline server is running on port ${process.env.PORT}`);
+  console.log(`🚀 Carline main server is running on port ${process.env.PORT}`);
 }
 bootstrap();

@@ -76,13 +76,20 @@ export class AuthService {
 
   async verifyOtp(dto: VerifyOtpDto) {
     try {
-      const checkUser = await this.userModel.findOne({ email: dto.email });
+      const normalizedEmail = (dto.email || '').toLowerCase().trim();
+      const checkUser = await this.userModel.findOne({
+        email: normalizedEmail,
+      });
       if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 
-      if (checkUser.isVerified) {
-        return new ApiResponse(400, {}, Msg.USER_ALREADY_VERIFIED);
+      console.log(dto.type);
+
+      if (dto.type == 'verify') {
+        if (checkUser.isVerified) {
+          return new ApiResponse(400, {}, Msg.USER_ALREADY_VERIFIED);
+        }
       }
 
       if (!checkUser.otp || !checkUser.otpExpireAt) {
