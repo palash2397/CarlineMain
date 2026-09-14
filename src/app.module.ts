@@ -11,8 +11,8 @@ import { ChatModule } from './modules/chat/chat.module';
 import { RatingModule } from './modules/rating/rating.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { MailModule } from './modules/mail/mail.module';
-
 import { CustomerModule } from './modules/customer/customer.module';
+import { CompanyUserModule } from './modules/company-user/company-user.module';
 
 @Module({
   imports: [
@@ -30,6 +30,7 @@ import { CustomerModule } from './modules/customer/customer.module';
     SuperAdminModule,
     MailModule,
     CustomerModule,
+    CompanyUserModule,
   ],
   controllers: [AppController],
   providers: [],

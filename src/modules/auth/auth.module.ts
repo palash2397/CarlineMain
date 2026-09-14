@@ -4,6 +4,10 @@ import { AuthController } from './auth.controller';
 
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../user/schema/user.schema';
+import {
+  CompanyUser,
+  CompanyUserSchema,
+} from '../company-user/schema/company-user.schema';
 
 import { MailModule } from '../mail/mail.module';
 
@@ -11,7 +15,10 @@ import { MailModule } from '../mail/mail.module';
   controllers: [AuthController],
   providers: [AuthService],
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: CompanyUser.name, schema: CompanyUserSchema },
+    ]),
     MailModule,
   ],
 })

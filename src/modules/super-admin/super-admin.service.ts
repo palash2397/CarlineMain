@@ -4,6 +4,10 @@ import { Model, isValidObjectId } from 'mongoose';
 
 import { User, UserDocument } from '../user/schema/user.schema';
 import { Company, CompanyDocument } from './schema/company.schema';
+import {
+  CompanyUser,
+  CompanyUserDocument,
+} from '../company-user/schema/company-user.schema';
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
 
@@ -26,6 +30,8 @@ export class SuperAdminService implements OnModuleInit {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Company.name)
     private readonly companyModel: Model<CompanyDocument>,
+    @InjectModel(CompanyUser.name)
+    private readonly companyUserModel: Model<CompanyUserDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -382,31 +388,37 @@ export class SuperAdminService implements OnModuleInit {
       const firstName = nameParts[0] || 'Company';
       const lastName = nameParts.slice(1).join(' ') || 'Admin';
 
-      let companyAdminUser = await this.userModel.findOne({
+      let companyAdminUser = await this.companyUserModel.findOne({
         email: normalizedEmail,
       });
 
       if (!companyAdminUser) {
         const phone = dto.primaryContact.phone.trim();
-        const existingPhone = await this.userModel.findOne({
+        const existingPhone = await this.companyUserModel.findOne({
           phoneNumber: phone,
         });
         const finalPhone = existingPhone
           ? `${phone}-${Math.floor(100 + Math.random() * 900)}`
           : phone;
 
-        companyAdminUser = new this.userModel({
+        companyAdminUser = new this.companyUserModel({
+          fullName: dto.primaryContact.name.trim(),
           firstName,
           lastName,
           email: normalizedEmail,
           phoneNumber: finalPhone,
           password: tempPassword,
           role: UserRole.COMPANY_ADMIN,
-          isVerified: true,
+          companyId: 'PENDING',
+          status: 'Active',
           isActive: true,
+          isVerified: true,
         });
         await companyAdminUser.save();
       } else {
+        companyAdminUser.fullName = dto.primaryContact.name.trim();
+        companyAdminUser.firstName = firstName;
+        companyAdminUser.lastName = lastName;
         companyAdminUser.role = UserRole.COMPANY_ADMIN;
         companyAdminUser.isVerified = true;
         companyAdminUser.isActive = true;
@@ -560,10 +572,16 @@ export class SuperAdminService implements OnModuleInit {
       // Fetch primary admin user details
       let adminUser: any = null;
       if (company.adminUserId && isValidObjectId(company.adminUserId)) {
-        adminUser = await this.userModel
+        adminUser = await this.companyUserModel
           .findById(company.adminUserId)
           .select('-password -otp -otpExpireAt')
           .lean();
+        if (!adminUser) {
+          adminUser = await this.userModel
+            .findById(company.adminUserId)
+            .select('-password -otp -otpExpireAt')
+            .lean();
+        }
       }
 
       return new ApiResponse(
@@ -645,6 +663,10 @@ export class SuperAdminService implements OnModuleInit {
 
       // If suspended or inactive, de-activate admin user
       if (company.adminUserId) {
+        await this.companyUserModel.findByIdAndUpdate(company.adminUserId, {
+          isActive: dto.status === 'Active',
+          status: dto.status === 'Active' ? 'Active' : 'Inactive',
+        });
         await this.userModel.findByIdAndUpdate(company.adminUserId, {
           isActive: dto.status === 'Active',
         });

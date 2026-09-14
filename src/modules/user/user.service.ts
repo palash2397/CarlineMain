@@ -18,6 +18,10 @@ import { getOtpEmailTemplate } from '../mail/template/otp.template';
 
 import { Msg } from 'src/helpers/responseMsg';
 import { User, UserDocument } from './schema/user.schema';
+import {
+  CompanyUser,
+  CompanyUserDocument,
+} from '../company-user/schema/company-user.schema';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -25,15 +29,24 @@ export class UserService {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(CompanyUser.name)
+    private readonly companyUserModel: Model<CompanyUserDocument>,
     private readonly mailService: MailService,
   ) {}
 
   async myProfile(userId: string) {
     try {
-      const user = await this.userModel
+      let user: any = await this.userModel
         .findById(userId)
         .select('-otp -otpExpireAt')
         .lean();
+
+      if (!user) {
+        user = await this.companyUserModel
+          .findById(userId)
+          .select('-password -otp -otpExpireAt')
+          .lean();
+      }
 
       if (!user) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
@@ -118,7 +131,10 @@ export class UserService {
   async forgotPassword(dto: ForgotPasswordDto) {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
-      const user = await this.userModel.findOne({ email: normalizedEmail });
+      let user: any = await this.userModel.findOne({ email: normalizedEmail });
+      if (!user) {
+        user = await this.companyUserModel.findOne({ email: normalizedEmail });
+      }
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }
@@ -127,13 +143,17 @@ export class UserService {
 
       user.otp = otp;
       user.otpExpireAt = otpExpiry;
-      // user.isPasswordReset = true;
       await user.save();
+
+      const recipientName =
+        user.firstName ||
+        (user.fullName ? user.fullName.split(' ')[0] : 'User');
+
       await this.mailService.sendEmail(
         normalizedEmail,
         'Forgot Password',
         `Your OTP is ${otp}`,
-        getOtpEmailTemplate(otp, user.firstName),
+        getOtpEmailTemplate(otp, recipientName),
       );
 
       return new ApiResponse(200, {}, Msg.OTP_SENT);
@@ -148,7 +168,10 @@ export class UserService {
       const { password } = dto;
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
 
-      const user = await this.userModel.findOne({ email: normalizedEmail });
+      let user: any = await this.userModel.findOne({ email: normalizedEmail });
+      if (!user) {
+        user = await this.companyUserModel.findOne({ email: normalizedEmail });
+      }
       if (!user) {
         return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
       }

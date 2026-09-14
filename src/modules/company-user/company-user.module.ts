@@ -1,13 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { SuperAdminService } from './super-admin.service';
-import { SuperAdminController } from './super-admin.controller';
+import { CompanyUserController } from './company-user.controller';
+import { CompanyUserService } from './company-user.service';
 import { User, UserSchema } from '../user/schema/user.schema';
-import { Company, CompanySchema } from './schema/company.schema';
-import {
-  CompanyUser,
-  CompanyUserSchema,
-} from '../company-user/schema/company-user.schema';
+import { Company, CompanySchema } from '../super-admin/schema/company.schema';
+import { CompanyUser, CompanyUserSchema } from './schema/company-user.schema';
 import { MailModule } from '../mail/mail.module';
 
 @Module({
@@ -19,8 +16,8 @@ import { MailModule } from '../mail/mail.module';
     ]),
     MailModule,
   ],
-  controllers: [SuperAdminController],
-  providers: [SuperAdminService],
-  exports: [SuperAdminService],
+  controllers: [CompanyUserController],
+  providers: [CompanyUserService],
+  exports: [CompanyUserService, MongooseModule],
 })
-export class SuperAdminModule {}
+export class CompanyUserModule {}

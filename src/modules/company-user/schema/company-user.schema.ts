@@ -3,31 +3,47 @@ import { HydratedDocument } from 'mongoose';
 import { UserRole } from 'src/common/enums/user/role.enum';
 import * as bcrypt from 'bcrypt';
 
-export type UserDocument = HydratedDocument<User>;
+export type CompanyUserDocument = HydratedDocument<CompanyUser>;
 
 @Schema({
   timestamps: true,
+  collection: 'company_users',
 })
-export class User {
+export class CompanyUser {
   @Prop({
     type: String,
     trim: true,
-    default: null,
+    required: true,
   })
-  firstName?: string;
+  fullName: string;
 
   @Prop({
     type: String,
     trim: true,
-    default: null,
+    default: '',
   })
-  lastName?: string;
+  firstName: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: '',
+  })
+  lastName: string;
+
+  @Prop({
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true,
+    index: true,
+  })
+  email: string;
 
   @Prop({
     type: String,
     required: false,
-    sparse: true,
-    index: true,
     trim: true,
     default: null,
   })
@@ -35,62 +51,42 @@ export class User {
 
   @Prop({
     type: String,
-    trim: true,
-    lowercase: true,
-    default: null,
+    required: true,
   })
-  email?: string;
-
-  @Prop({
-    type: String,
-    trim: true,
-    default: null,
-  })
-  password?: string;
+  password: string;
 
   @Prop({
     type: String,
     enum: UserRole,
-    default: UserRole.USER,
+    required: true,
   })
   role: UserRole;
 
   @Prop({
     type: String,
-    default: null,
+    required: true,
     index: true,
   })
-  companyId?: string;
+  companyId: string;
+
+  @Prop({
+    type: String,
+    enum: ['Active', 'Inactive'],
+    default: 'Active',
+  })
+  status: string;
+
+  @Prop({
+    type: Boolean,
+    default: true,
+  })
+  isActive: boolean;
 
   @Prop({
     type: String,
     default: null,
   })
   avatar?: string;
-
-  @Prop({
-    type: String,
-    default: null,
-  })
-  gender?: string;
-
-  @Prop({
-    type: String,
-    default: null,
-  })
-  dob?: string;
-
-  @Prop({
-    type: Boolean,
-    default: false,
-  })
-  isVerified: boolean;
-
-  @Prop({
-    type: Boolean,
-    default: false,
-  })
-  isPasswordReset: boolean;
 
   @Prop({
     type: String,
@@ -104,25 +100,24 @@ export class User {
   })
   otpExpireAt?: Date;
 
-  // @Prop({
-  //   type: Boolean,
-  //   default: false,
-  // })
-  // isProfileCompleted: boolean;
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isPasswordReset: boolean;
 
   @Prop({
     type: Boolean,
     default: true,
   })
-  isActive: boolean;
+  isVerified: boolean;
 }
 
-export const UserSchema = SchemaFactory.createForClass(User);
+export const CompanyUserSchema = SchemaFactory.createForClass(CompanyUser);
 
-UserSchema.pre('save', async function (next) {
+CompanyUserSchema.pre('save', async function (next) {
   if (!this.isModified('password') || !this.password) {
     return;
   }
-
   this.password = await bcrypt.hash(this.password, 10);
 });

@@ -7,6 +7,7 @@ export enum UserRole {
   CUSTOMER_SERVICE = 'CUSTOMER_SERVICE',
   BILLING = 'BILLING',
   ACCOUNTANT = 'ACCOUNTANT',
+  ACCOUNTING = 'ACCOUNTING',
   MANAGER = 'MANAGER',
   READ_ONLY = 'READ_ONLY',
   REPORT_ONLY = 'REPORT_ONLY',
@@ -15,3 +16,15 @@ export enum UserRole {
   USER = 'USER',
   PASSENGER = 'PASSENGER',
 }
+
+export const COMPANY_STAFF_ROLES = [
+  UserRole.DISPATCHER,
+  UserRole.DRIVER_MANAGER,
+  UserRole.CUSTOMER_SERVICE,
+  UserRole.BILLING,
+  UserRole.ACCOUNTANT,
+  UserRole.ACCOUNTING,
+  UserRole.MANAGER,
+  UserRole.READ_ONLY,
+  UserRole.REPORT_ONLY,
+];

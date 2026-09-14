@@ -11,7 +11,7 @@ export class ResetPasswordDto {
   @ApiPropertyOptional()
   @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters long' })
-  @MaxLength(12, { message: 'Password must be at most 12 characters long' })
+  @MaxLength(20, { message: 'Password must be at most 20 characters long' })
   password: string;
 
   @ApiPropertyOptional()

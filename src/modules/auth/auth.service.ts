@@ -9,6 +9,10 @@ import { generateOtp, getExpirationTime } from 'src/helpers/index';
 import { Msg } from 'src/helpers/responseMsg';
 
 import { User, UserDocument } from 'src/modules/user/schema/user.schema';
+import {
+  CompanyUser,
+  CompanyUserDocument,
+} from '../company-user/schema/company-user.schema';
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
 
@@ -23,6 +27,8 @@ export class AuthService {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(CompanyUser.name)
+    private readonly companyUserModel: Model<CompanyUserDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -77,9 +83,14 @@ export class AuthService {
   async verifyOtp(dto: VerifyOtpDto) {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
-      const checkUser = await this.userModel.findOne({
+      let checkUser: any = await this.userModel.findOne({
         email: normalizedEmail,
       });
+      if (!checkUser) {
+        checkUser = await this.companyUserModel.findOne({
+          email: normalizedEmail,
+        });
+      }
       if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
@@ -125,7 +136,11 @@ export class AuthService {
 
   async resendOtp(dto: ResendOtpDto) {
     try {
-      const checkUser = await this.userModel.findOne({ email: dto.email });
+      const normalizedEmail = (dto.email || '').toLowerCase().trim();
+      let checkUser: any = await this.userModel.findOne({ email: normalizedEmail });
+      if (!checkUser) {
+        checkUser = await this.companyUserModel.findOne({ email: normalizedEmail });
+      }
       if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
@@ -145,11 +160,15 @@ export class AuthService {
 
       await checkUser.save();
 
+      const recipientName =
+        checkUser.firstName ||
+        (checkUser.fullName ? checkUser.fullName.split(' ')[0] : 'User');
+
       await this.mailService.sendEmail(
-        dto.email,
+        normalizedEmail,
         'OTP Verification',
         `Your OTP is ${otp}`,
-        getOtpEmailTemplate(otp, checkUser.firstName),
+        getOtpEmailTemplate(otp, recipientName),
       );
 
       return new ApiResponse(200, {}, Msg.OTP_RESENT);
@@ -162,9 +181,16 @@ export class AuthService {
   async login(dto: LoginUserDto) {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
-      const userData = await this.userModel
+      let userData: any = await this.userModel
         .findOne({ email: normalizedEmail })
         .select('+password');
+
+      if (!userData) {
+        userData = await this.companyUserModel
+          .findOne({ email: normalizedEmail })
+          .select('+password');
+      }
+
       if (!userData) {
         return new ApiResponse(400, {}, Msg.INVALID_CREDENTIALS);
       }
@@ -178,8 +204,13 @@ export class AuthService {
       }
 
       if (dto.role) {
-        const requestedRole = dto.role.toUpperCase().replace(/\s+/g, '_');
-        const userRole = (userData.role || '').toUpperCase();
+        let requestedRole = dto.role.toUpperCase().replace(/\s+/g, '_');
+        let userRole = (userData.role || '').toUpperCase();
+
+        // Normalize Accounting / Accountant equivalence
+        if (requestedRole === 'ACCOUNTING') requestedRole = 'ACCOUNTANT';
+        if (userRole === 'ACCOUNTING') userRole = 'ACCOUNTANT';
+
         if (requestedRole !== userRole && userRole !== UserRole.SUPERADMIN) {
           return new ApiResponse(
             403,
@@ -198,22 +229,33 @@ export class AuthService {
       }
 
       const token = jwt.sign(
-        { id: userData._id, roles: userData.role, email: userData.email },
+        {
+          id: userData._id,
+          roles: userData.role,
+          email: userData.email,
+          companyId: userData.companyId || null,
+        },
         process.env.JWT_SECRET!,
         {
           expiresIn: '10d',
         },
       );
 
+      const fullName =
+        userData.fullName ||
+        `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+
       const userDataResponse = {
         _id: userData._id,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        name: `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        name: fullName,
+        fullName: fullName,
         email: userData.email,
         phoneNumber: userData.phoneNumber,
         role: userData.role,
         roles: userData.role,
+        companyId: userData.companyId || null,
         token,
       };
 

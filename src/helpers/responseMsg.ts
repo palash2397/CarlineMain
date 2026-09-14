@@ -24,6 +24,21 @@ export const Msg = {
   USER_UPDATED: `User updated successfully`,
   USER_ADDED: `User added successfully`,
   USER_INACTIVE: `User account is temporarily inactive`,
+  TEAM_MEMBER_CREATED: `Team member added successfully`,
+  TEAM_MEMBER_UPDATED: `Team member updated successfully`,
+  TEAM_MEMBER_DELETED: `Team member removed successfully`,
+  TEAM_MEMBER_STATUS_UPDATED: `Team member status updated successfully`,
+  TEAM_MEMBER_NOT_FOUND: `Team member not found`,
+  TEAM_MEMBERS_FETCHED: `Team members fetched successfully`,
+  CREDENTIALS_RESENT: `Temporary credentials resent successfully`,
+  COMPANY_USER_CREATED: `Company user added successfully`,
+  COMPANY_USER_UPDATED: `Company user updated successfully`,
+  COMPANY_USER_DELETED: `Company user deleted successfully`,
+  COMPANY_USER_STATUS_UPDATED: `Company user status updated successfully`,
+  COMPANY_USER_NOT_FOUND: `Company user not found`,
+  COMPANY_USERS_FETCHED: `Company users fetched successfully`,
+  COMPANY_CONTEXT_REQUIRED: `Company context is required`,
+  INVALID_EMAIL_ADDRESS: `User does not have a valid email address`,
 
   // Authentication
   INVALID_CREDENTIALS: `Invalid Credentials`,
@@ -105,7 +120,8 @@ export const Msg = {
   DRIVER_BATCH_UPDATED: 'Driver batch updated successfully',
   DRIVER_BATCHES_UPDATED: 'Driver batches updated successfully',
   DRIVER_DELETED: 'Driver deleted successfully',
-  DRIVER_EARNINGS_HISTORY_FETCHED: 'Driver earnings history fetched successfully',
+  DRIVER_EARNINGS_HISTORY_FETCHED:
+    'Driver earnings history fetched successfully',
   DRIVER_SETTLEMENT_PROCESSED: 'Driver settlement processed successfully',
 
   // Route
