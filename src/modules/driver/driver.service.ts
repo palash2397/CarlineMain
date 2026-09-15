@@ -456,7 +456,6 @@ export class DriverService {
         return parts[parts.length - 1];
       };
 
-      // Handle file uploads
       if (files?.avatar?.[0]) {
         const oldAvatar = extractFilename(driver.avatar);
         if (oldAvatar) deleteOldFile('driver', oldAvatar);
@@ -487,7 +486,6 @@ export class DriverService {
         driver.insuranceProofUrl = `${baseUrl}/api/v1/uploads/driver/${files.insuranceProof[0].filename}`;
       }
 
-      // Update text fields
       const updateFields = [
         'fullName',
         'phoneNumber',

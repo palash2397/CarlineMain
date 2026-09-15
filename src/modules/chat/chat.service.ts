@@ -8,9 +8,6 @@ import { RideStatus } from 'src/common/enums/ride/ride-enum';
 import { User, UserDocument } from 'src/modules/user/schema/user.schema';
 import { ChatMessage, ChatMessageDocument } from './schema/chat-message.schema';
 
-import { JoinChatDto } from './dto/join-chat.dto';
-import { SendMessageDto } from './dto/send-message.dto';
-
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
 
