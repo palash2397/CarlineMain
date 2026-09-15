@@ -107,7 +107,6 @@ export class CreateCompanyDto {
   @IsString()
   timezone?: string;
 
-  // --- Primary Contact (Company Admin) ---
   @ApiProperty({
     example: 'John Doe',
     description: 'Primary contact person name (Company Admin)',
