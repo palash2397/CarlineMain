@@ -19,6 +19,7 @@ import { getDriverWelcomeEmailTemplate } from '../mail/template/driver-welcome.t
 import { getDriverRejectionEmailTemplate } from '../mail/template/driver-rejection.template';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
+import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 
 @Injectable()
 export class DriverService {
@@ -89,6 +90,11 @@ export class DriverService {
       }
       if (files?.insuranceProof?.[0]) {
         insuranceProofUrl = `${baseUrl}/api/v1/uploads/driver/${files.insuranceProof[0].filename}`;
+      }
+
+      const company = await this.companyModel.findById(dto.companyId);
+      if (!company) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
       }
 
       const createdDriver = await this.driverModel.create({
@@ -511,7 +517,7 @@ export class DriverService {
   async allCompanies() {
     try {
       const companies = await this.companyModel.find({
-        status: 'Active',
+        status: CompanyStatus.ACTIVE,
         isVerified: true,
       });
 

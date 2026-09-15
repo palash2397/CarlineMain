@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 
 export type CompanyDocument = Company & Document;
 
@@ -84,8 +85,8 @@ export class CompanyDocumentItem {
 
   @Prop({
     type: String,
-    enum: ['Approved', 'Pending', 'Expired', 'Rejected'],
-    default: 'Approved',
+    enum: CompanyStatus,
+    default: CompanyStatus.APPROVED,
   })
   status: string;
 }

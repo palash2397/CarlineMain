@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 
 export class CreateCompanyDto {
   // --- Basic Information ---
@@ -46,12 +47,12 @@ export class CreateCompanyDto {
 
   @ApiPropertyOptional({
     example: 'Active',
-    enum: ['Active', 'Suspended', 'Inactive'],
-    default: 'Active',
+    enum: CompanyStatus,
+    default: CompanyStatus.ACTIVE,
   })
   @IsOptional()
-  @IsEnum(['Active', 'Suspended', 'Inactive'])
-  status?: string;
+  @IsEnum(CompanyStatus)
+  status?: CompanyStatus;
 
   // --- Address Information ---
   @ApiPropertyOptional({
@@ -188,7 +189,8 @@ export class CreateCompanyDto {
   // --- Document Details ---
   @ApiPropertyOptional({
     example: 'Business License',
-    description: 'Document type (e.g. Business License, Tax Certificate, Insurance)',
+    description:
+      'Document type (e.g. Business License, Tax Certificate, Insurance)',
   })
   @IsOptional()
   @IsString()
@@ -233,7 +235,8 @@ export class CreateCompanyDto {
       type: 'string',
       format: 'binary',
     },
-    description: 'Upload one or more verification document files (PDF, DOCX, PNG, JPG)',
+    description:
+      'Upload one or more verification document files (PDF, DOCX, PNG, JPG)',
   })
   @IsOptional()
   documents?: any[];

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsMongoId } from 'class-validator';
+import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 
 export class UpdateCompanyStatusDto {
   @ApiProperty({
@@ -13,13 +14,13 @@ export class UpdateCompanyStatusDto {
 
   @ApiProperty({
     example: 'Active',
-    enum: ['Active', 'Suspended', 'Inactive'],
+    enum: CompanyStatus,
     description: 'New company status',
     required: true,
   })
   @IsNotEmpty()
-  @IsEnum(['Active', 'Suspended', 'Inactive'], {
+  @IsEnum(CompanyStatus, {
     message: 'Status must be Active, Suspended, or Inactive',
   })
-  status: string;
+  status: CompanyStatus;
 }

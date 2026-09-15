@@ -3,4 +3,7 @@ export enum CompanyStatus {
   PENDING = 'Pending',
   EXPIRED = 'Expired',
   REJECTED = 'Rejected',
+  INACTIVE = 'Inactive',
+  SUSPENDED = 'Suspended',
+  ACTIVE = 'Active',
 }

@@ -23,6 +23,7 @@ import { StatusEnum } from 'src/common/enums/general/status-enum';
 import { MailService } from '../mail/mail.service';
 import { getCompanyWelcomeEmailTemplate } from '../mail/template/company-welcome.template';
 import { generateRandomPassword, deleteOldFile } from '../../helpers/index';
+import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 
 @Injectable()
 export class SuperAdminService implements OnModuleInit {
@@ -426,7 +427,7 @@ export class SuperAdminService implements OnModuleInit {
         displayName: dto.displayName.trim(),
         companyCode: normalizedCode,
         registrationNumber: dto.registrationNumber || '',
-        status: dto.status || 'Active',
+        status: dto.status || CompanyStatus.ACTIVE,
         address: dto.address,
         primaryContact: {
           name: dto.primaryContact.name.trim(),
@@ -438,7 +439,9 @@ export class SuperAdminService implements OnModuleInit {
         documents: dto.documents || [],
         password: tempPassword,
         role: UserRole.COMPANY_ADMIN,
-        isActive: dto.status !== 'Inactive' && dto.status !== 'Suspended',
+        isActive:
+          dto.status !== CompanyStatus.INACTIVE &&
+          dto.status !== CompanyStatus.SUSPENDED,
         isVerified: true,
         createdBy: adminUser?.email || 'SUPERADMIN',
       });
@@ -548,9 +551,7 @@ export class SuperAdminService implements OnModuleInit {
   async getCompanyById(id: string) {
     try {
       let company: any = null;
-      if (isValidObjectId(id)) {
-        company = await this.companyModel.findById(id).lean();
-      }
+
       if (!company) {
         company = await this.companyModel
           .findOne({
@@ -658,12 +659,14 @@ export class SuperAdminService implements OnModuleInit {
       // If suspended or inactive, de-activate admin user
       if (company.adminUserId) {
         await this.companyUserModel.findByIdAndUpdate(company.adminUserId, {
-          isActive: dto.status === 'Active',
+          isActive: dto.status === CompanyStatus.ACTIVE,
           status:
-            dto.status === 'Active' ? StatusEnum.ACTIVE : StatusEnum.INACTIVE,
+            dto.status === CompanyStatus.ACTIVE
+              ? StatusEnum.ACTIVE
+              : StatusEnum.INACTIVE,
         });
         await this.userModel.findByIdAndUpdate(company.adminUserId, {
-          isActive: dto.status === 'Active',
+          isActive: dto.status === CompanyStatus.ACTIVE,
         });
       }
 
