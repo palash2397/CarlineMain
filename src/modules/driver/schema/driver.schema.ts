@@ -1,211 +1,265 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { UserRole } from 'src/common/enums/user/role.enum';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
+import { UserRole } from 'src/common/enums/user/role.enum';
 
-export type DriverDocument = Driver & Document;
+export type DriverDocument = HydratedDocument<Driver>;
 
-@Schema({ _id: false })
-export class DriverAddress {
-  @Prop({ type: String, default: '' })
-  streetAddress: string;
-
-  @Prop({ type: String, default: '' })
-  city: string;
-
-  @Prop({ type: String, default: '' })
-  zipCode: string;
-}
-
-@Schema({ _id: false })
-export class EmergencyContact {
-  @Prop({ type: String, default: '' })
-  name: string;
-
-  @Prop({ type: String, default: '' })
-  phone: string;
-}
-
-@Schema({ _id: false })
-export class DrivingLicenseInfo {
-  @Prop({ type: String, required: true, uppercase: true, trim: true })
-  licenseNumber: string;
-
-  @Prop({ type: String, default: 'Class A (Commercial)' })
-  licenseClass: string;
-
-  @Prop({ type: String, required: true })
-  expiryDate: string;
-
-  @Prop({ type: String, default: null })
-  licenseCopyUrl: string;
-}
-
-@Schema({ _id: false })
-export class VehicleConfiguration {
-  @Prop({ type: String, default: 'None (Unassigned)' })
-  vehicleAssignment: string;
-
-  @Prop({ type: String, default: 'Available' })
-  defaultAvailability: string;
-
-  @Prop({ type: String, default: 'Normal' })
-  dispatchPriority: string;
-
-  @Prop({ type: [String], default: [] })
-  restrictions: string[];
-
-  @Prop({ type: String, default: null })
-  insuranceProofUrl: string;
-}
-
-@Schema({ _id: false })
-export class WorkingSchedule {
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  monHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  tueHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  wedHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  thuHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  friHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  satHours: string;
-
-  @Prop({ type: String, default: '08:00 - 18:00' })
-  sunHours: string;
-}
-
-@Schema({ _id: false })
-export class PayoutInfo {
-  @Prop({ type: String, default: '' })
-  bankName: string;
-
-  @Prop({ type: String, default: '' })
-  accountNumber: string;
-
-  @Prop({ type: String, default: '' })
-  routingCode: string; // IFSC / Routing code
-}
-
-@Schema({ timestamps: true, collection: 'drivers' })
+@Schema({
+  timestamps: true,
+})
 export class Driver {
-  @Prop({ type: String, required: true, trim: true })
-  firstName: string;
-
-  @Prop({ type: String, required: true, trim: true })
-  lastName: string;
-
-  @Prop({ type: String, trim: true })
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+  })
   fullName: string;
-
-  @Prop({ type: String, required: true, unique: true, lowercase: true, trim: true, index: true })
-  email: string;
-
-  @Prop({ type: String, required: true, unique: true, trim: true, index: true })
-  phoneNumber: string;
-
-  @Prop({ type: String, default: null })
-  avatar?: string;
-
-  // Address & Emergency Contacts
-  @Prop({ type: DriverAddress, default: () => ({}) })
-  address: DriverAddress;
-
-  @Prop({ type: EmergencyContact, default: () => ({}) })
-  emergencyContact: EmergencyContact;
-
-  // Driving License
-  @Prop({ type: DrivingLicenseInfo, required: true })
-  license: DrivingLicenseInfo;
-
-  // Vehicle Configuration
-  @Prop({ type: VehicleConfiguration, default: () => ({}) })
-  vehicleConfig: VehicleConfiguration;
-
-  // Working Schedule
-  @Prop({ type: WorkingSchedule, default: () => ({}) })
-  workingSchedule: WorkingSchedule;
-
-  // Payout Information
-  @Prop({ type: PayoutInfo, default: () => ({}) })
-  payout: PayoutInfo;
-
-  // Hierarchy Affiliation
-  @Prop({ type: String, required: true, index: true })
-  companyId: string;
-
-  @Prop({ type: String, default: null, index: true })
-  driverManagerId?: string;
-
-  @Prop({ type: String, default: null })
-  createdBy?: string;
-
-  // Authentication & Security
-  @Prop({ type: String, default: null })
-  password?: string;
-
-  @Prop({ type: String, default: UserRole.DRIVER })
-  role: string;
 
   @Prop({
     type: String,
-    enum: [
-      DriverStatus.ACTIVE,
-      DriverStatus.INACTIVE,
-      DriverStatus.ON_RIDE,
-      DriverStatus.OFF_DUTY,
-      DriverStatus.ON_CALL,
-      'Active',
-      'Inactive',
-      'active',
-      'inactive',
-    ],
-    default: DriverStatus.ACTIVE,
+    required: true,
+    trim: true,
+  })
+  dateOfBirth: string;
+
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+  })
+  gender: string;
+
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
     index: true,
   })
-  status: string;
+  phoneNumber: string;
 
-  @Prop({ type: Boolean, default: true })
-  isActive: boolean;
+  @Prop({
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true,
+    index: true,
+  })
+  email: string;
 
-  @Prop({ type: Boolean, default: true })
+  @Prop({
+    type: String,
+    default: null,
+    index: true,
+  })
+  companyId?: string | null;
+
+  // ==========================================
+  // Step 2: Driving Credentials & Service Area
+  // ==========================================
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+    uppercase: true,
+  })
+  licenseNumber: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  licenseClass?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  issueDate?: string | null;
+
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+  })
+  expiryDate: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  employmentType?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  preferredServiceArea?: string | null;
+
+  // ==========================================
+  // Step 3: Vehicle Specifications
+  // ==========================================
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  vehicleType?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  fuelType?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  transmission?: string | null;
+
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+    uppercase: true,
+  })
+  vehicleRegistrationNumber: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  make?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  modelAndYear?: string | null;
+
+  // ==========================================
+  // Step 4: Document Verification & Terms
+  // ==========================================
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  governmentIdUrl?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  licenseCopyUrl?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  vehicleRegistrationDocUrl?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
+  insuranceProofUrl?: string | null;
+
+  @Prop({
+    type: Boolean,
+    required: true,
+    default: false,
+  })
+  termsAccepted: boolean;
+
+  // ==========================================
+  // Account, Status & System Fields
+  // ==========================================
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+    select: false,
+  })
+  password?: string | null;
+
+  @Prop({
+    type: String,
+    enum: DriverStatus,
+    default: DriverStatus.PENDING_APPROVAL,
+  })
+  status: DriverStatus;
+
+  @Prop({
+    type: String,
+    enum: UserRole,
+    default: UserRole.DRIVER,
+  })
+  role: UserRole;
+
+  @Prop({
+    type: String,
+    default: null,
+  })
+  avatar?: string | null;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
   isVerified: boolean;
 
-  @Prop({ type: String, default: null })
-  otp?: string;
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isActive: boolean;
 
-  @Prop({ type: Date, default: null })
-  otpExpireAt?: Date;
+  @Prop({
+    type: String,
+    default: null,
+  })
+  rejectionReason?: string | null;
 
-  @Prop({ type: Boolean, default: false })
+  @Prop({
+    type: String,
+    default: null,
+  })
+  otp?: string | null;
+
+  @Prop({
+    type: Date,
+    default: null,
+  })
+  otpExpireAt?: Date | null;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
   isPasswordReset: boolean;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
 
 DriverSchema.pre('save', async function () {
-  if (this.firstName || this.lastName) {
-    this.fullName = `${this.firstName || ''} ${this.lastName || ''}`.trim();
+  if (!this.isModified('password') || !this.password) {
+    return;
   }
-  if (this.status) {
-    const s = String(this.status).toUpperCase();
-    if (s === 'ACTIVE') this.status = DriverStatus.ACTIVE;
-    else if (s === 'INACTIVE') this.status = DriverStatus.INACTIVE;
-  }
-  if (this.isModified('password') && this.password) {
-    this.password = await bcrypt.hash(this.password, 10);
-  }
-});
 
-DriverSchema.index({ fullName: 'text', email: 'text', phoneNumber: 'text' });
-DriverSchema.index({ companyId: 1, status: 1 });
-DriverSchema.index({ companyId: 1, driverManagerId: 1 });
+  this.password = await bcrypt.hash(this.password, 10);
+});

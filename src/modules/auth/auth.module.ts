@@ -8,10 +8,7 @@ import {
   CompanyUser,
   CompanyUserSchema,
 } from '../company-user/schema/company-user.schema';
-import {
-  Company,
-  CompanySchema,
-} from '../super-admin/schema/company.schema';
+import { Company, CompanySchema } from '../super-admin/schema/company.schema';
 import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 
 import { MailModule } from '../mail/mail.module';

@@ -370,6 +370,8 @@ export class SuperAdminService implements OnModuleInit {
         ],
       });
 
+      console.log(' existingCompany', existingCompany);
+
       if (existingCompany) {
         if (existingCompany.companyCode === normalizedCode) {
           return new ApiResponse(409, {}, 'Company code already exists');
@@ -383,7 +385,7 @@ export class SuperAdminService implements OnModuleInit {
         return new ApiResponse(
           409,
           {},
-          'A company with this primary contact email already exists',
+          Msg.COMPANY_PRIMARY_CONTACT_EMAIL_EXISTS,
         );
       }
 
@@ -397,7 +399,7 @@ export class SuperAdminService implements OnModuleInit {
         return new ApiResponse(
           409,
           {},
-          'An account with this email address already exists in the system',
+          Msg.AN_ACCOUNT_WITH_THIS_EMAIL_ADDRESS_ALREADY_EXISTS_IN_THE_SYSTEM,
         );
       }
 

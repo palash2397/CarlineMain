@@ -1,29 +1,37 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
 
 export class UpdateDriverStatusDto {
-  @ApiProperty({
-    example: '68f0f8f0f8f0f8f0f8f0f8f0',
+  @ApiPropertyOptional({
+    example: '65f123456789abcdef012345',
+    description: 'Driver ID (optional if provided in route URL path)',
   })
-  @IsNotEmpty({ message: 'Driver ID is required' })
-  id: string;
+  @IsOptional()
+  @IsString()
+  driverId?: string;
 
   @ApiProperty({
     example: DriverStatus.ACTIVE,
-    enum: [
-      DriverStatus.ACTIVE,
-      DriverStatus.INACTIVE,
-      DriverStatus.ON_RIDE,
-      DriverStatus.OFF_DUTY,
-      DriverStatus.ON_CALL,
-    ],
+    description:
+      'Target driver status (ACTIVE to approve, REJECTED to reject)',
+    enum: DriverStatus,
   })
   @IsNotEmpty({ message: 'Status is required' })
-  @IsString()
   @Transform(({ value }) =>
     typeof value === 'string' ? value.toUpperCase().trim() : value,
   )
-  status: string;
+  @IsEnum(DriverStatus, {
+    message: 'Status must be a valid DriverStatus (e.g. ACTIVE or REJECTED)',
+  })
+  status: DriverStatus;
+
+  @ApiPropertyOptional({
+    example: 'Driver license copy is expired or illegible',
+    description: 'Reason for rejection (applicable when status is REJECTED)',
+  })
+  @IsOptional()
+  @IsString()
+  rejectionReason?: string;
 }

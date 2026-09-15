@@ -13,16 +13,11 @@ import {
   CompanyUser,
   CompanyUserDocument,
 } from '../company-user/schema/company-user.schema';
-import {
-  Company,
-  CompanyDocument,
-} from '../super-admin/schema/company.schema';
-import {
-  Driver,
-  DriverDocument,
-} from '../driver/schema/driver.schema';
+import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
+import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import { DriverStatus } from 'src/common/enums/driver/status-enum';
 
 import { getOtpEmailTemplate } from 'src/modules/mail/template/otp.template';
 import { MailService } from 'src/modules/mail/mail.service';
@@ -41,6 +36,7 @@ export class AuthService {
     private readonly companyModel: Model<CompanyDocument>,
     @InjectModel(Driver.name)
     private readonly driverModel: Model<DriverDocument>,
+
     private readonly mailService: MailService,
   ) {}
 
@@ -113,6 +109,7 @@ export class AuthService {
           email: normalizedEmail,
         });
       }
+
       if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
@@ -159,9 +156,13 @@ export class AuthService {
   async resendOtp(dto: ResendOtpDto) {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
-      let checkUser: any = await this.userModel.findOne({ email: normalizedEmail });
+      let checkUser: any = await this.userModel.findOne({
+        email: normalizedEmail,
+      });
       if (!checkUser) {
-        checkUser = await this.companyUserModel.findOne({ email: normalizedEmail });
+        checkUser = await this.companyUserModel.findOne({
+          email: normalizedEmail,
+        });
       }
       if (!checkUser) {
         checkUser = await this.companyModel.findOne({
@@ -173,6 +174,7 @@ export class AuthService {
           email: normalizedEmail,
         });
       }
+
       if (!checkUser) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
@@ -215,6 +217,7 @@ export class AuthService {
     try {
       const normalizedEmail = (dto.email || '').toLowerCase().trim();
       let isCompanyAccount = false;
+      let isDriverAccount = false;
       let userData: any = await this.userModel
         .findOne({ email: normalizedEmail })
         .select('+password');
@@ -234,7 +237,6 @@ export class AuthService {
         }
       }
 
-      let isDriverAccount = false;
       if (!userData) {
         userData = await this.driverModel
           .findOne({ email: normalizedEmail })
@@ -248,20 +250,39 @@ export class AuthService {
         return new ApiResponse(400, {}, Msg.INVALID_CREDENTIALS);
       }
 
-      const isAccountActive = isCompanyAccount
-        ? userData.isActive !== false &&
-          userData.status !== 'Inactive' &&
-          userData.status !== 'Suspended'
-        : isDriverAccount
-        ? userData.isActive !== false && userData.status !== 'INACTIVE'
-        : userData.isActive;
+      if (isDriverAccount) {
+        if (userData.status === DriverStatus.PENDING_APPROVAL) {
+          return new ApiResponse(403, {}, Msg.DRIVER_PENDING_APPROVAL);
+        }
 
-      if (!isAccountActive) {
-        return new ApiResponse(400, {}, Msg.ACCOUNT_DEACTIVATED);
-      }
+        if (userData.status === DriverStatus.REJECTED) {
+          return new ApiResponse(403, {}, Msg.DRIVER_APPLICATION_REJECTED);
+        }
 
-      if (userData.isVerified === false) {
-        return new ApiResponse(400, {}, Msg.USER_NOT_VERIFIED);
+        if (
+          userData.status === DriverStatus.INACTIVE ||
+          userData.isActive === false
+        ) {
+          return new ApiResponse(400, {}, Msg.ACCOUNT_DEACTIVATED);
+        }
+
+        if (userData.isVerified === false) {
+          return new ApiResponse(400, {}, Msg.USER_NOT_VERIFIED);
+        }
+      } else {
+        const isAccountActive = isCompanyAccount
+          ? userData.isActive !== false &&
+            userData.status !== 'Inactive' &&
+            userData.status !== 'Suspended'
+          : userData.isActive;
+
+        if (!isAccountActive) {
+          return new ApiResponse(400, {}, Msg.ACCOUNT_DEACTIVATED);
+        }
+
+        if (userData.isVerified === false) {
+          return new ApiResponse(400, {}, Msg.USER_NOT_VERIFIED);
+        }
       }
 
       const userRole = (
@@ -269,19 +290,21 @@ export class AuthService {
         (isCompanyAccount
           ? UserRole.COMPANY_ADMIN
           : isDriverAccount
-          ? UserRole.DRIVER
-          : '')
+            ? UserRole.DRIVER
+            : '')
       ).toUpperCase();
 
       if (dto.role) {
         let requestedRole = dto.role.toUpperCase().replace(/\s+/g, '_');
         let currentRole = userRole;
 
-        // Normalize Accounting / Accountant equivalence
         if (requestedRole === 'ACCOUNTING') requestedRole = 'ACCOUNTANT';
         if (currentRole === 'ACCOUNTING') currentRole = 'ACCOUNTANT';
 
-        if (requestedRole !== currentRole && currentRole !== UserRole.SUPERADMIN) {
+        if (
+          requestedRole !== currentRole &&
+          currentRole !== UserRole.SUPERADMIN
+        ) {
           return new ApiResponse(
             403,
             {},
@@ -290,16 +313,20 @@ export class AuthService {
         }
       }
 
+      if (!userData.password) {
+        return new ApiResponse(401, {}, Msg.INVALID_CREDENTIALS);
+      }
+
       const isPasswordValid = await bcrypt.compare(
         dto.password,
-        userData?.password!,
+        userData.password,
       );
       if (!isPasswordValid) {
         return new ApiResponse(401, {}, Msg.INVALID_CREDENTIALS);
       }
 
       const email = isCompanyAccount
-        ? userData.primaryContact.email
+        ? userData.primaryContact?.email
         : userData.email;
       const companyId = isCompanyAccount
         ? userData._id.toString()
@@ -325,11 +352,13 @@ export class AuthService {
 
       const firstName = isCompanyAccount
         ? userData.primaryContact?.name?.split(' ')[0] || userData.displayName
-        : userData.firstName || '';
+        : userData.firstName || userData.fullName?.split(' ')[0] || '';
 
       const lastName = isCompanyAccount
         ? userData.primaryContact?.name?.split(' ').slice(1).join(' ') || ''
-        : userData.lastName || '';
+        : userData.lastName ||
+          userData.fullName?.split(' ').slice(1).join(' ') ||
+          '';
 
       const phoneNumber = isCompanyAccount
         ? userData.primaryContact?.phone

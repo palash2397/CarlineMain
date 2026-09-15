@@ -109,6 +109,14 @@ export const Msg = {
 
   // Driver
   DRIVER_CREATED: 'Driver registered successfully',
+  DRIVER_APPLICATION_SUBMITTED:
+    'Driver application submitted successfully. It is pending company approval.',
+  DRIVER_APPROVED:
+    'Driver approved successfully and temporary credentials sent to email',
+  DRIVER_PENDING_APPROVAL:
+    'Your driver application is currently pending approval by the company.',
+  DRIVER_APPLICATION_REJECTED:
+    'Your driver application has been rejected by the company.',
   DRIVER_EXISTS_LICENSE: 'Driver already exists with this license number',
   DRIVER_UPDATED: 'Driver details updated successfully',
   DRIVER_FETCHED: 'Driver details fetched successfully',
@@ -223,4 +231,11 @@ export const Msg = {
   COMPANY_STATUS_UPDATED: 'Company status updated successfully',
   COMPANY_NOT_FOUND: 'Company not found',
   COMPANY_ALREADY_EXISTS: 'Company with this code or legal name already exists',
+  COMPANY_PRIMARY_CONTACT_EMAIL_EXISTS:
+    'A company with this primary contact email already exists',
+  AN_ACCOUNT_WITH_THIS_EMAIL_ADDRESS_ALREADY_EXISTS_IN_THE_SYSTEM:
+    'An account with this email address already exists in the system',
+
+  // Term and Conditions
+  TERMS_ACCEPTED: 'Terms and conditions accepted successfully',
 };

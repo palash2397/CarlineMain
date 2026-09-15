@@ -1,7 +1,10 @@
 export enum DriverStatus {
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
   ON_RIDE = 'ON_RIDE',
   OFF_DUTY = 'OFF_DUTY',
   ON_CALL = 'ON_CALL',
+  REJECTED = 'REJECTED',
 }
+
