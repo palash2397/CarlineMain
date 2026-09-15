@@ -71,8 +71,8 @@ export class DriverController {
   }
 
   @Get('/company-drivers/all')
-  @ApiBearerAuth('access-token')
-  @UseGuards(JwtAuthGuard, RoleGuard)
+  // @ApiBearerAuth('access-token')
+  // @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
     UserRole.COMPANY_ADMIN,
     ...COMPANY_STAFF_ROLES,
