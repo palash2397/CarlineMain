@@ -238,4 +238,15 @@ export const Msg = {
 
   // Term and Conditions
   TERMS_ACCEPTED: 'Terms and conditions accepted successfully',
+
+  // Pricing Engine
+  PRICING_FETCHED: 'Pricing configuration fetched successfully',
+  PRICING_UPDATED: 'Pricing configuration updated successfully',
+  PRICING_NOT_CONFIGURED: 'Pricing not configured yet',
+  FARE_RULES_UPDATED: 'Fare rules updated successfully',
+  ZONE_RULE_CREATED: 'Zone pricing rule created successfully',
+  ZONE_RULE_UPDATED: 'Zone pricing rule updated successfully',
+  ZONE_RULE_DELETED: 'Zone pricing rule deleted successfully',
+  ZONE_RULE_NOT_FOUND: 'Zone pricing rule not found',
+  WAITING_CHARGES_UPDATED: 'Waiting charges updated successfully',
 };

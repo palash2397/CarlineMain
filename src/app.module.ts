@@ -14,6 +14,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { CompanyUserModule } from './modules/company-user/company-user.module';
 import { DriverModule } from './modules/driver/driver.module';
+import { PricingModule } from './modules/pricing/pricing.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { DriverModule } from './modules/driver/driver.module';
     CustomerModule,
     CompanyUserModule,
     DriverModule,
+    PricingModule,
   ],
   controllers: [AppController],
   providers: [],
