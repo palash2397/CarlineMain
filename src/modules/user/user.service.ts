@@ -81,6 +81,26 @@ export class UserService {
       }
 
       if (!user) {
+        const driver: any = await this.driverModel
+          .findById(userId)
+          .select('-password -otp -otpExpireAt')
+          .lean();
+
+        if (driver) {
+          const baseUrl = process.env.BASE_URL || 'http://localhost:4016';
+          user = {
+            ...driver,
+            avatar: driver.avatar
+              ? driver.avatar.startsWith('http')
+                ? driver.avatar
+                : `${baseUrl}/api/v1/uploads/driver/${driver.avatar}`
+              : process.env.DEFAULT_IMAGE,
+          };
+          return new ApiResponse(200, user, Msg.USER_FETCHED);
+        }
+      }
+
+      if (!user) {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 

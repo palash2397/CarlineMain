@@ -82,7 +82,11 @@ export class CompanyDocumentItem {
   @Prop({ type: String, default: '' })
   expiryDate: string;
 
-  @Prop({ type: String, enum: ['Approved', 'Pending', 'Expired', 'Rejected'], default: 'Approved' })
+  @Prop({
+    type: String,
+    enum: ['Approved', 'Pending', 'Expired', 'Rejected'],
+    default: 'Approved',
+  })
   status: string;
 }
 
@@ -97,7 +101,13 @@ export class Company {
   @Prop({ type: String, required: true, trim: true })
   displayName: string;
 
-  @Prop({ type: String, required: true, unique: true, uppercase: true, trim: true })
+  @Prop({
+    type: String,
+    required: true,
+    unique: true,
+    uppercase: true,
+    trim: true,
+  })
   companyCode: string; // e.g. ABCTX
 
   @Prop({ type: String, default: '' })
@@ -161,7 +171,11 @@ CompanySchema.pre('save', async function () {
   }
 });
 
-CompanySchema.index({ legalName: 'text', displayName: 'text', companyCode: 'text' });
+CompanySchema.index({
+  legalName: 'text',
+  displayName: 'text',
+  companyCode: 'text',
+});
 CompanySchema.index({ 'primaryContact.email': 1 });
 CompanySchema.index({ 'primaryContact.phone': 1 });
 CompanySchema.index({ 'address.city': 1 });

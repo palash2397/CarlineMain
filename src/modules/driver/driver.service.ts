@@ -14,10 +14,11 @@ import {
   CompanyUserDocument,
 } from '../company-user/schema/company-user.schema';
 import { MailService } from '../mail/mail.service';
-import { generateRandomPassword } from 'src/helpers/index';
+import { generateRandomPassword, deleteOldFile } from 'src/helpers/index';
 import { getDriverWelcomeEmailTemplate } from '../mail/template/driver-welcome.template';
 import { getDriverRejectionEmailTemplate } from '../mail/template/driver-rejection.template';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
+import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 
 @Injectable()
 export class DriverService {
@@ -363,6 +364,163 @@ export class DriverService {
       }
     } catch (error) {
       console.error('Error while updating driver status:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async getMyProfile(driverId: string) {
+    try {
+      const driver: any = await this.driverModel
+        .findById(driverId)
+        .select('-password -otp -otpExpireAt')
+        .lean();
+
+      if (!driver) {
+        return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
+      }
+
+      const baseUrl = process.env.BASE_URL || 'http://localhost:4016';
+      if (driver.avatar) {
+        driver.avatar = driver.avatar.startsWith('http')
+          ? driver.avatar
+          : `${baseUrl}/api/v1/uploads/driver/${driver.avatar}`;
+      } else {
+        driver.avatar = process.env.DEFAULT_IMAGE;
+      }
+
+      let company: any = null;
+      if (driver.companyId) {
+        company = await this.companyModel
+          .findById(driver.companyId)
+          .select('name legalName code email phone address branding status')
+          .lean();
+      }
+
+      return new ApiResponse(200, { ...driver, company }, Msg.DRIVER_FETCHED);
+    } catch (error) {
+      console.error('Error while getting driver profile:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateMyProfile(
+    driverId: string,
+    dto: UpdateDriverProfileDto,
+    files?: {
+      avatar?: Express.Multer.File[];
+      governmentId?: Express.Multer.File[];
+      licenseCopy?: Express.Multer.File[];
+      vehicleRegistrationDoc?: Express.Multer.File[];
+      insuranceProof?: Express.Multer.File[];
+    },
+  ) {
+    try {
+      const driver = await this.driverModel.findById(driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
+      }
+
+      const baseUrl = process.env.BASE_URL || 'http://localhost:4016';
+
+      const extractFilename = (url?: string | null) => {
+        if (!url) return null;
+        const parts = url.split('/');
+        return parts[parts.length - 1];
+      };
+
+      // Handle file uploads
+      if (files?.avatar?.[0]) {
+        const oldAvatar = extractFilename(driver.avatar);
+        if (oldAvatar) deleteOldFile('driver', oldAvatar);
+        driver.avatar = `${baseUrl}/api/v1/uploads/driver/${files.avatar[0].filename}`;
+      }
+
+      if (files?.governmentId?.[0]) {
+        const oldDoc = extractFilename(driver.governmentIdUrl);
+        if (oldDoc) deleteOldFile('driver', oldDoc);
+        driver.governmentIdUrl = `${baseUrl}/api/v1/uploads/driver/${files.governmentId[0].filename}`;
+      }
+
+      if (files?.licenseCopy?.[0]) {
+        const oldDoc = extractFilename(driver.licenseCopyUrl);
+        if (oldDoc) deleteOldFile('driver', oldDoc);
+        driver.licenseCopyUrl = `${baseUrl}/api/v1/uploads/driver/${files.licenseCopy[0].filename}`;
+      }
+
+      if (files?.vehicleRegistrationDoc?.[0]) {
+        const oldDoc = extractFilename(driver.vehicleRegistrationDocUrl);
+        if (oldDoc) deleteOldFile('driver', oldDoc);
+        driver.vehicleRegistrationDocUrl = `${baseUrl}/api/v1/uploads/driver/${files.vehicleRegistrationDoc[0].filename}`;
+      }
+
+      if (files?.insuranceProof?.[0]) {
+        const oldDoc = extractFilename(driver.insuranceProofUrl);
+        if (oldDoc) deleteOldFile('driver', oldDoc);
+        driver.insuranceProofUrl = `${baseUrl}/api/v1/uploads/driver/${files.insuranceProof[0].filename}`;
+      }
+
+      // Update text fields
+      const updateFields = [
+        'fullName',
+        'phoneNumber',
+        'dateOfBirth',
+        'gender',
+        'licenseNumber',
+        'licenseClass',
+        'issueDate',
+        'expiryDate',
+        'employmentType',
+        'preferredServiceArea',
+        'vehicleType',
+        'fuelType',
+        'transmission',
+        'vehicleRegistrationNumber',
+        'make',
+        'modelAndYear',
+      ];
+
+      for (const field of updateFields) {
+        if (dto[field] !== undefined && dto[field] !== '') {
+          driver[field] =
+            typeof dto[field] === 'string' ? dto[field].trim() : dto[field];
+        }
+      }
+
+      await driver.save();
+
+      const responseData: any = driver.toObject();
+      delete responseData.password;
+      delete responseData.otp;
+      delete responseData.otpExpireAt;
+
+      if (responseData.avatar) {
+        responseData.avatar = responseData.avatar.startsWith('http')
+          ? responseData.avatar
+          : `${baseUrl}/api/v1/uploads/driver/${responseData.avatar}`;
+      } else {
+        responseData.avatar = process.env.DEFAULT_IMAGE;
+      }
+
+      return new ApiResponse(200, responseData, Msg.DRIVER_UPDATED);
+    } catch (error) {
+      console.error('Error while updating driver profile:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async allCompanies() {
+    try {
+      const companies = await this.companyModel.find({
+        status: 'Active',
+        isVerified: true,
+      });
+
+      if (!companies || companies.length == 0) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+      return new ApiResponse(200, companies, Msg.COMPANIES_FETCHED);
+    } catch (error) {
+      console.error('Error while fetching all companies:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }

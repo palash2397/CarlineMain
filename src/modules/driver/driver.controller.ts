@@ -26,6 +26,7 @@ import { DriverService } from './driver.service';
 import { RegisterDriverDto } from './dto/register-driver.dto';
 import { GetCompanyDriversQueryDto } from './dto/get-company-drivers-query.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
+import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
@@ -69,7 +70,7 @@ export class DriverController {
     return this.driverService.registerDriver(dto, files);
   }
 
-  @Get('/companies/all')
+  @Get('/company-drivers/all')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
@@ -108,5 +109,51 @@ export class DriverController {
     @Req() req: any,
   ) {
     return this.driverService.updateDriverStatus(dto, req.user.id);
+  }
+
+  @Get('/profile')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  async getMyProfile(@Req() req: any) {
+    return this.driverService.getMyProfile(req.user.id);
+  }
+
+  @Patch('/profile')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({ type: UpdateDriverProfileDto })
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'avatar', maxCount: 1 },
+        { name: 'governmentId', maxCount: 1 },
+        { name: 'licenseCopy', maxCount: 1 },
+        { name: 'vehicleRegistrationDoc', maxCount: 1 },
+        { name: 'insuranceProof', maxCount: 1 },
+      ],
+      multerConfig('driver', ['png', 'jpg', 'jpeg', 'webp', 'pdf']),
+    ),
+  )
+  async updateMyProfile(
+    @Req() req: any,
+    @Body() dto: UpdateDriverProfileDto,
+    @UploadedFiles()
+    files?: {
+      avatar?: Express.Multer.File[];
+      governmentId?: Express.Multer.File[];
+      licenseCopy?: Express.Multer.File[];
+      vehicleRegistrationDoc?: Express.Multer.File[];
+      insuranceProof?: Express.Multer.File[];
+    },
+  ) {
+    return this.driverService.updateMyProfile(req.user.id, dto, files);
+  }
+
+  @Get('/companies/all')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  async getAllCompanies() {
+    return this.driverService.allCompanies();
   }
 }
