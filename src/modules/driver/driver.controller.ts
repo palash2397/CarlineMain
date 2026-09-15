@@ -151,8 +151,6 @@ export class DriverController {
   }
 
   @Get('/companies/all')
-  @ApiBearerAuth('access-token')
-  @UseGuards(JwtAuthGuard)
   async getAllCompanies() {
     return this.driverService.allCompanies();
   }
