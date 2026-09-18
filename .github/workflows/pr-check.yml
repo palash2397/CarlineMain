@@ -1,0 +1,26 @@
+name: PR Build & Type Check
+
+on:
+  pull_request:
+    branches: ['main']
+
+jobs:
+  validate-pr:
+    name: Build & TypeScript Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout pull request code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install --prefer-offline
+
+      - name: Validate TypeScript build
+        run: npm run build
