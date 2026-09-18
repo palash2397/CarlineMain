@@ -38,6 +38,5 @@ jobs:
 
       - name: Run backend
         run: |
-          pm2 delete carline-main || true
-          pm2 start dist/main.js --name carline-main
+          pm2 reload carline-main --update-env || pm2 restart carline-main --update-env || pm2 start dist/main.js --name carline-main
           pm2 save
