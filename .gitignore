@@ -58,3 +58,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Local Chat / Notes
 CHAT_HISTORY.md
 CHAT_*.md
+
+# Local files
+index.html
+

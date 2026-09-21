@@ -127,8 +127,17 @@ export class RegisterDriverDto {
   // Step 3: Vehicle Specifications
   // ==========================================
   @ApiPropertyOptional({
-    example: 'Sedan (Standard Taxi)',
-    description: 'Vehicle Type',
+    example: '66e6c8e1e4b0c2a5d3f89555',
+    description: 'Vehicle Type ID (selected from SuperAdmin vehicle classes list)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  vehicleTypeId?: string;
+
+  @ApiPropertyOptional({
+    example: 'Sedan Comfort',
+    description: 'Vehicle Type / Class Name (e.g. Sedan Comfort, SUV 6-Seater, Eco EV Green, VIP Executive)',
     required: false,
   })
   @IsOptional()

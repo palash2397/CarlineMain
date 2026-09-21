@@ -154,4 +154,10 @@ export class DriverController {
   async getAllCompanies() {
     return this.driverService.allCompanies();
   }
+
+  @Get('/vehicle-types/all')
+  async getAllVehicleTypes() {
+    return this.driverService.getAvailableVehicleTypes();
+  }
 }
+

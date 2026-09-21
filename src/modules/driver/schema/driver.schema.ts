@@ -110,6 +110,13 @@ export class Driver {
     trim: true,
     default: null,
   })
+  vehicleTypeId?: string | null;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: null,
+  })
   vehicleType?: string | null;
 
   @Prop({

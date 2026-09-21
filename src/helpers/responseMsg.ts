@@ -249,4 +249,14 @@ export const Msg = {
   ZONE_RULE_DELETED: 'Zone pricing rule deleted successfully',
   ZONE_RULE_NOT_FOUND: 'Zone pricing rule not found',
   WAITING_CHARGES_UPDATED: 'Waiting charges updated successfully',
+
+  // Vehicle Type
+  VEHICLE_TYPE_CREATED: 'Vehicle type created successfully',
+  VEHICLE_TYPE_UPDATED: 'Vehicle type updated successfully',
+  VEHICLE_TYPE_DELETED: 'Vehicle type deleted successfully',
+  VEHICLE_TYPE_NOT_FOUND: 'Vehicle type not found',
+  VEHICLE_TYPE_STATUS_UPDATED: 'Vehicle type status updated successfully',
+  VEHICLE_TYPES_FETCHED: 'Vehicle types fetched successfully',
+  VEHICLE_TYPE_ALREADY_EXISTS: 'Vehicle type with this name already exists',
 };
+

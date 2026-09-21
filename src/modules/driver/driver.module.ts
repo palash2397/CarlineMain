@@ -10,6 +10,7 @@ import {
 } from '../company-user/schema/company-user.schema';
 
 import { MailModule } from '../mail/mail.module';
+import { VehicleTypeModule } from '../vehicle-type/vehicle-type.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MailModule } from '../mail/mail.module';
       { name: CompanyUser.name, schema: CompanyUserSchema },
     ]),
     MailModule,
+    VehicleTypeModule,
   ],
   controllers: [DriverController],
   providers: [DriverService],

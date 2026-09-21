@@ -15,6 +15,7 @@ import { CustomerModule } from './modules/customer/customer.module';
 import { CompanyUserModule } from './modules/company-user/company-user.module';
 import { DriverModule } from './modules/driver/driver.module';
 import { PricingModule } from './modules/pricing/pricing.module';
+import { VehicleTypeModule } from './modules/vehicle-type/vehicle-type.module';
 
 @Module({
   imports: [
@@ -35,8 +36,10 @@ import { PricingModule } from './modules/pricing/pricing.module';
     CompanyUserModule,
     DriverModule,
     PricingModule,
+    VehicleTypeModule,
   ],
   controllers: [AppController],
   providers: [],
 })
 export class AppModule {}
+

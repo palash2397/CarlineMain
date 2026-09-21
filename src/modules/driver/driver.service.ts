@@ -21,6 +21,7 @@ import { getDriverRejectionEmailTemplate } from '../mail/template/driver-rejecti
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { CompanyStatus } from 'src/common/enums/companies/status-enum';
+import { VehicleTypeService } from '../vehicle-type/vehicle-type.service';
 
 @Injectable()
 export class DriverService {
@@ -32,6 +33,7 @@ export class DriverService {
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
     private readonly mailService: MailService,
+    private readonly vehicleTypeService: VehicleTypeService,
   ) {}
 
   async registerDriver(
@@ -95,6 +97,16 @@ export class DriverService {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
       }
 
+      let vehicleType = dto.vehicleType?.trim() || null;
+      let vehicleTypeId = dto.vehicleTypeId?.trim() || null;
+
+      if (vehicleTypeId && !vehicleType) {
+        const vType = await this.vehicleTypeService.getVehicleTypeById(vehicleTypeId);
+        if (vType?.data && (vType.data as any).name) {
+          vehicleType = (vType.data as any).name;
+        }
+      }
+
       const createdDriver = await this.driverModel.create({
         fullName: dto.fullName.trim(),
         dateOfBirth: dto.dateOfBirth.trim(),
@@ -108,7 +120,8 @@ export class DriverService {
         expiryDate: dto.expiryDate.trim(),
         employmentType: dto.employmentType?.trim() || 'Full Time Driver',
         preferredServiceArea: dto.preferredServiceArea?.trim() || null,
-        vehicleType: dto.vehicleType?.trim() || null,
+        vehicleTypeId,
+        vehicleType,
         fuelType: dto.fuelType?.trim() || null,
         transmission: dto.transmission?.trim() || null,
         vehicleRegistrationNumber,
@@ -139,6 +152,7 @@ export class DriverService {
         expiryDate: createdDriver.expiryDate,
         employmentType: createdDriver.employmentType,
         preferredServiceArea: createdDriver.preferredServiceArea,
+        vehicleTypeId: createdDriver.vehicleTypeId,
         vehicleType: createdDriver.vehicleType,
         fuelType: createdDriver.fuelType,
         transmission: createdDriver.transmission,
@@ -497,6 +511,7 @@ export class DriverService {
         'expiryDate',
         'employmentType',
         'preferredServiceArea',
+        'vehicleTypeId',
         'vehicleType',
         'fuelType',
         'transmission',
@@ -550,4 +565,14 @@ export class DriverService {
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }
+
+  async getAvailableVehicleTypes() {
+    try {
+      return this.vehicleTypeService.getActiveVehicleTypes();
+    } catch (error) {
+      console.error('Error while fetching vehicle types for driver:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
 }
+
