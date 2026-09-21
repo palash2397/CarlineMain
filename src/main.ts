@@ -32,11 +32,6 @@ async function bootstrap() {
     prefix: `${Global.PREFIX}/uploads`,
   });
 
-  // Local booking test pages (user + driver side). Owner: Prakash Mishra
-  app.useStaticAssets(join(__dirname, '..', 'test-client'), {
-    prefix: `${Global.PREFIX}/test-client`,
-  });
-
   // enable global validation for DTOs
   app.useGlobalPipes(
     new ValidationPipe({
