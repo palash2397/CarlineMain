@@ -436,6 +436,145 @@ describe('DriverRideService (driver booking)', () => {
     });
   });
 
+  describe('status hints (nextAction) aur clear errors', () => {
+    it('arrived pe nextAction START_TRIP aata hai', async () => {
+      const ride: any = RIDE_DOC({ driver: DRIVER_ID, status: 'DRIVER_ASSIGNED' });
+      rideModel.findOne.mockResolvedValue(ride);
+
+      const res: any = await service.arrived(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.data.nextAction).toBe('START_TRIP');
+      expect(socketService.emitToRideAndActor).toHaveBeenCalledWith(
+        USER_ID,
+        RIDE_ID,
+        'ride:status',
+        expect.objectContaining({
+          status: 'DRIVER_ARRIVED',
+          nextAction: 'START_TRIP',
+        }),
+      );
+    });
+
+    it('started ride pe dobara arrived tap karne pe saaf error', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'RIDE_STARTED' }),
+      );
+
+      const res: any = await service.arrived(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe('Trip has already been started');
+    });
+
+    it('start ke baad nextAction END_TRIP hota hai', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'DRIVER_ARRIVED' }),
+      );
+
+      const res: any = await service.start(DRIVER_ID, {
+        rideId: RIDE_ID,
+        otp: '4821',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.data.nextAction).toBe('END_TRIP');
+    });
+    it('arrived se pehle start karne pe pehle arrived karne ko kehta hai', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'DRIVER_ASSIGNED' }),
+      );
+
+      const res: any = await service.start(DRIVER_ID, {
+        rideId: RIDE_ID,
+        otp: '4821',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe(
+        'Mark arrival at the pickup point before starting the trip',
+      );
+    });
+
+    it('assigned ride complete karne pe not started error', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'DRIVER_ASSIGNED' }),
+      );
+
+      const res: any = await service.complete(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe('Trip has not been started yet');
+    });
+
+    it('completed ride dobara complete karne pe already completed error', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'RIDE_COMPLETED' }),
+      );
+
+      const res: any = await service.complete(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe('Trip is already completed');
+    });
+
+    it('cash trip complete hone pe nextAction COLLECT_PAYMENT', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({
+          driver: DRIVER_ID,
+          status: 'RIDE_STARTED',
+          paymentMethod: 'CASH',
+        }),
+      );
+
+      const res: any = await service.complete(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.data.nextAction).toBe('COLLECT_PAYMENT');
+    });
+
+    it('card trip auto paid hone pe koi nextAction nahi', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({
+          driver: DRIVER_ID,
+          status: 'RIDE_STARTED',
+          paymentMethod: 'CARD',
+        }),
+      );
+
+      const res: any = await service.complete(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.data.paymentStatus).toBe('PAID');
+      expect(res.data.nextAction).toBeNull();
+    });
+
+    it('started trip pe payment collect karne pe not completed error', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'RIDE_STARTED' }),
+      );
+
+      const res: any = await service.collectPayment(DRIVER_ID, {
+        rideId: RIDE_ID,
+        paymentMethod: 'CASH',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe(
+        'Trip must be completed before collecting the payment',
+      );
+    });
+
+    it('cancelled ride pe action karne pe already cancelled error', async () => {
+      rideModel.findOne.mockResolvedValue(
+        RIDE_DOC({ driver: DRIVER_ID, status: 'RIDE_CANCELLED' }),
+      );
+
+      const res: any = await service.arrived(DRIVER_ID, { rideId: RIDE_ID });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.message).toBe('Trip is already cancelled');
+    });
+  });
   describe('cancelRide', () => {
     it('cancels the ride as driver before the trip starts', async () => {
       const ride: any = RIDE_DOC({ driver: DRIVER_ID, status: 'DRIVER_ARRIVED' });

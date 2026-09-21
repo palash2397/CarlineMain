@@ -98,16 +98,17 @@
         <label>Passenger OTP (start ke liye)</label>
         <input id="otp" value="" />
         <div class="btns">
-          <button onclick="arrived()">PATCH arrived</button>
-          <button class="green" onclick="startTrip()">POST start</button>
-          <button class="green" onclick="completeTrip()">POST complete</button>
+          <button id="btnArrived" onclick="arrived()">PATCH arrived (reached pickup)</button>
+          <button id="btnStart" class="green" onclick="startTrip()">POST start (OTP)</button>
+          <button id="btnComplete" class="green" onclick="completeTrip()">POST complete (end trip)</button>
         </div>
+        <div class="note" id="nextStep">Next step: -</div>
         <div class="row">
           <div><label>Collect method</label><select id="collectMethod"><option>CASH</option><option>CARD</option><option>WALLET</option></select></div>
           <div><label>Cancel reason</label><input id="cancelReason" value="Passenger not reachable" /></div>
         </div>
         <div class="btns">
-          <button class="ghost" onclick="collectPayment()">POST collect-payment</button>
+          <button id="btnCollect" class="ghost" onclick="collectPayment()">POST collect-payment</button>
           <button class="red" onclick="cancelTrip()">PATCH /driver-ride/cancel</button>
         </div>
       </section>
@@ -141,7 +142,8 @@
 
       function saveToken() {
         localStorage.setItem('carline.driverToken', $('token').value.trim());
-        showWhoAmI();
+        applyNextAction(null);
+      showWhoAmI();
         log('ev', 'token saved');
       }
 
@@ -194,10 +196,48 @@
         }
       }
 
-      function setRide(id, status) {
+      // Backend har response me `nextAction` bhejta hai: usi se buttons enable/disable hote hain.
+      const NEXT_BY_STATUS = {
+        DRIVER_ASSIGNED: 'MARK_ARRIVED',
+        DRIVER_ARRIVED: 'START_TRIP',
+        RIDE_STARTED: 'END_TRIP',
+        RIDE_COMPLETED: null,
+        RIDE_CANCELLED: null,
+        SEARCHING_DRIVER: null,
+      };
+      const NEXT_BUTTONS = {
+        MARK_ARRIVED: 'btnArrived',
+        START_TRIP: 'btnStart',
+        END_TRIP: 'btnComplete',
+        COLLECT_PAYMENT: 'btnCollect',
+      };
+      const NEXT_HINT = {
+        MARK_ARRIVED: 'pickup pe pahunch ke "arrived" dabao',
+        START_TRIP: 'passenger OTP daal ke "start" dabao',
+        END_TRIP: 'drop pe pahunch ke "complete" dabao',
+        COLLECT_PAYMENT: 'cash collect karke "collect-payment" dabao',
+      };
+
+      function applyNextAction(status, nextAction) {
+        const next = nextAction === undefined ? NEXT_BY_STATUS[status] : nextAction;
+        Object.keys(NEXT_BUTTONS).forEach((key) => {
+          const btn = $(NEXT_BUTTONS[key]);
+          if (btn) btn.disabled = next ? key !== next : true;
+        });
+        const label = $('nextStep');
+        if (label) {
+          label.textContent = status
+            ? 'status: ' + status + ' -> next step: ' + (next ? NEXT_HINT[next] : 'koi action pending nahi')
+            : 'Next step: ride accept karo';
+        }
+        return next;
+      }
+
+      function setRide(id, status, nextAction) {
         state.rideId = id;
         $('rideId').value = id || '';
         $('rideState').textContent = 'ride: ' + (status || '-');
+        applyNextAction(status, nextAction);
       }
 
       function setDutyBadge(isOnline, status) {
@@ -234,7 +274,8 @@
         state.socket.onAny((event, data) => {
           log('ev', 'SOCKET -> ' + event, data);
           if (event === 'ride:request') loadRequests();
-          if (event === 'ride:cancelled' && data && data.rideId && data.rideId === state.rideId) setRide(data.rideId, data.status || 'CANCELLED');
+          if (data && data.nextAction !== undefined) applyNextAction(data.status, data.nextAction);
+          if (event === 'ride:cancelled' && data && data.rideId && data.rideId === state.rideId) setRide(data.rideId, data.status || 'RIDE_CANCELLED', data.nextAction);
         });
       }
 
@@ -274,7 +315,7 @@
           'trips: ' + d.stats?.totalTrips + ' | accept ' + d.stats?.acceptRate + '% | cancel ' + d.stats?.cancellationRate +
           '% | earned ' + money(d.stats?.totalEarned) + '<br>' +
           'activeRide: ' + (d.activeRide ? d.activeRide.rideId + ' (' + d.activeRide.status + ')' : 'none');
-        if (d.activeRide) setRide(d.activeRide.rideId, d.activeRide.status);
+        if (d.activeRide) setRide(d.activeRide.rideId, d.activeRide.status, d.activeRide.nextAction);
       }
 
       async function loadRequests() {
@@ -312,7 +353,7 @@
 
       async function acceptRide(rideId) {
         const res = await api('/driver-ride/accept', 'POST', { rideId });
-        if (res?.data) setRide(res.data.rideId, res.data.status);
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
         await loadRequests();
       }
 
@@ -322,29 +363,30 @@
 
       async function arrived() {
         const res = await api('/driver-ride/arrived', 'PATCH', { rideId: $('rideId').value.trim() });
-        if (res?.data) setRide(res.data.rideId, res.data.status);
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
       }
 
       async function startTrip() {
         const body = { rideId: $('rideId').value.trim() };
         if ($('otp').value.trim()) body.otp = $('otp').value.trim();
         const res = await api('/driver-ride/start', 'POST', body);
-        if (res?.data) setRide(res.data.rideId, res.data.status);
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
       }
 
       async function completeTrip() {
         const res = await api('/driver-ride/complete', 'POST', { rideId: $('rideId').value.trim() });
         if (res?.data) {
-          setRide(res.data.rideId, res.data.status);
+          setRide(res.data.rideId, res.data.status, res.data.nextAction);
           log('ev', 'fare: ' + money(res.data.payableFare) + ' | payment: ' + res.data.paymentStatus);
         }
       }
 
       async function collectPayment() {
-        await api('/driver-ride/collect-payment', 'POST', {
+        const res = await api('/driver-ride/collect-payment', 'POST', {
           rideId: $('rideId').value.trim(),
           paymentMethod: $('collectMethod').value,
         });
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
       }
 
       async function cancelTrip() {
@@ -352,12 +394,12 @@
           rideId: $('rideId').value.trim(),
           reason: $('cancelReason').value,
         });
-        if (res?.data) setRide(res.data.rideId, res.data.status);
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
       }
 
       async function activeRide() {
         const res = await api('/driver-ride/active');
-        if (res?.data) setRide(res.data.rideId, res.data.status);
+        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
         else log('ev', 'koi running ride nahi hai');
       }
 
@@ -370,6 +412,7 @@
         if (res?.data) log('ev', 'earnings -> today ' + money(res.data.today?.earned) + ' | week ' + money(res.data.week?.earned) + ' | total ' + money(res.data.totalEarned));
       }
 
+      applyNextAction(null);
       showWhoAmI();
     </script>
   </body>

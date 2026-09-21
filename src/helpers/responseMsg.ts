@@ -286,6 +286,12 @@ export const Msg = {
   RIDE_STATUS_INVALID: 'Ride is not in the right status for this action',
   DRIVER_VEHICLE_TYPE_MISMATCH: 'This ride is not for your vehicle type',
   DRIVER_ARRIVED: 'Driver reached the pickup point',
+  RIDE_ALREADY_STARTED: 'Trip has already been started',
+  RIDE_NOT_STARTED: 'Trip has not been started yet',
+  RIDE_NOT_ARRIVED: 'Mark arrival at the pickup point before starting the trip',
+  RIDE_ALREADY_COMPLETED: 'Trip is already completed',
+  RIDE_ALREADY_CANCELLED: 'Trip is already cancelled',
+  RIDE_NOT_COMPLETED: 'Trip must be completed before collecting the payment',
   DRIVER_EARNINGS_FETCHED: 'Driver earnings fetched successfully',
   PAYMENT_COLLECTED: 'Payment collected successfully',
 };

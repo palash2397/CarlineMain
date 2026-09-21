@@ -408,7 +408,7 @@ export class DriverRideService {
         ride.status !== RideStatus.DRIVER_ASSIGNED &&
         ride.status !== RideStatus.DRIVER_ARRIVED
       ) {
-        return new ApiResponse(400, {}, Msg.RIDE_STATUS_INVALID);
+        return this.rideStatusError(ride);
       }
 
       ride.status = RideStatus.DRIVER_ARRIVED;
@@ -444,11 +444,12 @@ export class DriverRideService {
 
       const { ride } = found;
 
-      if (
-        ride.status !== RideStatus.DRIVER_ASSIGNED &&
-        ride.status !== RideStatus.DRIVER_ARRIVED
-      ) {
-        return new ApiResponse(400, {}, Msg.RIDE_STATUS_INVALID);
+      // arrived pehle hona zaroori hai, tabhi trip start hoti hai.
+      if (ride.status !== RideStatus.DRIVER_ARRIVED) {
+        if (ride.status === RideStatus.DRIVER_ASSIGNED) {
+          return new ApiResponse(400, {}, Msg.RIDE_NOT_ARRIVED);
+        }
+        return this.rideStatusError(ride);
       }
 
       if (dto.otp && ride.otp && dto.otp !== ride.otp) {
@@ -490,7 +491,13 @@ export class DriverRideService {
       const { ride } = found;
 
       if (ride.status !== RideStatus.RIDE_STARTED) {
-        return new ApiResponse(400, {}, Msg.RIDE_STATUS_INVALID);
+        if (
+          ride.status === RideStatus.DRIVER_ASSIGNED ||
+          ride.status === RideStatus.DRIVER_ARRIVED
+        ) {
+          return new ApiResponse(400, {}, Msg.RIDE_NOT_STARTED);
+        }
+        return this.rideStatusError(ride);
       }
 
       const completedAt = new Date();
@@ -543,7 +550,9 @@ export class DriverRideService {
       const { ride } = found;
 
       if (ride.status !== RideStatus.RIDE_COMPLETED) {
-        return new ApiResponse(400, {}, Msg.RIDE_STATUS_INVALID);
+        return ride.status === RideStatus.RIDE_CANCELLED
+          ? this.rideStatusError(ride)
+          : new ApiResponse(400, {}, Msg.RIDE_NOT_COMPLETED);
       }
 
       if (ride.paymentStatus === PaymentStatus.PAID) {
@@ -1064,6 +1073,38 @@ export class DriverRideService {
     };
   }
 
+  // Status ke hisaab se next tap kya hona chahiye (frontend button enable/disable ke liye).
+  private nextActionFor(ride: any) {
+    switch (ride.status) {
+      case RideStatus.DRIVER_ASSIGNED:
+        return 'MARK_ARRIVED';
+      case RideStatus.DRIVER_ARRIVED:
+        return 'START_TRIP';
+      case RideStatus.RIDE_STARTED:
+        return 'END_TRIP';
+      case RideStatus.RIDE_COMPLETED:
+        return ride.paymentStatus === PaymentStatus.PENDING &&
+          ride.paymentMethod === PaymentMethod.CASH
+          ? 'COLLECT_PAYMENT'
+          : null;
+      default:
+        return null;
+    }
+  }
+
+  // Action allowed nahi hai to status ke hisaab se saaf message.
+  private rideStatusError(ride: any) {
+    if (ride.status === RideStatus.RIDE_STARTED) {
+      return new ApiResponse(400, {}, Msg.RIDE_ALREADY_STARTED);
+    }
+    if (ride.status === RideStatus.RIDE_COMPLETED) {
+      return new ApiResponse(400, {}, Msg.RIDE_ALREADY_COMPLETED);
+    }
+    if (ride.status === RideStatus.RIDE_CANCELLED) {
+      return new ApiResponse(400, {}, Msg.RIDE_ALREADY_CANCELLED);
+    }
+    return new ApiResponse(400, {}, Msg.RIDE_STATUS_INVALID);
+  }
   private ridePayloadWith(ride: any, passenger?: any, vehicleType?: any) {
     return {
       rideId: String(ride._id),
@@ -1086,6 +1127,7 @@ export class DriverRideService {
       paymentMethod: ride.paymentMethod,
       paymentStatus: ride.paymentStatus,
       paymentCollectedAt: ride.paymentCollectedAt || null,
+      nextAction: this.nextActionFor(ride),
       notes: ride.notes || null,
       cancelReason: ride.cancelReason || null,
       cancelledBy: ride.cancelledBy || null,
@@ -1190,6 +1232,7 @@ export class DriverRideService {
       status: ride.status,
       etaMinutes: ride.etaMinutes ?? null,
       driverId: driverId || (ride.driver ? String(ride.driver) : null),
+      nextAction: this.nextActionFor(ride),
     };
   }
 
