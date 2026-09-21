@@ -27,7 +27,7 @@ import { DriverRideHistoryQueryDto } from './dto/driver-ride-history-query.dto';
 import { DriverRideIdDto } from './dto/driver-ride-id.dto';
 import { DriverStartRideDto } from './dto/driver-start-ride.dto';
 
-@ApiTags('Driver Booking')
+@ApiTags('Driver Booking (by Prakash)')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RoleGuard)
 @Roles(UserRole.DRIVER)

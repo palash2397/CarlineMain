@@ -25,7 +25,7 @@ import { RideService } from './ride.service';
 
 const PASSENGER_ROLES = [UserRole.USER, UserRole.PASSENGER];
 
-@ApiTags('User Booking')
+@ApiTags('User Booking (by Prakash)')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RoleGuard)
 @Roles(...PASSENGER_ROLES)
