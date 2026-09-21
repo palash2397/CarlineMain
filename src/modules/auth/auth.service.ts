@@ -20,6 +20,7 @@ import { UserRole } from 'src/common/enums/user/role.enum';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
 
 import { getOtpEmailTemplate } from 'src/modules/mail/template/otp.template';
+import { getForgotPasswordEmailTemplate } from 'src/modules/mail/template/forgot-password.template';
 import { MailService } from 'src/modules/mail/mail.service';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
@@ -175,11 +176,9 @@ export class AuthService {
         });
       }
 
-      if (!checkUser) {
-        return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
-      }
-
-      if (checkUser.isVerified) {
+      if (dto.type === 'password') {
+        // Password reset OTP can be resent even if user is verified
+      } else if (checkUser.isVerified) {
         return new ApiResponse(400, {}, Msg.USER_ALREADY_VERIFIED);
       }
 
@@ -199,12 +198,21 @@ export class AuthService {
         (checkUser.fullName ? checkUser.fullName.split(' ')[0] : null) ||
         (checkUser.primaryContact ? checkUser.primaryContact.name : 'User');
 
-      await this.mailService.sendEmail(
-        normalizedEmail,
-        'OTP Verification',
-        `Your OTP is ${otp}`,
-        getOtpEmailTemplate(otp, recipientName),
-      );
+      if (dto.type === 'password') {
+        await this.mailService.sendEmail(
+          normalizedEmail,
+          'Reset Your Password - Carline',
+          `Your password reset OTP is ${otp}`,
+          getForgotPasswordEmailTemplate(otp, recipientName),
+        );
+      } else {
+        await this.mailService.sendEmail(
+          normalizedEmail,
+          'OTP Verification - Carline',
+          `Your verification OTP is ${otp}`,
+          getOtpEmailTemplate(otp, recipientName),
+        );
+      }
 
       return new ApiResponse(200, {}, Msg.OTP_RESENT);
     } catch (error) {

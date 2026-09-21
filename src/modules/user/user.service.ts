@@ -15,6 +15,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
 import { getOtpEmailTemplate } from '../mail/template/otp.template';
+import { getForgotPasswordEmailTemplate } from '../mail/template/forgot-password.template';
 
 import { Msg } from 'src/helpers/responseMsg';
 import { User, UserDocument } from './schema/user.schema';
@@ -213,9 +214,9 @@ export class UserService {
 
       await this.mailService.sendEmail(
         normalizedEmail,
-        'Forgot Password',
-        `Your OTP is ${otp}`,
-        getOtpEmailTemplate(otp, recipientName),
+        'Reset Your Password - Carline',
+        `Your password reset OTP is ${otp}`,
+        getForgotPasswordEmailTemplate(otp, recipientName),
       );
 
       return new ApiResponse(200, {}, Msg.OTP_SENT);
