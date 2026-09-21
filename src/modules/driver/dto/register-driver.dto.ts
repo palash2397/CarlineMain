@@ -133,15 +133,6 @@ export class RegisterDriverDto {
   })
   @IsOptional()
   @IsString()
-  vehicleTypeId?: string;
-
-  @ApiPropertyOptional({
-    example: 'Sedan Comfort',
-    description: 'Vehicle Type / Class Name (e.g. Sedan Comfort, SUV 6-Seater, Eco EV Green, VIP Executive)',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
   vehicleType?: string;
 
   @ApiPropertyOptional({

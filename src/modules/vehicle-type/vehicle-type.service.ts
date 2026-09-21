@@ -24,72 +24,104 @@ export class VehicleTypeService implements OnModuleInit {
     await this.seedInitialVehicleTypes();
   }
 
-  // Seed standard vehicle classes from screenshot if collection is empty
+  // Seed standard vehicle classes (ensuring all exist in database)
   private async seedInitialVehicleTypes() {
     try {
-      const count = await this.vehicleTypeModel.countDocuments();
-      if (count === 0) {
-        const initialTypes = [
-          {
-            name: 'Sedan Comfort',
-            seats: 4,
-            badge: 'POPULAR',
-            etaText: '3-5 min',
-            basePrice: 18.3,
-            perKmRate: 1.8,
-            perMinuteRate: 0.4,
-            image:
-              'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400&q=80',
-            description: 'Comfortable 4-seat everyday sedan',
-            status: 'Active',
-            sortOrder: 1,
-          },
-          {
-            name: 'SUV 6-Seater',
-            seats: 6,
-            badge: null,
-            etaText: '5-8 min',
-            basePrice: 26.8,
-            perKmRate: 2.4,
-            perMinuteRate: 0.5,
-            image:
-              'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=400&q=80',
-            description: 'Spacious 6-seat SUV for family and luggage',
-            status: 'Active',
-            sortOrder: 2,
-          },
-          {
-            name: 'Eco EV Green',
-            seats: 4,
-            badge: 'ECO',
-            etaText: '4-6 min',
-            basePrice: 20.1,
-            perKmRate: 1.9,
-            perMinuteRate: 0.4,
-            image:
-              'https://images.unsplash.com/photo-1563720223185-11003d516935?w=400&q=80',
-            description: 'Zero-emission electric vehicle ride',
-            status: 'Active',
-            sortOrder: 3,
-          },
-          {
-            name: 'VIP Executive',
-            seats: 4,
-            badge: 'VIP',
-            etaText: '6-10 min',
-            basePrice: 39.25,
-            perKmRate: 3.2,
-            perMinuteRate: 0.8,
-            image:
-              'https://images.unsplash.com/photo-1555353540-64580b51c258?w=400&q=80',
-            description: 'Premium luxury executive sedan',
-            status: 'Active',
-            sortOrder: 4,
-          },
-        ];
+      const initialTypes = [
+        {
+          name: 'Sedan Comfort',
+          seats: 4,
+          badge: 'POPULAR',
+          etaText: '3-5 min',
+          basePrice: 18.3,
+          perKmRate: 1.8,
+          perMinuteRate: 0.4,
+          image:
+            'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400&q=80',
+          description: 'Comfortable 4-seat everyday sedan',
+          status: 'Active',
+          sortOrder: 1,
+        },
+        {
+          name: 'SUV 6-Seater',
+          seats: 6,
+          badge: null,
+          etaText: '5-8 min',
+          basePrice: 26.8,
+          perKmRate: 2.4,
+          perMinuteRate: 0.5,
+          image:
+            'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=400&q=80',
+          description: 'Spacious 6-seat SUV for family and luggage',
+          status: 'Active',
+          sortOrder: 2,
+        },
+        {
+          name: 'Eco EV Green',
+          seats: 4,
+          badge: 'ECO',
+          etaText: '4-6 min',
+          basePrice: 20.1,
+          perKmRate: 1.9,
+          perMinuteRate: 0.4,
+          image:
+            'https://images.unsplash.com/photo-1563720223185-11003d516935?w=400&q=80',
+          description: 'Zero-emission electric vehicle ride',
+          status: 'Active',
+          sortOrder: 3,
+        },
+        {
+          name: 'VIP Executive',
+          seats: 4,
+          badge: 'VIP',
+          etaText: '6-10 min',
+          basePrice: 39.25,
+          perKmRate: 3.2,
+          perMinuteRate: 0.8,
+          image:
+            'https://images.unsplash.com/photo-1555353540-64580b51c258?w=400&q=80',
+          description: 'Premium luxury executive sedan',
+          status: 'Active',
+          sortOrder: 4,
+        },
+        {
+          name: 'Van 8-Seater XL',
+          seats: 8,
+          badge: 'EXTRA SPACE',
+          etaText: '7-12 min',
+          basePrice: 34.5,
+          perKmRate: 2.8,
+          perMinuteRate: 0.6,
+          image:
+            'https://images.unsplash.com/photo-1559297434-fae8a1916a79?w=400&q=80',
+          description: 'Extra spacious passenger van for large groups and luggage',
+          status: 'Active',
+          sortOrder: 5,
+        },
+        {
+          name: 'Wheelchair Accessible (WAV)',
+          seats: 4,
+          badge: 'ACCESSIBLE',
+          etaText: '5-10 min',
+          basePrice: 22.0,
+          perKmRate: 2.0,
+          perMinuteRate: 0.45,
+          image:
+            'https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400&q=80',
+          description: 'Wheelchair ramp accessible vehicle for special assistance',
+          status: 'Active',
+          sortOrder: 6,
+        },
+      ];
 
-        await this.vehicleTypeModel.insertMany(initialTypes);
-        console.log('🚗 Seeded initial vehicle types successfully.');
+      for (const item of initialTypes) {
+        const existing = await this.vehicleTypeModel.findOne({
+          name: { $regex: new RegExp(`^${item.name}$`, 'i') },
+        });
+        if (!existing) {
+          await this.vehicleTypeModel.create(item);
+          console.log(`🚗 Seeded vehicle type: ${item.name}`);
+        }
       }
     } catch (error) {
       console.error('Error while seeding vehicle types:', error);

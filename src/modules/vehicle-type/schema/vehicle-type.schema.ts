@@ -12,25 +12,25 @@ export class VehicleType {
   seats: number; // e.g. 4, 6
 
   @Prop({ type: String, trim: true, default: null })
-  badge?: string; // e.g. "POPULAR", "ECO", "VIP" or null
+  badge?: string | null; // e.g. "POPULAR", "ECO", "VIP" or null
 
   @Prop({ type: String, trim: true, default: null })
-  etaText?: string; // e.g. "3-5 min", "4-6 min"
+  etaText?: string | null; // e.g. "3-5 min", "4-6 min"
 
   @Prop({ type: Number, required: true, min: 0, default: 0 })
   basePrice: number; // e.g. 18.30
 
   @Prop({ type: Number, min: 0, default: null })
-  perKmRate?: number;
+  perKmRate?: number | null;
 
   @Prop({ type: Number, min: 0, default: null })
-  perMinuteRate?: number;
+  perMinuteRate?: number | null;
 
   @Prop({ type: String, trim: true, default: null })
-  image?: string; // Vehicle image URL
+  image?: string | null; // Vehicle image URL
 
   @Prop({ type: String, trim: true, default: null })
-  description?: string;
+  description?: string | null;
 
   @Prop({ type: String, enum: ['Active', 'Inactive'], default: 'Active', index: true })
   status: string;
@@ -39,7 +39,7 @@ export class VehicleType {
   sortOrder: number;
 
   @Prop({ type: String, default: null })
-  createdBy?: string;
+  createdBy?: string | null;
 }
 
 export const VehicleTypeSchema = SchemaFactory.createForClass(VehicleType);

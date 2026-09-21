@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { Driver, DriverDocument } from './schema/driver.schema';
 import { RegisterDriverDto } from './dto/register-driver.dto';
 import { ApiResponse } from 'src/helpers/ApiResponse';
@@ -35,6 +35,7 @@ export class DriverService {
     private readonly mailService: MailService,
     private readonly vehicleTypeService: VehicleTypeService,
   ) {}
+
 
   async registerDriver(
     dto: RegisterDriverDto,
@@ -98,12 +99,15 @@ export class DriverService {
       }
 
       let vehicleType = dto.vehicleType?.trim() || null;
-      let vehicleTypeId = dto.vehicleTypeId?.trim() || null;
+      let vehicleTypeId: string | null = null;
 
-      if (vehicleTypeId && !vehicleType) {
-        const vType = await this.vehicleTypeService.getVehicleTypeById(vehicleTypeId);
-        if (vType?.data && (vType.data as any).name) {
-          vehicleType = (vType.data as any).name;
+      if (vehicleType) {
+        if (isValidObjectId(vehicleType)) {
+          vehicleTypeId = vehicleType;
+          const vType = await this.vehicleTypeService.getVehicleTypeById(vehicleType);
+          if (vType?.data && (vType.data as any).name) {
+            vehicleType = (vType.data as any).name;
+          }
         }
       }
 

@@ -52,12 +52,7 @@ export class UpdateDriverProfileDto {
   @IsString()
   preferredServiceArea?: string;
 
-  @ApiPropertyOptional({ example: '66e6c8e1e4b0c2a5d3f89555', description: 'Vehicle type ID' })
-  @IsOptional()
-  @IsString()
-  vehicleTypeId?: string;
-
-  @ApiPropertyOptional({ example: 'Sedan Comfort', description: 'Vehicle type' })
+  @ApiPropertyOptional({ example: '66e6c8e1e4b0c2a5d3f89555', description: 'Vehicle type ID (selected from SuperAdmin vehicle classes list)' })
   @IsOptional()
   @IsString()
   vehicleType?: string;
