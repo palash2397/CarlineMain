@@ -965,7 +965,7 @@ export class RideService {
           vehicleType: vehicleType ? this.vehicleTypeCard(vehicleType) : null,
           duty: this.dutyPayload(driver),
           stats: await this.driverStats(driver),
-          driverActiveRide: runningRide ? await this.ridePayload(runningRide) : null,
+          activeRide: runningRide ? await this.ridePayload(runningRide) : null,
         },
         Msg.DRIVER_HOME_FETCHED,
       );
