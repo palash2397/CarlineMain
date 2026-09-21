@@ -15,9 +15,7 @@ import { Server, Socket } from 'socket.io';
 
 import { SocketService } from './socket.service';
 import { RideService } from '../ride/ride.service';
-import { DriverRideService } from '../ride/driver-ride.service';
 import { DriverLocationDto } from '../ride/dto/driver-location.dto';
-import { DRIVER_ROOM } from 'src/constants';
 
 @WebSocketGateway({
   path: '/viamo/socket.io',
@@ -36,8 +34,6 @@ export class SocketGateway
     private readonly socketService: SocketService,
     @Inject(forwardRef(() => RideService))
     private readonly rideService: RideService,
-    @Inject(forwardRef(() => DriverRideService))
-    private readonly driverRideService: DriverRideService,
   ) {}
 
   afterInit(server: Server) {
@@ -82,7 +78,7 @@ export class SocketGateway
     if (roles.includes('DRIVER')) {
       // Shared driver pool + the room of his own vehicle type, so a driver only
       // gets the requests he can accept.
-      const driverRooms = await this.driverRideService.socketRoomsForDriver(
+      const driverRooms = await this.rideService.socketRoomsForDriver(
         user.id,
       );
 
@@ -92,7 +88,7 @@ export class SocketGateway
 
       // A driver with a running ride lands in that ride room so passenger
       // cancels and status changes reach the app right away.
-      const driverRideId = await this.driverRideService.activeRideIdForDriver(
+      const driverRideId = await this.rideService.activeRideIdForDriver(
         user.id,
       );
 

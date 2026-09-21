@@ -76,6 +76,17 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+
+  // The ride controller serves both /ride/* and /driver-ride/*, so Swagger's
+  // automatic controller-name tag ("Ride") is dropped - every route keeps only
+  // its own section tag (User Booking / Driver Booking).
+  Object.values(document.paths).forEach((pathItem) => {
+    Object.values(pathItem).forEach((operation: any) => {
+      if (Array.isArray(operation.tags) && operation.tags.length > 1) {
+        operation.tags = operation.tags.filter((tag: string) => tag !== 'Ride');
+      }
+    });
+  });
   SwaggerModule.setup(`${Global.PREFIX}/docs`, app, document, {
     swaggerOptions: {
       persistAuthorization: true,

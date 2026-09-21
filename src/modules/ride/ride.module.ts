@@ -14,8 +14,6 @@ import { Promo, PromoSchema } from './schema/promo.schema';
 import { Ride, RideSchema } from './schema/ride.schema';
 import { RideController } from './ride.controller';
 import { RideService } from './ride.service';
-import { DriverRideController } from './driver-ride.controller';
-import { DriverRideService } from './driver-ride.service';
 
 @Module({
   imports: [
@@ -28,8 +26,8 @@ import { DriverRideService } from './driver-ride.service';
       { name: User.name, schema: UserSchema },
     ]),
   ],
-  controllers: [RideController, DriverRideController],
-  providers: [RideService, DriverRideService],
-  exports: [RideService, DriverRideService],
+  controllers: [RideController],
+  providers: [RideService],
+  exports: [RideService],
 })
 export class RideModule {}
