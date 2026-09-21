@@ -16,6 +16,7 @@ import { CompanyUserModule } from './modules/company-user/company-user.module';
 import { DriverModule } from './modules/driver/driver.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { VehicleTypeModule } from './modules/vehicle-type/vehicle-type.module';
+import { RideModule } from './modules/ride/ride.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { VehicleTypeModule } from './modules/vehicle-type/vehicle-type.module';
     DriverModule,
     PricingModule,
     VehicleTypeModule,
+    RideModule,
   ],
   controllers: [AppController],
   providers: [],
