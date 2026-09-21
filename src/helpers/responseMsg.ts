@@ -258,5 +258,35 @@ export const Msg = {
   VEHICLE_TYPE_STATUS_UPDATED: 'Vehicle type status updated successfully',
   VEHICLE_TYPES_FETCHED: 'Vehicle types fetched successfully',
   VEHICLE_TYPE_ALREADY_EXISTS: 'Vehicle type with this name already exists',
+
+  // User Booking
+  RIDE_FETCHED: 'Ride details fetched successfully',
+  RIDES_FETCHED: 'Rides fetched successfully',
+  RIDE_CANNOT_CANCEL: 'This ride can no longer be cancelled',
+  SCHEDULE_TIME_REQUIRED: 'Pickup date and time is required for a scheduled ride',
+  SCHEDULE_TIME_INVALID: 'Pickup date and time must be in the future',
+  NEARBY_CABS_FETCHED: 'Nearby cabs fetched successfully',
+  PROMO_INVALID: 'Promo code is invalid',
+  PROMO_EXPIRED: 'Promo code has expired',
+  PROMO_USAGE_LIMIT: 'Promo code usage limit is over',
+  PROMO_CODES_FETCHED: 'Promo codes fetched successfully',
+
+  // Driver Booking
+  DRIVER_HOME_FETCHED: 'Driver home fetched successfully',
+  DRIVER_DUTY_UPDATED: 'Duty status updated successfully',
+  DRIVER_VEHICLE_NOT_SET:
+    'Set your vehicle type before going online to receive rides',
+  DRIVER_GO_OFFLINE_BLOCKED:
+    'Complete or cancel your running ride before going offline',
+  DRIVER_BUSY: 'You already have a running ride',
+  DRIVER_LOCATION_UPDATED: 'Driver location updated successfully',
+  RIDE_REQUESTS_FETCHED: 'Ride requests fetched successfully',
+  RIDE_REQUEST_FETCHED: 'Ride request fetched successfully',
+  RIDE_ALREADY_TAKEN: 'This ride is already accepted by another driver',
+  RIDE_STATUS_INVALID: 'Ride is not in the right status for this action',
+  DRIVER_VEHICLE_TYPE_MISMATCH: 'This ride is not for your vehicle type',
+  DRIVER_ARRIVED: 'Driver reached the pickup point',
+  DRIVER_EARNINGS_FETCHED: 'Driver earnings fetched successfully',
+  PAYMENT_COLLECTED: 'Payment collected successfully',
 };
 

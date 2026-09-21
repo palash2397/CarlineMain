@@ -6,6 +6,7 @@ import { SocketGateway } from './socket.gateway';
 import { SocketService } from './socket.service';
 
 import { User, UserSchema } from '../user/schema/user.schema';
+import { RideModule } from '../ride/ride.module';
 
 @Global()
 @Module({
@@ -19,6 +20,7 @@ import { User, UserSchema } from '../user/schema/user.schema';
         schema: UserSchema,
       },
     ]),
+    RideModule,
   ],
   providers: [SocketGateway, SocketService],
   exports: [SocketService],

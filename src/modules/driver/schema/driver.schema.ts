@@ -259,6 +259,24 @@ export class Driver {
     default: false,
   })
   isPasswordReset: boolean;
+
+  // ==========================================
+  // Duty & live location (used by booking + tracking)
+  // ==========================================
+  @Prop({ type: Boolean, default: false, index: true })
+  isOnline?: boolean;
+
+  @Prop({ type: Number, default: null })
+  currentLatitude?: number | null;
+
+  @Prop({ type: Number, default: null })
+  currentLongitude?: number | null;
+
+  @Prop({ type: Date, default: null })
+  lastLocationAt?: Date | null;
+
+  @Prop({ type: Number, default: null })
+  rating?: number | null;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);

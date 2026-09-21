@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Carline - User Booking Test (Prakash)</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 14px/1.45 "Segoe UI", Arial, sans-serif; background: #0f1420; color: #e6ecff; }
+      header { padding: 14px 18px; background: #17203a; border-bottom: 1px solid #26314f; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      header h1 { font-size: 16px; margin: 0; }
+      .pill { padding: 3px 9px; border-radius: 20px; font-size: 12px; background: #23304f; border: 1px solid #33436b; }
+      .ok { background: #14351f; border-color: #2f6b42; color: #b8f5c9; }
+      .err { background: #3a1720; border-color: #6b2f3f; color: #ffc3cf; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
+      section { background: #151c2e; border: 1px solid #26314f; border-radius: 10px; padding: 12px 14px; }
+      section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #93a4cc; margin: 0 0 10px; }
+      label { display: block; font-size: 12px; color: #93a4cc; margin: 8px 0 3px; }
+      input, select, textarea { width: 100%; background: #0e1524; border: 1px solid #2b3760; color: #e6ecff; border-radius: 7px; padding: 7px 9px; font: inherit; }
+      textarea { min-height: 74px; font: 11px/1.4 Consolas, monospace; word-break: break-all; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+      .row > div { flex: 1 1 90px; }
+      button { background: #2d6cdf; border: 0; color: #fff; padding: 8px 12px; border-radius: 7px; cursor: pointer; font: inherit; }
+      button.ghost { background: #23304f; border: 1px solid #33436b; }
+      button.green { background: #1f7a45; }
+      button.red { background: #a5314a; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #26314f; }
+      tr.pick { cursor: pointer; }
+      tr.pick:hover { background: #1d2942; }
+      tr.sel { background: #1f3a63; }
+      #log { grid-column: 1 / -1; }
+      #logBox { height: 320px; overflow: auto; background: #0b1020; border: 1px solid #26314f; border-radius: 8px; padding: 8px; font: 12px/1.5 Consolas, monospace; }
+      .ev { color: #7ee2b8; }
+      .req { color: #9dc4ff; }
+      .res-ok { color: #b8f5c9; }
+      .res-err { color: #ffb3c1; }
+      .note { color: #8b9ac2; font-size: 12px; margin-top: 6px; }
+      .big { font-size: 18px; font-weight: 600; color: #ffd479; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Carline &mdash; User Booking Test</h1>
+      <span class="pill" id="whoami">token ?</span>
+      <span class="pill" id="socketState">socket: off</span>
+      <span class="pill" id="rideState">ride: -</span>
+      <span class="pill">Owner: Prakash Mishra</span>
+    </header>
+
+    <main>
+      <section>
+        <h2>1. Config &amp; Login token</h2>
+        <label>API base</label>
+        <input id="apiBase" value="http://localhost:4016/api/v1" />
+        <label>Socket base</label>
+        <input id="socketBase" value="http://localhost:4016" />
+        <label>Socket path</label>
+        <input id="socketPath" value="/viamo/socket.io" />
+        <label>User token (passenger JWT, auto filled)</label>
+        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYWQ0MjA2ZTRhOTRlOGIxNTZlMTgwZCIsInJvbGVzIjoiVVNFUiIsImNvbXBhbnlJZCI6bnVsbCwiaWF0IjoxNzg5OTg4Njc0LCJleHAiOjE3OTI1ODA2NzR9.MXGIzFz8VQCcFEoQfZwuYWHwe4PCuyx7Re_qs95rNnU</textarea>
+        <div class="btns">
+          <button class="green" onclick="connectSocket()">Connect socket</button>
+          <button class="ghost" onclick="disconnectSocket()">Disconnect</button>
+          <button class="ghost" onclick="joinRideRoom()">joinRide (rideId)</button>
+          <button class="ghost" onclick="saveToken()">Save token</button>
+        </div>
+        <div class="note">Token 30 din valid hai. Naya chahiye to backend se: <b>jwt.sign({ id: user._id, roles: 'USER', companyId: null }, JWT_SECRET, { expiresIn: '30d' })</b></div>
+      </section>
+
+      <section>
+        <h2>2. Pickup &amp; Drop (frontend se lat/long)</h2>
+        <label>Pickup address</label>
+        <input id="pickupAddress" value="742 Evergreen Terrace, San Francisco, CA" />
+        <div class="row">
+          <div><label>Pickup latitude</label><input id="pickupLat" value="37.7749" /></div>
+          <div><label>Pickup longitude</label><input id="pickupLng" value="-122.4194" /></div>
+        </div>
+        <label>Dropoff address</label>
+        <input id="dropAddress" value="San Francisco International Airport, CA" />
+        <div class="row">
+          <div><label>Dropoff latitude</label><input id="dropLat" value="37.6213" /></div>
+          <div><label>Dropoff longitude</label><input id="dropLng" value="-122.3790" /></div>
+        </div>
+        <div class="btns">
+          <button onclick="estimateFare()">1. Estimate fare (vehicle list)</button>
+          <button class="ghost" onclick="vehicleTypes()">Vehicle types (master)</button>
+          <button class="ghost" onclick="promoCodes()">Promo codes</button>
+          <button class="ghost" onclick="nearbyCabs()">Nearby cabs</button>
+        </div>
+        <div class="note">Distance/duration/fare backend calculate karta hai (frontend sirf pickup + drop lat/long deta hai). Vehicle row pe click karke select karo.</div>
+      </section>
+
+      <section style="grid-column: 1 / -1">
+        <h2>3. Vehicle options (estimate response)</h2>
+        <table id="optionsTable">
+          <thead>
+            <tr><th>Vehicle</th><th>Seats</th><th>Trip</th><th>ETA</th><th>Fare</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note">Selected: <span class="big" id="selectedVehicle">koi vehicle select nahi hua</span></div>
+      </section>
+
+      <section>
+        <h2>4. Book ride</h2>
+        <div class="row">
+          <div><label>Ride type</label><select id="rideType"><option>INSTANT</option><option>SCHEDULED</option></select></div>
+          <div><label>Scheduled at</label><input id="scheduledAt" value="2026-10-01T10:30:00.000Z" /></div>
+          <div><label>Passenger count</label><input id="passengerCount" value="2" /></div>
+          <div><label>Payment method</label><select id="paymentMethod"><option>CASH</option><option>CARD</option><option>WALLET</option></select></div>
+        </div>
+        <label>Driver notes</label>
+        <input id="notes" value="2 bags, wait at gate" />
+        <label>Promo code (sirf book me, estimate me nahi)</label>
+        <input id="promoCode" value="CARLINE10" />
+        <div class="btns">
+          <button class="green" onclick="bookRide()">2. Book ride</button>
+        </div>
+        <div class="note">promoCode estimate me bhejne pe 400 aata hai &ndash; wo yahi use hota hai.</div>
+      </section>
+
+      <section>
+        <h2>5. My ride (socket + APIs)</h2>
+        <label>Ride id</label>
+        <input id="rideId" value="" />
+        <div class="note big" id="otp">OTP: -</div>
+        <div class="btns">
+          <button class="ghost" onclick="myRides()">GET /ride/my</button>
+          <button class="ghost" onclick="activeRide()">GET /ride/active</button>
+          <button class="ghost" onclick="rideDetails()">GET /ride/:id</button>
+        </div>
+        <label>Cancel reason</label>
+        <input id="cancelReason" value="Plans changed" />
+        <div class="btns">
+          <button class="red" onclick="cancelRide()">PATCH /ride/cancel</button>
+        </div>
+        <div class="note">Socket events isi ride ke liye aate hain: ride:created, ride:driver, ride:status, ride:driverLocation, ride:completed, ride:payment, ride:cancelled</div>
+      </section>
+
+      <section id="log">
+        <h2>6. Log (API + Socket)</h2>
+        <div class="btns"><button class="ghost" onclick="document.getElementById('logBox').innerHTML=''">Clear log</button></div>
+        <div id="logBox"></div>
+      </section>
+    </main>
+
+    <script src="./socket.io.min.js"></script>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = { socket: null, rideId: null, vehicleTypeId: null, currency: 'USD' };
+
+      try {
+        const saved = localStorage.getItem('carline.userToken');
+        if (saved) $('token').value = saved;
+      } catch (e) {}
+
+      function saveToken() {
+        localStorage.setItem('carline.userToken', $('token').value.trim());
+        showWhoAmI();
+        log('ev', 'token saved');
+      }
+
+      function decodeToken() {
+        try {
+          const raw = $('token').value.trim().split('.')[1];
+          return JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/')));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function showWhoAmI() {
+        const p = decodeToken();
+        if (!p) return ($('whoami').textContent = 'token invalid');
+        const exp = new Date(p.exp * 1000).toLocaleString();
+        $('whoami').textContent = p.roles + ' | id ' + p.id.slice(-6) + ' | exp ' + exp;
+      }
+
+      function money(v) {
+        return (state.currency || 'USD') + ' ' + Number(v || 0).toFixed(2);
+      }
+
+      function log(kind, title, data) {
+        const box = $('logBox');
+        const time = new Date().toLocaleTimeString();
+        const cls = kind === 'ev' ? 'ev' : kind === 'req' ? 'req' : kind === 'err' ? 'res-err' : 'res-ok';
+        const body = data === undefined ? '' : '\n' + JSON.stringify(data, null, 2);
+        box.innerHTML += '<div class="' + cls + '">[' + time + '] ' + title + body + '</div>';
+        box.scrollTop = box.scrollHeight;
+      }
+
+      async function api(path, method = 'GET', body) {
+        const url = $('apiBase').value.replace(/\/+$/, '') + path;
+        const started = performance.now();
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('token').value.trim() },
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          let data = null;
+          try { data = await res.json(); } catch (e) {}
+          const ms = Math.round(performance.now() - started);
+          log(data && data.success === false ? 'err' : 'res', method + ' ' + path + '  (' + res.status + ', ' + ms + 'ms)', data);
+          return data;
+        } catch (e) {
+          log('err', method + ' ' + path + ' FAILED', { error: String(e) });
+          return null;
+        }
+      }
+
+      function pickup() {
+        return { address: $('pickupAddress').value, latitude: Number($('pickupLat').value), longitude: Number($('pickupLng').value) };
+      }
+
+      function dropoff() {
+        return { address: $('dropAddress').value, latitude: Number($('dropLat').value), longitude: Number($('dropLng').value) };
+      }
+
+      function setRide(id, status) {
+        state.rideId = id;
+        $('rideId').value = id || '';
+        $('rideState').textContent = 'ride: ' + (status || '-');
+      }
+
+      function connectSocket() {
+        if (state.socket) state.socket.disconnect();
+        const token = $('token').value.trim();
+        state.socket = io($('socketBase').value.replace(/\/+$/, ''), {
+          path: $('socketPath').value,
+          auth: { token },
+          transports: ['websocket'],
+        });
+        state.socket.on('connect', () => {
+          $('socketState').textContent = 'socket: on (' + state.socket.id.slice(0, 6) + ')';
+          $('socketState').className = 'pill ok';
+          const me = decodeToken();
+          log('ev', 'socket connected -> room user:' + (me ? me.id : '?') + (state.rideId ? ' + ride:' + state.rideId : ''));
+        });
+        state.socket.on('disconnect', (r) => {
+          $('socketState').textContent = 'socket: off';
+          $('socketState').className = 'pill err';
+          log('ev', 'socket disconnected: ' + r);
+        });
+        state.socket.on('connect_error', (e) => {
+          $('socketState').textContent = 'socket: error';
+          $('socketState').className = 'pill err';
+          log('err', 'socket connect_error', { message: e.message });
+        });
+        state.socket.onAny((event, data) => {
+          log('ev', 'SOCKET -> ' + event, data);
+          if (data && data.status) $('rideState').textContent = 'ride: ' + data.status;
+          if (event === 'ride:created' && data && data.rideId) setRide(data.rideId, data.status);
+          if (event === 'ride:driver' && data && data.driver) {
+            log('ev', 'driver assigned: ' + data.driver.fullName + ' | ' + data.driver.vehicleRegistrationNumber + ' | rating ' + data.driver.rating);
+          }
+        });
+      }
+
+      function disconnectSocket() {
+        if (state.socket) state.socket.disconnect();
+        state.socket = null;
+      }
+
+      function joinRideRoom() {
+        if (!state.socket) return log('err', 'pehle socket connect karo');
+        state.socket.emit('joinRide', { rideId: $('rideId').value.trim() }, (ack) => log('ev', 'joinRide ack', ack));
+      }
+
+      async function estimateFare() {
+        const res = await api('/ride/estimate-fare', 'POST', { pickup: pickup(), dropoff: dropoff() });
+        if (!res?.data) return;
+        state.currency = res.data.currency || 'USD';
+        const tbody = $('optionsTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        (Array.isArray(res.data.options) ? res.data.options : []).forEach((o) => {
+          const tr = document.createElement('tr');
+          tr.className = 'pick';
+          tr.innerHTML = '<td><b>' + o.name + '</b>' + (o.badge ? ' <span class="pill">' + o.badge + '</span>' : '') + '</td><td>' + o.seats +
+            '</td><td>' + o.distanceKm + ' km / ' + o.distanceMiles + ' mi</td><td>' + o.etaMinutes + ' min</td><td><b>' + money(o.payableFare) + '</b></td>';
+          tr.onclick = () => {
+            state.vehicleTypeId = o.vehicleTypeId;
+            $('selectedVehicle').textContent = o.vehicleTypeId + ' (' + o.name + ')';
+            Array.prototype.forEach.call(tbody.children, (c) => c.classList.remove('sel'));
+            tr.classList.add('sel');
+            log('ev', 'vehicle selected', { vehicleTypeId: o.vehicleTypeId, name: o.name, fare: o.payableFare, breakdown: o.fare });
+          };
+          tbody.appendChild(tr);
+        });
+        log('ev', 'route: ' + res.data.distanceKm + ' km, ' + res.data.durationMinutes + ' min, source ' + res.data.routeSource);
+      }
+
+      async function vehicleTypes() {
+        const res = await api('/ride/vehicle-types');
+        const tbody = $('optionsTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        (Array.isArray(res?.data) ? res.data : []).forEach((v) => {
+          tbody.innerHTML += '<tr><td>' + v.name + (v.badge ? ' <span class="pill">' + v.badge + '</span>' : '') +
+            '</td><td>' + v.seats + '</td><td>-</td><td>' + (v.etaText || '-') + '</td><td>' + money(v.basePrice) + ' base</td></tr>';
+        });
+      }
+
+      async function promoCodes() {
+        await api('/ride/promo-codes');
+      }
+
+      async function nearbyCabs() {
+        await api('/ride/nearby-cabs?lat=' + $('pickupLat').value + '&lng=' + $('pickupLng').value);
+      }
+
+      async function bookRide() {
+        if (!state.vehicleTypeId) return log('err', 'pehle estimate karke vehicle select karo');
+        const body = {
+          pickup: pickup(),
+          dropoff: dropoff(),
+          vehicleTypeId: state.vehicleTypeId,
+          passengerCount: Number($('passengerCount').value),
+          rideType: $('rideType').value,
+          paymentMethod: $('paymentMethod').value,
+          notes: $('notes').value,
+          promoCode: $('promoCode').value.trim() || undefined,
+        };
+        if (body.rideType === 'SCHEDULED' && $('scheduledAt').value) body.scheduledAt = $('scheduledAt').value;
+        const res = await api('/ride/book', 'POST', body);
+        if (res?.data) {
+          setRide(res.data.rideId, res.data.status);
+          $('otp').textContent = 'OTP: ' + (res.data.otp || '-');
+          if (state.socket) state.socket.emit('joinRide', { rideId: res.data.rideId });
+        }
+      }
+
+      async function activeRide() {
+        const res = await api('/ride/active');
+        if (res?.data) setRide(res.data.rideId, res.data.status);
+        else log('ev', 'koi active ride nahi hai');
+      }
+
+      async function rideDetails() {
+        const id = $('rideId').value.trim();
+        if (!id) return log('err', 'ride id daalo');
+        const res = await api('/ride/' + id);
+        if (res?.data) setRide(res.data.rideId, res.data.status);
+      }
+
+      async function myRides() {
+        await api('/ride/my?page=1&limit=5');
+      }
+
+      async function cancelRide() {
+        const id = $('rideId').value.trim();
+        if (!id) return log('err', 'ride id daalo');
+        const res = await api('/ride/cancel', 'PATCH', { rideId: id, reason: $('cancelReason').value });
+        if (res?.data) setRide(id, res.data.status);
+      }
+
+      showWhoAmI();
+    </script>
+  </body>
+</html>

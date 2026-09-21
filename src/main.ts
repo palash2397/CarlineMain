@@ -19,6 +19,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 
 import constants from './constants';
+import { V2_SECTIONS, keepV2SectionsOnly } from './helpers/user-auth-swagger';
 const { SWAGGER, Global } = constants;
 
 async function bootstrap() {
@@ -30,6 +31,11 @@ async function bootstrap() {
   // Serve uploaded files statically
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: `${Global.PREFIX}/uploads`,
+  });
+
+  // Local booking test pages (user + driver side). Owner: Prakash Mishra
+  app.useStaticAssets(join(__dirname, '..', 'test-client'), {
+    prefix: `${Global.PREFIX}/test-client`,
   });
 
   // enable global validation for DTOs
@@ -75,6 +81,36 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup(`${Global.PREFIX}/docs`, app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
+
+  // Swagger v2 - only our own sections (user auth, user booking, driver booking).
+  const v2Builder = new DocumentBuilder()
+    .setTitle(SWAGGER.TITLE + ' - App APIs')
+    .setDescription(
+      'Our own APIs only - passenger auth + user booking + driver booking',
+    )
+    .setVersion(SWAGGER.VERSION)
+    .addServer(process.env.BASE_URL || SWAGGER.SERVER_URL || '/')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+      'access-token',
+    );
+
+  V2_SECTIONS.forEach((section) => {
+    v2Builder.addTag(section.name, section.description);
+  });
+
+  const documentV2 = keepV2SectionsOnly(
+    SwaggerModule.createDocument(app, v2Builder.build()),
+  );
+  SwaggerModule.setup(Global.PREFIX + '/docs/v2', app, documentV2, {
     swaggerOptions: {
       persistAuthorization: true,
     },
