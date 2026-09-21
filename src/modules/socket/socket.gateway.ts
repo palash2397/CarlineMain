@@ -17,7 +17,7 @@ import { SocketService } from './socket.service';
 import { RideService } from '../ride/ride.service';
 import { DriverRideService } from '../ride/driver-ride.service';
 import { DriverLocationDto } from '../ride/dto/driver-location.dto';
-import { DRIVER_ROOM } from '../ride/ride.constants';
+import { DRIVER_ROOM } from 'src/constants';
 
 @WebSocketGateway({
   path: '/viamo/socket.io',

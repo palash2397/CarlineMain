@@ -32,7 +32,7 @@ import {
   KM_PER_MILE,
   RIDE_EVENTS,
   driverRoomFor,
-} from './ride.constants';
+} from 'src/constants';
 
 import { DriverCancelRideDto } from './dto/driver-cancel-ride.dto';
 import { DriverCollectPaymentDto } from './dto/driver-collect-payment.dto';

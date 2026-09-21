@@ -15,7 +15,7 @@ import {
 
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { RideType } from 'src/common/enums/ride/ride-type.enum';
-import { MAX_PASSENGERS } from '../ride.constants';
+import { MAX_PASSENGERS } from 'src/constants';
 import { RideLocationDto } from './ride-location.dto';
 
 export class BookRideDto {

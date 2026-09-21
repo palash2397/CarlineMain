@@ -17,7 +17,6 @@ import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 
 import { DriverRideService } from './driver-ride.service';
-import { DRIVER_RIDE_SECTION } from './ride.constants';
 
 import { DriverCancelRideDto } from './dto/driver-cancel-ride.dto';
 import { DriverCollectPaymentDto } from './dto/driver-collect-payment.dto';
@@ -28,7 +27,7 @@ import { DriverRideHistoryQueryDto } from './dto/driver-ride-history-query.dto';
 import { DriverRideIdDto } from './dto/driver-ride-id.dto';
 import { DriverStartRideDto } from './dto/driver-start-ride.dto';
 
-@ApiTags(DRIVER_RIDE_SECTION)
+@ApiTags('Driver Booking')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RoleGuard)
 @Roles(UserRole.DRIVER)

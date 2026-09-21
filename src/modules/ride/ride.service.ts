@@ -38,7 +38,7 @@ import {
   KM_PER_MILE,
   RIDE_EVENTS,
   ROAD_DISTANCE_FACTOR,
-} from './ride.constants';
+} from 'src/constants';
 
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';

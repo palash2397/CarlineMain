@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Server } from 'socket.io';
 
-import { DRIVER_ROOM, driverRoomFor } from '../ride/ride.constants';
+import { DRIVER_ROOM, driverRoomFor } from 'src/constants';
 
 @Injectable()
 export class SocketService {

@@ -21,12 +21,11 @@ import { CancelRideDto } from './dto/cancel-ride.dto';
 import { EstimateFareDto } from './dto/estimate-fare.dto';
 import { MyRidesQueryDto } from './dto/my-rides-query.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
-import { RIDE_SECTION } from './ride.constants';
 import { RideService } from './ride.service';
 
 const PASSENGER_ROLES = [UserRole.USER, UserRole.PASSENGER];
 
-@ApiTags(RIDE_SECTION)
+@ApiTags('User Booking')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RoleGuard)
 @Roles(...PASSENGER_ROLES)
