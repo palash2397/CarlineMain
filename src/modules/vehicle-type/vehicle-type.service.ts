@@ -1,10 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import {
-  VehicleType,
-  VehicleTypeDocument,
-} from './schema/vehicle-type.schema';
+import { VehicleType, VehicleTypeDocument } from './schema/vehicle-type.schema';
 import { CreateVehicleTypeDto } from './dto/create-vehicle-type.dto';
 import { UpdateVehicleTypeDto } from './dto/update-vehicle-type.dto';
 import { UpdateVehicleTypeStatusDto } from './dto/update-vehicle-type-status.dto';
@@ -14,123 +11,12 @@ import { Msg } from 'src/helpers/responseMsg';
 import { deleteOldFile } from 'src/helpers/index';
 
 @Injectable()
-export class VehicleTypeService implements OnModuleInit {
+export class VehicleTypeService {
   constructor(
     @InjectModel(VehicleType.name)
     private readonly vehicleTypeModel: Model<VehicleTypeDocument>,
   ) {}
 
-  async onModuleInit() {
-    await this.seedInitialVehicleTypes();
-  }
-
-  // Seed standard vehicle classes (ensuring all exist in database)
-  private async seedInitialVehicleTypes() {
-    try {
-      const initialTypes = [
-        {
-          name: 'Sedan Comfort',
-          seats: 4,
-          badge: 'POPULAR',
-          etaText: '3-5 min',
-          basePrice: 18.3,
-          perKmRate: 1.8,
-          perMinuteRate: 0.4,
-          image:
-            'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400&q=80',
-          description: 'Comfortable 4-seat everyday sedan',
-          status: 'Active',
-          sortOrder: 1,
-        },
-        {
-          name: 'SUV 6-Seater',
-          seats: 6,
-          badge: null,
-          etaText: '5-8 min',
-          basePrice: 26.8,
-          perKmRate: 2.4,
-          perMinuteRate: 0.5,
-          image:
-            'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=400&q=80',
-          description: 'Spacious 6-seat SUV for family and luggage',
-          status: 'Active',
-          sortOrder: 2,
-        },
-        {
-          name: 'Eco EV Green',
-          seats: 4,
-          badge: 'ECO',
-          etaText: '4-6 min',
-          basePrice: 20.1,
-          perKmRate: 1.9,
-          perMinuteRate: 0.4,
-          image:
-            'https://images.unsplash.com/photo-1563720223185-11003d516935?w=400&q=80',
-          description: 'Zero-emission electric vehicle ride',
-          status: 'Active',
-          sortOrder: 3,
-        },
-        {
-          name: 'VIP Executive',
-          seats: 4,
-          badge: 'VIP',
-          etaText: '6-10 min',
-          basePrice: 39.25,
-          perKmRate: 3.2,
-          perMinuteRate: 0.8,
-          image:
-            'https://images.unsplash.com/photo-1555353540-64580b51c258?w=400&q=80',
-          description: 'Premium luxury executive sedan',
-          status: 'Active',
-          sortOrder: 4,
-        },
-        {
-          name: 'Van 8-Seater XL',
-          seats: 8,
-          badge: 'EXTRA SPACE',
-          etaText: '7-12 min',
-          basePrice: 34.5,
-          perKmRate: 2.8,
-          perMinuteRate: 0.6,
-          image:
-            'https://images.unsplash.com/photo-1559297434-fae8a1916a79?w=400&q=80',
-          description: 'Extra spacious passenger van for large groups and luggage',
-          status: 'Active',
-          sortOrder: 5,
-        },
-        {
-          name: 'Wheelchair Accessible (WAV)',
-          seats: 4,
-          badge: 'ACCESSIBLE',
-          etaText: '5-10 min',
-          basePrice: 22.0,
-          perKmRate: 2.0,
-          perMinuteRate: 0.45,
-          image:
-            'https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400&q=80',
-          description: 'Wheelchair ramp accessible vehicle for special assistance',
-          status: 'Active',
-          sortOrder: 6,
-        },
-      ];
-
-      for (const item of initialTypes) {
-        const existing = await this.vehicleTypeModel.findOne({
-          name: { $regex: new RegExp(`^${item.name}$`, 'i') },
-        });
-        if (!existing) {
-          await this.vehicleTypeModel.create(item);
-          console.log(`🚗 Seeded vehicle type: ${item.name}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error while seeding vehicle types:', error);
-    }
-  }
-
-  // ==========================================
-  // SuperAdmin Operations
-  // ==========================================
   async createVehicleType(
     dto: CreateVehicleTypeDto,
     file?: Express.Multer.File,
@@ -245,16 +131,15 @@ export class VehicleTypeService implements OnModuleInit {
   }
 
   async updateVehicleType(
-    id: string,
     dto: UpdateVehicleTypeDto,
     file?: Express.Multer.File,
   ) {
     try {
-      if (!isValidObjectId(id)) {
+      if (!isValidObjectId(dto.id)) {
         return new ApiResponse(400, {}, Msg.INVALID_INPUT);
       }
 
-      const vehicleType = await this.vehicleTypeModel.findById(id);
+      const vehicleType = await this.vehicleTypeModel.findById(dto.id);
       if (!vehicleType) {
         return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
       }
@@ -263,7 +148,7 @@ export class VehicleTypeService implements OnModuleInit {
         const trimmedName = dto.name.trim();
         const existing = await this.vehicleTypeModel.findOne({
           name: { $regex: new RegExp(`^${trimmedName}$`, 'i') },
-          _id: { $ne: id },
+          _id: { $ne: dto.id },
         });
         if (existing) {
           return new ApiResponse(409, {}, Msg.VEHICLE_TYPE_ALREADY_EXISTS);
@@ -272,7 +157,8 @@ export class VehicleTypeService implements OnModuleInit {
       }
 
       if (dto.seats !== undefined) vehicleType.seats = Number(dto.seats);
-      if (dto.badge !== undefined) vehicleType.badge = dto.badge?.trim() || null;
+      if (dto.badge !== undefined)
+        vehicleType.badge = dto.badge?.trim() || null;
       if (dto.etaText !== undefined)
         vehicleType.etaText = dto.etaText?.trim() || null;
       if (dto.basePrice !== undefined)
@@ -344,10 +230,6 @@ export class VehicleTypeService implements OnModuleInit {
     }
   }
 
-  // ==========================================
-  // Public / Selection Operations
-  // (For Driver Registration & Customer Booking)
-  // ==========================================
   async getActiveVehicleTypes() {
     try {
       const activeTypes = await this.vehicleTypeModel
@@ -360,5 +242,17 @@ export class VehicleTypeService implements OnModuleInit {
       console.error('Error while fetching active vehicle types:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
+  }
+
+  async findVehicleTypeByIdOrName(idOrName: string) {
+    if (!idOrName) return null;
+    const trimmed = idOrName.trim();
+    if (isValidObjectId(trimmed)) {
+      const byId = await this.vehicleTypeModel.findById(trimmed);
+      if (byId) return byId;
+    }
+    return this.vehicleTypeModel.findOne({
+      name: { $regex: new RegExp(`^${trimmed}$`, 'i') },
+    });
   }
 }

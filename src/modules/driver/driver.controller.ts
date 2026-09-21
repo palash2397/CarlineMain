@@ -27,6 +27,7 @@ import { RegisterDriverDto } from './dto/register-driver.dto';
 import { GetCompanyDriversQueryDto } from './dto/get-company-drivers-query.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
+import { UpdateDriverVehicleTypeDto } from './dto/update-driver-vehicle-type.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
@@ -150,6 +151,23 @@ export class DriverController {
     return this.driverService.updateMyProfile(req.user.id, dto, files);
   }
 
+  @Patch('/vehicle-type')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiBody({ type: UpdateDriverVehicleTypeDto })
+  async updateDriverVehicleType(
+    @Body() dto: UpdateDriverVehicleTypeDto,
+    @Req() req: any,
+  ) {
+    return this.driverService.updateDriverVehicleType(dto, req.user);
+  }
+
   @Get('/companies/all')
   async getAllCompanies() {
     return this.driverService.allCompanies();
@@ -160,4 +178,3 @@ export class DriverController {
     return this.driverService.getAvailableVehicleTypes();
   }
 }
-

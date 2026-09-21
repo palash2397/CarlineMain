@@ -20,6 +20,7 @@ import { getDriverWelcomeEmailTemplate } from '../mail/template/driver-welcome.t
 import { getDriverRejectionEmailTemplate } from '../mail/template/driver-rejection.template';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
+import { UpdateDriverVehicleTypeDto } from './dto/update-driver-vehicle-type.dto';
 import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 import { VehicleTypeService } from '../vehicle-type/vehicle-type.service';
 
@@ -35,7 +36,6 @@ export class DriverService {
     private readonly mailService: MailService,
     private readonly vehicleTypeService: VehicleTypeService,
   ) {}
-
 
   async registerDriver(
     dto: RegisterDriverDto,
@@ -104,7 +104,8 @@ export class DriverService {
       if (vehicleType) {
         if (isValidObjectId(vehicleType)) {
           vehicleTypeId = vehicleType;
-          const vType = await this.vehicleTypeService.getVehicleTypeById(vehicleType);
+          const vType =
+            await this.vehicleTypeService.getVehicleTypeById(vehicleType);
           if (vType?.data && (vType.data as any).name) {
             vehicleType = (vType.data as any).name;
           }
@@ -515,8 +516,6 @@ export class DriverService {
         'expiryDate',
         'employmentType',
         'preferredServiceArea',
-        'vehicleTypeId',
-        'vehicleType',
         'fuelType',
         'transmission',
         'vehicleRegistrationNumber',
@@ -528,6 +527,20 @@ export class DriverService {
         if (dto[field] !== undefined && dto[field] !== '') {
           driver[field] =
             typeof dto[field] === 'string' ? dto[field].trim() : dto[field];
+        }
+      }
+
+      // Handle vehicle type update if provided
+      if (dto.vehicleType !== undefined && dto.vehicleType !== '') {
+        const targetVehicleType =
+          await this.vehicleTypeService.findVehicleTypeByIdOrName(
+            dto.vehicleType,
+          );
+        if (targetVehicleType) {
+          driver.vehicleTypeId = targetVehicleType._id.toString();
+          driver.vehicleType = targetVehicleType.name;
+        } else {
+          driver.vehicleType = dto.vehicleType.trim();
         }
       }
 
@@ -550,6 +563,95 @@ export class DriverService {
     } catch (error) {
       console.error('Error while updating driver profile:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateDriverVehicleType(dto: UpdateDriverVehicleTypeDto, user: any) {
+    try {
+      if (!dto.driverId || !isValidObjectId(dto.driverId)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(dto.driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
+      }
+
+      const userRoles = Array.isArray(user?.roles)
+        ? user.roles
+        : [user?.roles || user?.role];
+      const isSuperAdmin =
+        userRoles.includes(UserRole.SUPERADMIN) ||
+        userRoles.includes(UserRole.ADMIN);
+
+      if (!isSuperAdmin) {
+        let company = await this.companyModel.findOne({ _id: user.id });
+        if (!company) {
+          const compUser = await this.companyUserModel.findOne({
+            _id: user.id,
+          });
+          if (compUser) {
+            company = await this.companyModel.findOne({
+              $or: [
+                { _id: compUser.companyId },
+                { companyId: compUser.companyId },
+              ],
+            });
+          }
+        }
+
+        if (!company) {
+          return new ApiResponse(
+            403,
+            {},
+            'Company account not found or access forbidden',
+          );
+        }
+
+        const companyIds = [company._id.toString(), company.companyId].filter(
+          Boolean,
+        );
+
+        const isDriverBelongsToCompany =
+          driver.companyId && companyIds.includes(driver.companyId.toString());
+
+        if (!isDriverBelongsToCompany) {
+          return new ApiResponse(
+            403,
+            {},
+            'Unauthorized: You can only change the vehicle type for drivers registered with your company.',
+          );
+        }
+      }
+
+      // Resolve Vehicle Type by ID or Name from SuperAdmin vehicle classes
+      const targetVehicleType =
+        await this.vehicleTypeService.findVehicleTypeByIdOrName(
+          dto.vehicleType,
+        );
+
+      if (!targetVehicleType) {
+        return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+      }
+
+      driver.vehicleTypeId = targetVehicleType._id.toString();
+      driver.vehicleType = targetVehicleType.name;
+
+      await driver.save();
+
+      const responseData: any = driver.toObject();
+      delete responseData.password;
+      delete responseData.otp;
+      delete responseData.otpExpireAt;
+
+      return new ApiResponse(
+        200,
+        responseData,
+        'Driver vehicle type updated successfully',
+      );
+    } catch (error: any) {
+      console.error('Error while updating driver vehicle type:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
   }
 
@@ -579,4 +681,3 @@ export class DriverService {
     }
   }
 }
-

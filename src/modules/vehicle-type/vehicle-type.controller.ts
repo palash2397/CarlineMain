@@ -86,7 +86,7 @@ export class VehicleTypeController {
     return this.vehicleTypeService.getVehicleTypeById(id);
   }
 
-  @Put(':id')
+  @Put('/update')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
@@ -99,11 +99,10 @@ export class VehicleTypeController {
     ),
   )
   async updateVehicleType(
-    @Param('id') id: string,
     @Body() dto: UpdateVehicleTypeDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.vehicleTypeService.updateVehicleType(id, dto, file);
+    return this.vehicleTypeService.updateVehicleType(dto, file);
   }
 
   @Patch('/status')

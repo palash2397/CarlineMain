@@ -2,13 +2,23 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Min,
+  IsMongoId,
 } from 'class-validator';
 
 export class UpdateVehicleTypeDto {
+  @ApiPropertyOptional({
+    example: '6ab0f383f9ae9e0b487bb967',
+    description: 'Vehicle Type MongoDB ID',
+  })
+  @IsNotEmpty()
+  @IsMongoId()
+  id: string;
+
   @ApiPropertyOptional({
     example: 'Sedan Comfort Plus',
     description: 'Vehicle class name',
@@ -76,7 +86,8 @@ export class UpdateVehicleTypeDto {
   @ApiPropertyOptional({
     type: 'string',
     format: 'binary',
-    description: 'Replacement vehicle photo/icon file (png, jpg, jpeg, webp, svg)',
+    description:
+      'Replacement vehicle photo/icon file (png, jpg, jpeg, webp, svg)',
   })
   @IsOptional()
   image?: any;
