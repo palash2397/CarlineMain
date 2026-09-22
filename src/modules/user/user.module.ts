@@ -4,6 +4,7 @@ import { UserController } from './user.controller';
 
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/modules/user/schema/user.schema';
+import { Address, AddressSchema } from 'src/modules/user/schema/address.schema';
 import {
   CompanyUser,
   CompanyUserSchema,
@@ -19,6 +20,7 @@ import { MailModule } from '../mail/mail.module';
       { name: CompanyUser.name, schema: CompanyUserSchema },
       { name: Company.name, schema: CompanySchema },
       { name: Driver.name, schema: DriverSchema },
+      { name: Address.name, schema: AddressSchema },
     ]),
     MailModule,
   ],
