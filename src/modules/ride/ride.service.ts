@@ -229,13 +229,7 @@ export class RideService {
       // A passenger can only have one live ride at a time. Without this guard
       // the same user gets joined to two ride rooms, so both rides keep
       // pushing driver, status and location events into the same app.
-      const activeRide = await this.rideModel
-        .findOne({
-          user: user.id,
-          status: { $in: ACTIVE_RIDE_STATUSES },
-        })
-        .sort({ createdAt: -1 })
-        .select('_id status');
+      const activeRide = await this.findActiveRide(user.id);
 
       if (activeRide) {
         return new ApiResponse(
@@ -391,11 +385,7 @@ export class RideService {
 
   async activeRide(user: any) {
     try {
-      // A started trip is still the passenger's active ride, so this has to use
-      // ACTIVE_RIDE_STATUSES and not the narrower cancellable list.
-      const ride = await this.rideModel
-        .findOne({ user: user.id, status: { $in: ACTIVE_RIDE_STATUSES } })
-        .sort({ createdAt: -1 });
+      const ride = await this.findActiveRide(user.id);
 
       if (!ride) {
         return new ApiResponse(200, null, Msg.NO_ACTIVE_TRIP);
@@ -416,13 +406,7 @@ export class RideService {
   // the room of the ride that is running right now.
   async activeRideIdForUser(userId: string) {
     try {
-      const ride = await this.rideModel
-        .findOne({
-          user: userId,
-          status: { $in: ACTIVE_RIDE_STATUSES },
-        })
-        .sort({ createdAt: -1 })
-        .select('_id');
+      const ride = await this.findActiveRide(userId).select('_id');
 
       return ride ? String(ride._id) : null;
     } catch (error) {
@@ -1740,6 +1724,18 @@ export class RideService {
       .findOne({
         driver: driverId,
         status: { $in: DRIVER_RUNNING_STATUSES },
+      })
+      .sort({ createdAt: -1 });
+  }
+
+  // Live ride of one passenger: from booking until the trip is finished or
+  // cancelled. A started trip still counts, so this uses ACTIVE_RIDE_STATUSES
+  // and not the narrower cancellable list.
+  private findActiveRide(userId: string) {
+    return this.rideModel
+      .findOne({
+        user: userId,
+        status: { $in: ACTIVE_RIDE_STATUSES },
       })
       .sort({ createdAt: -1 });
   }
