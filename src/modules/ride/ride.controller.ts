@@ -155,7 +155,7 @@ export class RideController {
   @Roles(UserRole.DRIVER)
   @ApiOperation({
     summary:
-      'Push the driver live location over REST (socket driverLocation event ka REST fallback)',
+      'Push the driver live location over REST (REST fallback for the socket driverLocation event)',
   })
   async updateLocation(@Req() req: any, @Body() dto: DriverLocationDto) {
     return this.rideService.updateLocation(req.user.id, dto);
@@ -204,7 +204,7 @@ export class RideController {
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
   @ApiOperation({
-    summary: 'Start the trip (Start Trip) - optional passenger OTP verify hota hai',
+    summary: 'Start the trip (Start Trip) - passenger OTP is verified when sent',
   })
   async start(@Req() req: any, @Body() dto: DriverStartRideDto) {
     return this.rideService.start(req.user.id, dto);
@@ -214,7 +214,7 @@ export class RideController {
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
   @ApiOperation({
-    summary: 'End the trip (End Trip) - fare final ho jata hai aur ride complete',
+    summary: 'End the trip (End Trip) - the fare is finalized and the ride completes',
   })
   async complete(@Req() req: any, @Body() dto: DriverRideIdDto) {
     return this.rideService.complete(req.user.id, dto);
@@ -224,7 +224,7 @@ export class RideController {
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
   @ApiOperation({
-    summary: 'Collect Payment on the fare screen (cash rides ko PAID mark karta hai)',
+    summary: 'Collect payment on the fare screen (marks cash rides as PAID)',
   })
   async collectPayment(@Req() req: any, @Body() dto: DriverCollectPaymentDto) {
     return this.rideService.collectPayment(req.user.id, dto);
