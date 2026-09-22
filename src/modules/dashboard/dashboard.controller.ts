@@ -63,20 +63,4 @@ export class DashboardController {
   ) {
     return this.dashboardService.getDashboardOverview(query, req.user);
   }
-
-  @Get('/stats')
-  @ApiBearerAuth('access-token')
-  @UseGuards(JwtAuthGuard, RoleGuard)
-  @Roles(
-    UserRole.COMPANY_ADMIN,
-    ...COMPANY_STAFF_ROLES,
-    UserRole.ADMIN,
-    UserRole.SUPERADMIN,
-  )
-  async getDashboardStats(
-    @Query() query: GetDashboardQueryDto,
-    @Req() req: any,
-  ) {
-    return this.dashboardService.getDashboardOverview(query, req.user);
-  }
 }
