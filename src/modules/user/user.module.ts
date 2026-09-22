@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
+import { UserAddressService } from './user-address.service';
+import { UserAddressController } from './user-address.controller';
 
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/modules/user/schema/user.schema';
@@ -24,8 +26,8 @@ import { MailModule } from '../mail/mail.module';
     ]),
     MailModule,
   ],
-  controllers: [UserController],
-  providers: [UserService],
+  controllers: [UserController, UserAddressController],
+  providers: [UserService, UserAddressService],
   exports: [UserService],
 })
 export class UserModule {}

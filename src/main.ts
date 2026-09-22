@@ -73,6 +73,10 @@ async function bootstrap() {
     )
     .addTag('User Booking (by Prakash)', 'User side ride booking APIs - owned by Prakash Mishra')
     .addTag('Driver Booking (by Prakash)', 'Driver side ride booking APIs - owned by Prakash Mishra')
+    .addTag(
+      'User Address (by Prakash)',
+      'User saved places APIs - owned by Prakash Mishra',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
