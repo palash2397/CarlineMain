@@ -1,21 +1,18 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiOperation,
   ApiQuery,
   ApiResponse as SwaggerApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 
 import { DashboardService } from './dashboard.service';
-import {
-  GetDashboardQueryDto,
-  DashboardTimeframe,
-} from './dto/get-dashboard-query.dto';
+import { GetDashboardQueryDto } from './dto/get-dashboard-query.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 import { UserRole, COMPANY_STAFF_ROLES } from 'src/common/enums/user/role.enum';
+import { DashboardTimeframe } from 'src/common/enums/companies/dashboard-time-frame.enum';
 
 @ApiTags('Company Dashboard')
 @Controller('dashboard')

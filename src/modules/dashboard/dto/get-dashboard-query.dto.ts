@@ -1,14 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { DashboardTimeframe } from 'src/common/enums/companies/dashboard-time-frame.enum';
 
-export enum DashboardTimeframe {
-  TODAY = 'today',
-  YESTERDAY = 'yesterday',
-  WEEK = 'week',
-  MONTH = 'month',
-  YEAR = 'year',
-  CUSTOM = 'custom',
-}
+export { DashboardTimeframe };
 
 export class GetDashboardQueryDto {
   @ApiPropertyOptional({
