@@ -197,6 +197,7 @@ export const Msg = {
   RIDE_ASSIGNED_TO_YOU: 'Ride assigned successfully to you',
   RIDE_ALREADY_ASSIGNED: 'Ride already assigned successfully',
   RIDE_BOOKED: 'Ride booked successfully',
+  RIDE_ALREADY_ACTIVE: 'You already have an active ride',
 
   // Payment
   PAYMENT_PROCESSED: 'Card payment processed successfully',
