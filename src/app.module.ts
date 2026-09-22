@@ -17,6 +17,7 @@ import { DriverModule } from './modules/driver/driver.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { VehicleTypeModule } from './modules/vehicle-type/vehicle-type.module';
 import { RideModule } from './modules/ride/ride.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RideModule } from './modules/ride/ride.module';
     PricingModule,
     VehicleTypeModule,
     RideModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [],
