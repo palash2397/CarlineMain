@@ -1315,7 +1315,7 @@ export class RideService {
 
       const { ride } = found;
 
-      // arrived pehle hona zaroori hai, tabhi trip start hoti hai.
+      // The driver has to mark arrival first, only then the trip can start.
       if (ride.status !== RideStatus.DRIVER_ARRIVED) {
         if (ride.status === RideStatus.DRIVER_ASSIGNED) {
           return new ApiResponse(400, {}, Msg.RIDE_NOT_ARRIVED);
@@ -1956,7 +1956,8 @@ export class RideService {
     };
   }
 
-  // Status ke hisaab se next tap kya hona chahiye (frontend button enable/disable ke liye).
+  // Which tap the app should show next for the current status, so the
+  // frontend can enable or disable its button.
   private nextActionFor(ride: any) {
     switch (ride.status) {
       case RideStatus.DRIVER_ASSIGNED:
@@ -1975,7 +1976,8 @@ export class RideService {
     }
   }
 
-  // Action allowed nahi hai to status ke hisaab se saaf message.
+  // This action is not allowed for the current status, so answer with a clear
+  // message for that status.
   private rideStatusError(ride: any) {
     if (ride.status === RideStatus.RIDE_STARTED) {
       return new ApiResponse(400, {}, Msg.RIDE_ALREADY_STARTED);
