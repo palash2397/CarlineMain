@@ -12,7 +12,10 @@ import { CancelledBy } from 'src/common/enums/ride/cancelled-by.enum';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
 import { PromoType } from 'src/common/enums/ride/promo-type.enum';
-import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
+import {
+  ACTIVE_RIDE_STATUSES,
+  RideStatus,
+} from 'src/common/enums/ride/ride-status.enum';
 import { RideType } from 'src/common/enums/ride/ride-type.enum';
 
 import { Driver, DriverDocument } from '../driver/schema/driver.schema';
@@ -223,6 +226,28 @@ export class RideService {
   // ==========================================================
   async bookRide(user: any, dto: BookRideDto) {
     try {
+      // A passenger can only have one live ride at a time. Without this guard
+      // the same user gets joined to two ride rooms, so both rides keep
+      // pushing driver, status and location events into the same app.
+      const activeRide = await this.rideModel
+        .findOne({
+          user: user.id,
+          status: { $in: ACTIVE_RIDE_STATUSES },
+        })
+        .sort({ createdAt: -1 })
+        .select('_id status');
+
+      if (activeRide) {
+        return new ApiResponse(
+          400,
+          {
+            rideId: String(activeRide._id),
+            status: activeRide.status,
+          },
+          Msg.RIDE_ALREADY_ACTIVE,
+        );
+      }
+
       if (!Types.ObjectId.isValid(dto.vehicleTypeId)) {
         return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
       }
