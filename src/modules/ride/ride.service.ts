@@ -391,8 +391,10 @@ export class RideService {
 
   async activeRide(user: any) {
     try {
+      // A started trip is still the passenger's active ride, so this has to use
+      // ACTIVE_RIDE_STATUSES and not the narrower cancellable list.
       const ride = await this.rideModel
-        .findOne({ user: user.id, status: { $in: CANCELLABLE_STATUSES } })
+        .findOne({ user: user.id, status: { $in: ACTIVE_RIDE_STATUSES } })
         .sort({ createdAt: -1 });
 
       if (!ride) {
@@ -417,7 +419,7 @@ export class RideService {
       const ride = await this.rideModel
         .findOne({
           user: userId,
-          status: { $in: CANCELLABLE_STATUSES },
+          status: { $in: ACTIVE_RIDE_STATUSES },
         })
         .sort({ createdAt: -1 })
         .select('_id');
