@@ -93,6 +93,7 @@ export const Msg = {
   ADDRESS_UPDATED: 'Address updated successfully',
   ADDRESS_DELETED: 'Address deleted successfully',
   ADDRESS_NOT_FOUND: 'Address not found',
+  ADDRESS_ALREADY_EXISTS: 'You already have a saved address with this label',
 
   // Faq
   FAQ_CREATED: 'FAQ created successfully',
