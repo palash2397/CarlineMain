@@ -673,13 +673,11 @@ export class RideService {
     return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  private async googleDistance(pickup: any, dropoff: any) {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-
-    if (!apiKey || !pickup || !dropoff) {
-      return null;
-    }
-
+  private async googleMatrixDistance(
+    apiKey: string,
+    pickup: any,
+    dropoff: any,
+  ) {
     try {
       const { data } = await axios.get(
         'https://maps.googleapis.com/maps/api/distancematrix/json',
@@ -707,6 +705,78 @@ export class RideService {
       console.error('Error while fetching distance from Google Maps:', error);
       return null;
     }
+  }
+
+  // Google has replaced the legacy Distance Matrix API with the Routes API, so
+  // keys that only have the newer API enabled are resolved from here.
+  private async googleRoutesDistance(
+    apiKey: string,
+    pickup: any,
+    dropoff: any,
+  ) {
+    try {
+      const { data } = await axios.post(
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+        {
+          origin: {
+            location: {
+              latLng: {
+                latitude: Number(pickup.latitude),
+                longitude: Number(pickup.longitude),
+              },
+            },
+          },
+          destination: {
+            location: {
+              latLng: {
+                latitude: Number(dropoff.latitude),
+                longitude: Number(dropoff.longitude),
+              },
+            },
+          },
+          travelMode: 'DRIVE',
+        },
+        {
+          headers: {
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
+          },
+          timeout: 8000,
+        },
+      );
+
+      const route = data?.routes?.[0];
+
+      if (!route || route.distanceMeters === undefined || !route.duration) {
+        return null;
+      }
+
+      return {
+        distanceKm: route.distanceMeters / 1000,
+        durationMinutes: Number(String(route.duration).replace('s', '')) / 60,
+      };
+    } catch (error) {
+      console.error('Error while fetching route from Google Routes:', error);
+      return null;
+    }
+  }
+
+  // A key can have either the legacy Distance Matrix API or the newer Routes
+  // API enabled, so both are tried before the local estimate is used.
+  private async googleDistance(pickup: any, dropoff: any) {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey || !pickup || !dropoff) {
+      return null;
+    }
+
+    const matrix = await this.googleMatrixDistance(apiKey, pickup, dropoff);
+
+    if (matrix) {
+      return matrix;
+    }
+
+    return this.googleRoutesDistance(apiKey, pickup, dropoff);
   }
 
   // The app only sends the pickup and dropoff coordinates. The distance, the
