@@ -30,7 +30,7 @@ import { UpdateCompanyStatusDto } from './dto/update-company-status.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
-import { UserRole } from 'src/common/enums/user/role.enum';
+import { UserRole, COMPANY_STAFF_ROLES } from 'src/common/enums/user/role.enum';
 
 @ApiTags('Super Admin')
 @Controller('super-admin')
@@ -102,15 +102,25 @@ export class SuperAdminController {
   @Get('/companies/:id')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
-  @Roles(UserRole.SUPERADMIN)
-  async getCompanyById(@Param('id') id: string) {
-    return this.superAdminService.getCompanyById(id);
+  @Roles(
+    UserRole.SUPERADMIN,
+    UserRole.ADMIN,
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+  )
+  async getCompanyById(@Param('id') id: string, @Req() req: any) {
+    return this.superAdminService.getCompanyById(id, req.user);
   }
 
-  @Put('/companies/:id')
+  @Put('/companies')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(
+    UserRole.SUPERADMIN,
+    UserRole.ADMIN,
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateCompanyDto })
   @UseInterceptors(
@@ -134,17 +144,17 @@ export class SuperAdminController {
     ),
   )
   async updateCompany(
-    @Param('id') id: string,
     @Body() dto: UpdateCompanyDto,
+    @Req() req: any,
     @UploadedFiles()
-    files: {
+    files?: {
       logo?: Express.Multer.File[];
       documents?: Express.Multer.File[];
       documentFiles?: Express.Multer.File[];
       documentFile?: Express.Multer.File[];
     },
   ) {
-    return this.superAdminService.updateCompany(id, dto, files);
+    return this.superAdminService.updateCompany(dto.id, dto, files, req.user);
   }
 
   @Patch('/companies/status')

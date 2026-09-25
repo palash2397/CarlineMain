@@ -548,7 +548,7 @@ export class SuperAdminService implements OnModuleInit {
     }
   }
 
-  async getCompanyById(id: string) {
+  async getCompanyById(id: string, user?: any) {
     try {
       const conditions: any[] = [
         { companyId: id },
@@ -567,6 +567,38 @@ export class SuperAdminService implements OnModuleInit {
 
       if (!company) {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      // Check authorization if user context is provided
+      if (user) {
+        const userRoles = Array.isArray(user?.roles)
+          ? user.roles
+          : [user?.roles || user?.role];
+        const isGlobalAdmin =
+          userRoles.includes(UserRole.SUPERADMIN) ||
+          userRoles.includes(UserRole.ADMIN) ||
+          userRoles.includes('SUPERADMIN') ||
+          userRoles.includes('ADMIN');
+
+        if (!isGlobalAdmin) {
+          const userId = user?.id || user?._id || user?.userId;
+          let callerCompanyId = user?.companyId;
+          if (!callerCompanyId && userId && isValidObjectId(userId)) {
+            const compUser = await this.companyUserModel
+              .findById(userId)
+              .lean();
+            if (compUser?.companyId) callerCompanyId = compUser.companyId;
+          }
+
+          const isAuthorized =
+            callerCompanyId &&
+            (callerCompanyId.toString() === company._id.toString() ||
+              callerCompanyId.toString() === company.companyId);
+
+          if (!isAuthorized) {
+            return new ApiResponse(403, {}, Msg.FORBIDDEN);
+          }
+        }
       }
 
       let adminUser: any = null;
@@ -597,20 +629,70 @@ export class SuperAdminService implements OnModuleInit {
     }
   }
 
-  async updateCompany(id: string, body: any, files?: any) {
+  async updateCompany(
+    id: string | undefined,
+    body: any,
+    files?: any,
+    user?: any,
+  ) {
     try {
       const dto = this.parseCompanyFormData(body, files);
+      const targetId =
+        id ||
+        dto.id ||
+        dto._id ||
+        dto.companyId ||
+        body?.id ||
+        body?._id ||
+        body?.companyId;
+
+      if (!targetId) {
+        return new ApiResponse(
+          400,
+          {},
+          'Company ID is required in the request body (id) or parameter',
+        );
+      }
+
       const conditions: any[] = [
-        { companyId: id },
-        { companyCode: id.toUpperCase() },
+        { companyId: targetId },
+        { companyCode: targetId.toUpperCase() },
       ];
-      if (isValidObjectId(id)) {
-        conditions.unshift({ _id: id });
+      if (isValidObjectId(targetId)) {
+        conditions.unshift({ _id: targetId });
       }
 
       const company = await this.companyModel.findOne({ $or: conditions });
       if (!company) {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      // Check authorization (SuperAdmin, Admin, or CompanyAdmin of this company)
+      const userRoles = Array.isArray(user?.roles)
+        ? user.roles
+        : [user?.roles || user?.role];
+      const isGlobalAdmin =
+        userRoles.includes(UserRole.SUPERADMIN) ||
+        userRoles.includes(UserRole.ADMIN) ||
+        userRoles.includes('SUPERADMIN') ||
+        userRoles.includes('ADMIN');
+
+      if (!isGlobalAdmin) {
+        const userId = user?.id || user?._id || user?.userId;
+        let callerCompanyId = user?.companyId;
+        if (!callerCompanyId && userId && isValidObjectId(userId)) {
+          const compUser = await this.companyUserModel.findById(userId).lean();
+          if (compUser?.companyId) callerCompanyId = compUser.companyId;
+        }
+
+        const isAuthorized =
+          callerCompanyId &&
+          (callerCompanyId.toString() === company._id.toString() ||
+            callerCompanyId.toString() === company.companyId);
+
+        if (!isAuthorized) {
+          return new ApiResponse(403, {}, Msg.FORBIDDEN);
+        }
       }
 
       if (dto.companyCode && dto.companyCode !== company.companyCode) {
@@ -628,7 +710,7 @@ export class SuperAdminService implements OnModuleInit {
       if (dto.displayName) company.displayName = dto.displayName.trim();
       if (dto.registrationNumber !== undefined)
         company.registrationNumber = dto.registrationNumber;
-      if (dto.status) company.status = dto.status;
+      if (dto.status && isGlobalAdmin) company.status = dto.status;
       if (dto.address) company.address = { ...company.address, ...dto.address };
       if (dto.primaryContact)
         company.primaryContact = {

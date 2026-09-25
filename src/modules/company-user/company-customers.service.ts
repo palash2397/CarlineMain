@@ -39,6 +39,30 @@ export class CompanyCustomersService {
     private readonly customerModel: Model<CustomerDocument>,
   ) {}
 
+  private formatDisplayDate(dateInput: any): string {
+    if (!dateInput) return '-';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '-';
+    const day = d.getDate();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    return `${day} ${month} ${year}`;
+  }
+
   // ==========================================
   // Helper: Resolve Company Context for User
   // ==========================================
@@ -293,7 +317,11 @@ export class CompanyCustomersService {
       let combinedCustomers = customerAggregations.map((agg) => {
         const uId = agg._id?.toString();
         const userDoc = userMap.get(uId);
-        const legacyDoc = legacyCustomerMap.get(uId) || (userDoc?.phoneNumber ? legacyCustomerMap.get(userDoc.phoneNumber) : null);
+        const legacyDoc =
+          legacyCustomerMap.get(uId) ||
+          (userDoc?.phoneNumber
+            ? legacyCustomerMap.get(userDoc.phoneNumber)
+            : null);
 
         const fullName =
           userDoc?.firstName || userDoc?.lastName
@@ -303,25 +331,37 @@ export class CompanyCustomersService {
         const phone = userDoc?.phoneNumber || legacyDoc?.mobileNumber || '-';
         const email = userDoc?.email || legacyDoc?.email || '-';
         const avatar = userDoc?.avatar || null;
-        const isActive = userDoc ? userDoc.isActive !== false : true;
+        const isActive = userDoc
+          ? userDoc.isActive !== false && !(userDoc as any).isBlocked
+          : true;
 
         const latestRide = agg.latestRideId
           ? latestRideMap.get(agg.latestRideId.toString())
           : null;
 
+        const lastTripDate = latestRide?.createdAt || agg.lastTripAt;
+        const formattedLastTrip = this.formatDisplayDate(lastTripDate);
+
+        const statusLabel = isActive ? 'Active' : 'Restricted';
+
         return {
+          _id: uId,
           customerId: uId,
+          customer: fullName,
           name: fullName,
+          phone: phone,
           phoneNumber: phone,
           email: email,
           avatar: avatar,
-          status: isActive ? 'Active' : 'Inactive',
+          trips: agg.totalTrips || 0,
           totalTrips: agg.totalTrips || 0,
           completedTrips: agg.completedTrips || 0,
           cancelledTrips: agg.cancelledTrips || 0,
           totalSpent: Number((agg.totalSpent || 0).toFixed(2)),
           currency: '₹',
-          lastTrip: latestRide
+          lastTrip: formattedLastTrip,
+          lastTripDate: lastTripDate || null,
+          lastTripDetails: latestRide
             ? {
                 rideId: latestRide._id,
                 date: latestRide.createdAt,
@@ -331,6 +371,13 @@ export class CompanyCustomersService {
                 fare: latestRide.payableFare || latestRide.totalFare || 0,
               }
             : null,
+          status: statusLabel,
+          statusBadge: {
+            label: statusLabel,
+            color: isActive ? 'green' : 'red',
+            icon: isActive ? 'check-circle' : 'x-circle',
+          },
+          action: 'View More',
           joinedAt: userDoc?.createdAt || legacyDoc?.createdAt || agg.lastTripAt,
         };
       });
@@ -340,7 +387,7 @@ export class CompanyCustomersService {
         const term = query.search.toLowerCase().trim();
         combinedCustomers = combinedCustomers.filter(
           (c) =>
-            c.name.toLowerCase().includes(term) ||
+            c.customer.toLowerCase().includes(term) ||
             c.phoneNumber.toLowerCase().includes(term) ||
             c.email.toLowerCase().includes(term),
         );
@@ -353,21 +400,27 @@ export class CompanyCustomersService {
       ) {
         const filterStatus = String(query.status).toLowerCase();
         combinedCustomers = combinedCustomers.filter(
-          (c) => c.status.toLowerCase() === filterStatus,
+          (c) =>
+            c.status.toLowerCase() === filterStatus ||
+            (filterStatus === 'inactive' && c.status === 'Restricted'),
         );
       }
 
       // 8. Sort by Most Recent Trip Date
       combinedCustomers.sort((a, b) => {
-        const timeA = a.lastTrip?.date ? new Date(a.lastTrip.date).getTime() : 0;
-        const timeB = b.lastTrip?.date ? new Date(b.lastTrip.date).getTime() : 0;
+        const timeA = a.lastTripDate ? new Date(a.lastTripDate).getTime() : 0;
+        const timeB = b.lastTripDate ? new Date(b.lastTripDate).getTime() : 0;
         return timeB - timeA;
       });
 
       // 9. Status Counts for UI Tabs
       const allCount = combinedCustomers.length;
-      const activeCount = combinedCustomers.filter((c) => c.status === 'Active').length;
-      const inactiveCount = combinedCustomers.filter((c) => c.status === 'Inactive').length;
+      const activeCount = combinedCustomers.filter(
+        (c) => c.status === 'Active',
+      ).length;
+      const restrictedCount = combinedCustomers.filter(
+        (c) => c.status === 'Restricted',
+      ).length;
 
       // 10. Paginate
       const total = combinedCustomers.length;
@@ -394,7 +447,8 @@ export class CompanyCustomersService {
           counts: {
             all: allCount,
             active: activeCount,
-            inactive: inactiveCount,
+            restricted: restrictedCount,
+            inactive: restrictedCount,
           },
         },
         'Company customers fetched successfully',

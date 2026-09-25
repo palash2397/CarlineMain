@@ -4,6 +4,7 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 export enum CompanyCustomerStatusFilter {
   ALL = 'All',
   ACTIVE = 'Active',
+  RESTRICTED = 'Restricted',
   INACTIVE = 'Inactive',
 }
 
