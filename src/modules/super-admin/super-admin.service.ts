@@ -550,21 +550,25 @@ export class SuperAdminService implements OnModuleInit {
 
   async getCompanyById(id: string) {
     try {
-      let company: any = null;
-
-      if (!company) {
-        company = await this.companyModel
-          .findOne({
-            $or: [{ companyId: id }, { companyCode: id.toUpperCase() }],
-          })
-          .lean();
+      const conditions: any[] = [
+        { companyId: id },
+        { companyCode: id.toUpperCase() },
+      ];
+      if (isValidObjectId(id)) {
+        conditions.unshift({ _id: id });
       }
+
+      const company: any = await this.companyModel
+        .findOne({ $or: conditions })
+        .select('-password -isPasswordReset')
+        .lean();
+
+      console.log('Company:', company);
 
       if (!company) {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
       }
 
-      // Fetch primary admin user details
       let adminUser: any = null;
       if (company.adminUserId && isValidObjectId(company.adminUserId)) {
         adminUser = await this.companyUserModel
@@ -596,7 +600,15 @@ export class SuperAdminService implements OnModuleInit {
   async updateCompany(id: string, body: any, files?: any) {
     try {
       const dto = this.parseCompanyFormData(body, files);
-      const company = await this.companyModel.findById(id);
+      const conditions: any[] = [
+        { companyId: id },
+        { companyCode: id.toUpperCase() },
+      ];
+      if (isValidObjectId(id)) {
+        conditions.unshift({ _id: id });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
       if (!company) {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
       }
@@ -648,7 +660,15 @@ export class SuperAdminService implements OnModuleInit {
 
   async updateCompanyStatus(dto: UpdateCompanyStatusDto) {
     try {
-      const company = await this.companyModel.findById(dto.id);
+      const conditions: any[] = [
+        { companyId: dto.id },
+        { companyCode: dto.id.toUpperCase() },
+      ];
+      if (isValidObjectId(dto.id)) {
+        conditions.unshift({ _id: dto.id });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
       if (!company) {
         return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
       }
