@@ -71,8 +71,14 @@ async function bootstrap() {
       },
       'access-token',
     )
-    .addTag('User Booking (by Prakash)', 'User side ride booking APIs - owned by Prakash Mishra')
-    .addTag('Driver Booking (by Prakash)', 'Driver side ride booking APIs - owned by Prakash Mishra')
+    .addTag(
+      'User Booking (by Prakash)',
+      'User side ride booking APIs - owned by Prakash Mishra',
+    )
+    .addTag(
+      'Driver Booking (by Prakash)',
+      'Driver side ride booking APIs - owned by Prakash Mishra',
+    )
     .addTag(
       'User Address (by Prakash)',
       'User saved places APIs - owned by Prakash Mishra',
@@ -81,9 +87,6 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
 
-  // The ride controller serves both /ride/* and /driver-ride/*, so Swagger's
-  // automatic controller-name tag ("Ride") is dropped - every route keeps only
-  // its own section tag (User Booking / Driver Booking).
   Object.values(document.paths).forEach((pathItem) => {
     Object.values(pathItem).forEach((operation: any) => {
       if (Array.isArray(operation.tags) && operation.tags.length > 1) {
