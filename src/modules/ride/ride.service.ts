@@ -44,7 +44,6 @@ import {
   DRIVER_SEARCH_RADIUS_KM,
   KM_PER_MILE,
   RIDE_EVENTS,
-  ROAD_DISTANCE_FACTOR,
   driverRoomFor,
 } from 'src/constants';
 
@@ -167,7 +166,11 @@ export class RideService {
       const route = await this.resolveDistance(dto.pickup, dto.dropoff);
 
       if (route.distanceKm === null) {
-        return new ApiResponse(400, {}, Msg.ROUTE_NOT_FOUND);
+        return new ApiResponse(
+          400,
+          {},
+          route.routeError || Msg.ROUTE_NOT_FOUND,
+        );
       }
 
       const pricing = await this.pricingModel.findOne({}).lean();
@@ -270,7 +273,11 @@ export class RideService {
       const route = await this.resolveDistance(dto.pickup, dto.dropoff);
 
       if (route.distanceKm === null) {
-        return new ApiResponse(400, {}, Msg.ROUTE_NOT_FOUND);
+        return new ApiResponse(
+          400,
+          {},
+          route.routeError || Msg.ROUTE_NOT_FOUND,
+        );
       }
 
       const promoCheck = await this.resolvePromo(dto.promoCode);
@@ -673,13 +680,11 @@ export class RideService {
     return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  private async googleDistance(pickup: any, dropoff: any) {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-
-    if (!apiKey || !pickup || !dropoff) {
-      return null;
-    }
-
+  private async googleMatrixDistance(
+    apiKey: string,
+    pickup: any,
+    dropoff: any,
+  ) {
     try {
       const { data } = await axios.get(
         'https://maps.googleapis.com/maps/api/distancematrix/json',
@@ -709,6 +714,78 @@ export class RideService {
     }
   }
 
+  // Google has replaced the legacy Distance Matrix API with the Routes API, so
+  // keys that only have the newer API enabled are resolved from here.
+  private async googleRoutesDistance(
+    apiKey: string,
+    pickup: any,
+    dropoff: any,
+  ) {
+    try {
+      const { data } = await axios.post(
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+        {
+          origin: {
+            location: {
+              latLng: {
+                latitude: Number(pickup.latitude),
+                longitude: Number(pickup.longitude),
+              },
+            },
+          },
+          destination: {
+            location: {
+              latLng: {
+                latitude: Number(dropoff.latitude),
+                longitude: Number(dropoff.longitude),
+              },
+            },
+          },
+          travelMode: 'DRIVE',
+        },
+        {
+          headers: {
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
+          },
+          timeout: 8000,
+        },
+      );
+
+      const route = data?.routes?.[0];
+
+      if (!route || route.distanceMeters === undefined || !route.duration) {
+        return null;
+      }
+
+      return {
+        distanceKm: route.distanceMeters / 1000,
+        durationMinutes: Number(String(route.duration).replace('s', '')) / 60,
+      };
+    } catch (error) {
+      console.error('Error while fetching route from Google Routes:', error);
+      return null;
+    }
+  }
+
+  // A key can have either the legacy Distance Matrix API or the newer Routes
+  // API enabled, so both are tried before the local estimate is used.
+  private async googleDistance(pickup: any, dropoff: any) {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey || !pickup || !dropoff) {
+      return null;
+    }
+
+    const matrix = await this.googleMatrixDistance(apiKey, pickup, dropoff);
+
+    if (matrix) {
+      return matrix;
+    }
+
+    return this.googleRoutesDistance(apiKey, pickup, dropoff);
+  }
+
   // The app only sends the pickup and dropoff coordinates. The distance, the
   // duration and the source of the route are always resolved here.
   private async resolveDistance(pickup: any, dropoff: any) {
@@ -727,23 +804,30 @@ export class RideService {
         distanceKm: null as number | null,
         durationMinutes: null as number | null,
         routeSource: null as string | null,
+        routeError: Msg.ROUTE_COORDINATES_MISSING as string | null,
       };
     }
 
-    const matrix = await this.googleDistance(pickup, dropoff);
+    // The distance, the duration and the fare always come from Google. A local
+    // estimate is never charged, so a failed lookup is reported to the app.
+    const route = await this.googleDistance(pickup, dropoff);
 
-    const distanceKm = matrix
-      ? Number(matrix.distanceKm.toFixed(2))
-      : Number((this.haversineKm(pickup, dropoff) * ROAD_DISTANCE_FACTOR).toFixed(2));
+    if (!route) {
+      console.error('Google distance lookup failed for this trip');
 
-    const durationMinutes = matrix
-      ? Number(matrix.durationMinutes.toFixed(2))
-      : Number(((distanceKm / AVERAGE_SPEED_KMH) * 60).toFixed(2));
+      return {
+        distanceKm: null as number | null,
+        durationMinutes: null as number | null,
+        routeSource: null as string | null,
+        routeError: Msg.ROUTE_DISTANCE_UNAVAILABLE as string | null,
+      };
+    }
 
     return {
-      distanceKm,
-      durationMinutes,
-      routeSource: matrix ? 'GOOGLE_MAPS' : 'BACKEND_ESTIMATE',
+      distanceKm: Number(route.distanceKm.toFixed(2)),
+      durationMinutes: Number(route.durationMinutes.toFixed(2)),
+      routeSource: 'GOOGLE_MAPS',
+      routeError: null as string | null,
     };
   }
 
