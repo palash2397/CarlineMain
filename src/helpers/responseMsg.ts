@@ -137,6 +137,10 @@ export const Msg = {
 
   // Route
   ROUTE_NOT_FOUND: 'Route not found',
+  ROUTE_COORDINATES_MISSING:
+    'Pickup and dropoff coordinates are required to calculate the fare',
+  ROUTE_DISTANCE_UNAVAILABLE:
+    'Unable to calculate the trip distance right now. Please try again',
   ROUTE_CREATED: 'Route created successfully',
   ROUTE_UPDATED: 'Route updated successfully',
   ROUTE_DELETED: 'Route deleted successfully',
