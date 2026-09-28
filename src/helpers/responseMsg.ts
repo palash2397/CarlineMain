@@ -95,6 +95,13 @@ export const Msg = {
   ADDRESS_NOT_FOUND: 'Address not found',
   ADDRESS_ALREADY_EXISTS: 'You already have a saved address with this label',
 
+  // Legal pages (privacy policy, terms and conditions)
+  LEGAL_PAGE_CREATED: 'Legal page created successfully',
+  LEGAL_PAGE_UPDATED: 'Legal page updated successfully',
+  LEGAL_PAGE_FETCHED: 'Legal page fetched successfully',
+  LEGAL_PAGE_NOT_CONFIGURED: 'Legal page is not configured yet',
+  LEGAL_PAGE_NOT_FOUND: 'Legal page not found',
+
   // Faq
   FAQ_CREATED: 'FAQ created successfully',
   FAQ_FETCHED: 'FAQs fetched successfully',
