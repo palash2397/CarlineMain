@@ -102,6 +102,12 @@ export const Msg = {
   FAQ_DELETED: 'FAQ deleted successfully',
   FAQ_NOT_FOUND: 'FAQ not found',
 
+  // Legal pages (privacy policy, terms and conditions)
+  LEGAL_PAGE_CREATED: 'Legal page created successfully',
+  LEGAL_PAGE_UPDATED: 'Legal page updated successfully',
+  LEGAL_PAGE_FETCHED: 'Legal page fetched successfully',
+  LEGAL_PAGE_NOT_CONFIGURED: 'Legal page is not configured yet',
+
   // Support
   SUPPORT_CREATED: 'Support request submitted successfully',
   SUPPORT_FETCHED: 'Support requests fetched successfully',
