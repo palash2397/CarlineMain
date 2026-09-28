@@ -38,7 +38,6 @@ export class UserService {
     private readonly companyModel: Model<CompanyDocument>,
     @InjectModel(Driver.name)
     private readonly driverModel: Model<DriverDocument>,
-
     private readonly mailService: MailService,
   ) {}
 
