@@ -21,9 +21,10 @@ export class UpdateLegalPageDto {
   content: string;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/privacy-policy.png',
+    type: 'string',
+    format: 'binary',
     description:
-      'Banner image of the page. The current image is kept when it is left out.',
+      'Banner image of the page. Send the file as form-data in the image field, or a URL here on a JSON request. The current image is kept when both are left out.',
   })
   @IsOptional()
   @IsString()

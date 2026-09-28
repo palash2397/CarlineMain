@@ -42,6 +42,21 @@ export class LegalService {
     return user?.id ? String(user.id) : null;
   }
 
+  // The superadmin panel sends the banner as form-data, so an uploaded file
+  // wins over a URL that the body may carry. A page keeps its current image
+  // when neither of the two is sent.
+  private imageField(
+    dto: { image?: string },
+    file?: Express.Multer.File,
+  ): string | null | undefined {
+    if (file) {
+      const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
+      return `${baseUrl}/api/v1/uploads/legal/${file.filename}`;
+    }
+
+    return dto.image !== undefined ? dto.image.trim() || null : undefined;
+  }
+
   async getPage(type: LegalPageType) {
     try {
       const page = await this.legalModel.findOne({ type });
@@ -59,7 +74,12 @@ export class LegalService {
 
   // Creates the page the first time and replaces its fields on every later
   // call. The image of the page is kept when the body does not carry one.
-  async savePage(user: any, type: LegalPageType, dto: UpdateLegalPageDto) {
+  async savePage(
+    user: any,
+    type: LegalPageType,
+    dto: UpdateLegalPageDto,
+    file?: Express.Multer.File,
+  ) {
     try {
       const existing = await this.legalModel.findOne({ type });
 
@@ -69,8 +89,9 @@ export class LegalService {
         updatedBy: this.editorId(user),
       };
 
-      if (dto.image !== undefined) {
-        fields.image = dto.image.trim() || null;
+      const image = this.imageField(dto, file);
+      if (image !== undefined) {
+        fields.image = image;
       }
 
       const page = await this.legalModel.findOneAndUpdate(
@@ -92,7 +113,12 @@ export class LegalService {
 
   // A partial edit of a page that already exists, so the app can change one
   // field, for example only the image.
-  async editPage(user: any, type: LegalPageType, dto: EditLegalPageDto) {
+  async editPage(
+    user: any,
+    type: LegalPageType,
+    dto: EditLegalPageDto,
+    file?: Express.Multer.File,
+  ) {
     try {
       const existing = await this.legalModel.findOne({ type });
 
@@ -110,8 +136,10 @@ export class LegalService {
       if (dto.content !== undefined) {
         fields.content = dto.content;
       }
-      if (dto.image !== undefined) {
-        fields.image = dto.image.trim() || null;
+
+      const image = this.imageField(dto, file);
+      if (image !== undefined) {
+        fields.image = image;
       }
 
       if (Object.keys(fields).length === 1) {
