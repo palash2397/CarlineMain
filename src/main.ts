@@ -83,6 +83,10 @@ async function bootstrap() {
       'User Address (by Prakash)',
       'User saved places APIs - owned by Prakash Mishra',
     )
+    .addTag(
+      'Legal Pages',
+      'Privacy policy and terms and conditions - created by the company admin, editable by the superadmin',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
