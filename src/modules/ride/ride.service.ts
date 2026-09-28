@@ -44,6 +44,8 @@ import {
   DRIVER_SEARCH_RADIUS_KM,
   KM_PER_MILE,
   RIDE_EVENTS,
+  SCHEDULED_DISPATCH_BATCH_SIZE,
+  SCHEDULED_DISPATCH_LEAD_MINUTES,
   driverRoomFor,
 } from 'src/constants';
 
@@ -65,6 +67,7 @@ import { MyRidesQueryDto } from './dto/my-rides-query.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
 
 const CANCELLABLE_STATUSES = [
+  RideStatus.SCHEDULED,
   RideStatus.SEARCHING_DRIVER,
   RideStatus.DRIVER_ASSIGNED,
   RideStatus.DRIVER_ARRIVED,
@@ -301,7 +304,12 @@ export class RideService {
         companyId: user.companyId || null,
         vehicleTypeId: String((vehicleType as any)._id),
         vehicleTypeName: vehicleType.name,
-        status: RideStatus.SEARCHING_DRIVER,
+        // A scheduled ride waits for its pickup time, so the drivers are only
+        // notified by the scheduler and not at booking time.
+        status:
+          rideType === RideType.SCHEDULED
+            ? RideStatus.SCHEDULED
+            : RideStatus.SEARCHING_DRIVER,
         pickup: this.locationPayload(dto.pickup),
         dropoff: this.locationPayload(dto.dropoff),
         distanceKm: Number(distanceKm.toFixed(2)),
@@ -341,7 +349,9 @@ export class RideService {
         RIDE_EVENTS.CREATED,
         summary,
       );
-      this.notifyDrivers(summary);
+      if (rideType !== RideType.SCHEDULED) {
+        this.notifyDrivers(summary);
+      }
 
       return new ApiResponse(200, summary, Msg.RIDE_BOOKED);
     } catch (error) {
@@ -499,6 +509,62 @@ export class RideService {
       console.error('Error while cancelling ride:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
+  }
+
+  // ==========================================================
+  // Scheduled rides that are due move to the driver search
+  // ==========================================================
+  // The passenger app cannot be trusted to wake up at the pickup time, so the
+  // due rides are read from the database on every scheduler run. A pm2 reload
+  // therefore never drops a scheduled ride.
+  async promoteDueScheduledRides() {
+    const dueBefore = new Date(
+      Date.now() + SCHEDULED_DISPATCH_LEAD_MINUTES * 60 * 1000,
+    );
+
+    const due = await this.rideModel
+      .find({
+        rideType: RideType.SCHEDULED,
+        status: RideStatus.SCHEDULED,
+        scheduledAt: { $ne: null, $lte: dueBefore },
+      })
+      .sort({ scheduledAt: 1 })
+      .limit(SCHEDULED_DISPATCH_BATCH_SIZE);
+
+    let promoted = 0;
+
+    for (const ride of due) {
+      // The passenger is already inside a live ride, so this scheduled ride
+      // waits for the next run instead of pushing the app into two rides.
+      if (await this.findActiveRide(ride.user)) {
+        continue;
+      }
+
+      const claimed = await this.rideModel.findOneAndUpdate(
+        { _id: ride._id, status: RideStatus.SCHEDULED },
+        { $set: { status: RideStatus.SEARCHING_DRIVER } },
+        { new: true },
+      );
+
+      if (!claimed) {
+        continue;
+      }
+
+      const vehicleType = await this.vehicleTypeModel.findById(
+        claimed.vehicleTypeId,
+      );
+
+      this.notifyDrivers(this.rideSummary(claimed, vehicleType));
+      this.emitRideEvent(
+        claimed,
+        RIDE_EVENTS.STATUS,
+        this.statusPayload(claimed),
+      );
+
+      promoted += 1;
+    }
+
+    return promoted;
   }
 
   // ==========================================================

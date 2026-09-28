@@ -13,6 +13,7 @@ import { User, UserSchema } from '../user/schema/user.schema';
 import { Promo, PromoSchema } from './schema/promo.schema';
 import { Ride, RideSchema } from './schema/ride.schema';
 import { RideController } from './ride.controller';
+import { RideSchedulerService } from './ride-scheduler.service';
 import { RideService } from './ride.service';
 
 @Module({
@@ -27,7 +28,7 @@ import { RideService } from './ride.service';
     ]),
   ],
   controllers: [RideController],
-  providers: [RideService],
+  providers: [RideService, RideSchedulerService],
   exports: [RideService],
 })
 export class RideModule {}

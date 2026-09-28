@@ -24,6 +24,13 @@ export const DEFAULT_CURRENCY = 'USD';
 export const MAX_PASSENGERS = 8;
 export const DRIVER_REQUEST_LIMIT = 20;
 
+// A scheduled ride moves to driver search this many minutes before its pickup
+// time, so the driver reaches the pickup point on time.
+export const SCHEDULED_DISPATCH_LEAD_MINUTES = 15;
+
+// How many due scheduled rides one scheduler run promotes.
+export const SCHEDULED_DISPATCH_BATCH_SIZE = 50;
+
 // Socket events shared by the passenger app and the driver app.
 export const RIDE_EVENTS = {
   CREATED: 'ride:created',
