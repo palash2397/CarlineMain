@@ -50,6 +50,30 @@ export class SocketService {
     this.server.to(room).emit(event, data);
   }
 
+  driverPoolRooms(vehicleTypeId?: any) {
+    return vehicleTypeId
+      ? [DRIVER_ROOM, driverRoomFor(String(vehicleTypeId))]
+      : [DRIVER_ROOM];
+  }
+
+  // A driver counts as a receiver only while his duty switch is on, so the pool
+  // rooms follow the duty state instead of the socket lifetime. Going offline
+  // therefore stops the ride requests even with the app still open, and going
+  // online puts the open sockets back into the pool.
+  syncDriverPoolRooms(driverId: any, isOnline: boolean, vehicleTypeId?: any) {
+    if (!this.server || !driverId) return;
+
+    const rooms = this.driverPoolRooms(vehicleTypeId);
+    const driverSockets = this.server.in(`user:${driverId}`);
+
+    if (isOnline) {
+      driverSockets.socketsJoin(rooms);
+      return;
+    }
+
+    driverSockets.socketsLeave(rooms);
+  }
+
   // Ride room + personal room of one actor in a single emit. Socket.IO unions
   // the rooms, so a socket sitting in both rooms still gets the event once.
   emitToRideAndActor(actorId: any, rideId: string, event: string, data: any) {

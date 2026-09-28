@@ -39,14 +39,12 @@ import {
   AVERAGE_SPEED_KMH,
   DEFAULT_CURRENCY,
   DRIVER_REQUEST_LIMIT,
-  DRIVER_ROOM,
   DRIVER_RUNNING_STATUSES,
   DRIVER_SEARCH_RADIUS_KM,
   KM_PER_MILE,
   RIDE_EVENTS,
   SCHEDULED_DISPATCH_BATCH_SIZE,
   SCHEDULED_DISPATCH_LEAD_MINUTES,
-  driverRoomFor,
 } from 'src/constants';
 
 import { BookRideDto } from './dto/book-ride.dto';
@@ -1151,18 +1149,26 @@ export class RideService {
         return new ApiResponse(403, {}, Msg.DRIVER_NOT_AVAILABLE);
       }
 
-      if (dto.isOnline) {
-        const vehicleType = await this.vehicleTypeForDriver(driver);
+      const vehicleType = await this.vehicleTypeForDriver(driver);
 
-        if (!vehicleType) {
-          return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_NOT_SET);
-        }
-      } else if (await this.findRunningRide(driverId)) {
+      if (dto.isOnline && !vehicleType) {
+        return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_NOT_SET);
+      }
+
+      if (!dto.isOnline && (await this.findRunningRide(driverId))) {
         return new ApiResponse(400, {}, Msg.DRIVER_GO_OFFLINE_BLOCKED);
       }
 
       driver.isOnline = dto.isOnline;
       await driver.save();
+
+      // The request pool follows the duty switch, so the driver stops getting
+      // ride requests the moment he goes offline and starts again on online.
+      this.socketService.syncDriverPoolRooms(
+        driverId,
+        dto.isOnline,
+        vehicleType?._id,
+      );
 
       return new ApiResponse(
         200,
@@ -1696,15 +1702,15 @@ export class RideService {
   async socketRoomsForDriver(driverId: string) {
     const driver = await this.driverModel.findById(driverId);
 
-    if (!driver) {
-      return [DRIVER_ROOM];
+    // The duty switch decides who may receive a ride request, so an offline
+    // driver stays out of the pool rooms even when his socket is connected.
+    if (!driver || !driver.isOnline) {
+      return [];
     }
 
     const vehicleType = await this.vehicleTypeForDriver(driver);
 
-    return vehicleType
-      ? [DRIVER_ROOM, driverRoomFor(String(vehicleType._id))]
-      : [DRIVER_ROOM];
+    return this.socketService.driverPoolRooms(vehicleType?._id);
   }
   // ==========================================================
   // Trips tab
