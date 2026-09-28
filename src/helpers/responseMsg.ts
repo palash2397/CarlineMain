@@ -100,6 +100,7 @@ export const Msg = {
   LEGAL_PAGE_UPDATED: 'Legal page updated successfully',
   LEGAL_PAGE_FETCHED: 'Legal page fetched successfully',
   LEGAL_PAGE_NOT_CONFIGURED: 'Legal page is not configured yet',
+  LEGAL_PAGE_NOT_FOUND: 'Legal page not found',
 
   // Faq
   FAQ_CREATED: 'FAQ created successfully',

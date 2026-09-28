@@ -30,6 +30,14 @@ export class Legal {
   })
   content: string;
 
+  // Banner image of the page, for example on top of the screen of the app.
+  @Prop({
+    type: String,
+    default: null,
+    trim: true,
+  })
+  image?: string;
+
   @Prop({
     type: String,
     default: null,
