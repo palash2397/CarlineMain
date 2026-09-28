@@ -6,16 +6,19 @@ import { LegalPageType } from 'src/common/enums/legal/legal-page-type.enum';
 export type LegalDocument = HydratedDocument<Legal>;
 
 // One document per company and page type. A company admin creates his own
-// pages, a superadmin can later update the pages of any company.
+// pages, a superadmin can update the pages of any company.
+//
+// companyId null is the default page of the deployment. The superadmin creates
+// it, and it is the fallback for a user who does not belong to a company.
 @Schema({ timestamps: true })
 export class Legal {
   @Prop({
     type: String,
-    required: true,
+    default: null,
     trim: true,
     index: true,
   })
-  companyId: string;
+  companyId?: string | null;
 
   @Prop({
     type: String,

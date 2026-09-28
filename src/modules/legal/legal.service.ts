@@ -4,9 +4,11 @@ import { Model } from 'mongoose';
 
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
-import { LegalPageType } from 'src/common/enums/legal/legal-page-type.enum';
+import {
+  LegalPageScope,
+  LegalPageType,
+} from 'src/common/enums/legal/legal-page-type.enum';
 import { UserRole } from 'src/common/enums/user/role.enum';
-import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
 import { Legal, LegalDocument } from './schema/legal.schema';
 import { UpdateLegalPageDto } from './dto/update-legal-page.dto';
 
@@ -15,45 +17,33 @@ export class LegalService {
   constructor(
     @InjectModel(Legal.name)
     private readonly legalModel: Model<LegalDocument>,
-    @InjectModel(Company.name)
-    private readonly companyModel: Model<CompanyDocument>,
   ) {}
 
   // A company admin and his staff always work on the company of their own
-  // token. A superadmin may point to another company with companyId, and the
-  // app side falls back to the only company of this deployment.
-  private async resolveCompanyId(
+  // token. A superadmin may point to any company with companyId, and he writes
+  // the default page of the deployment when he does not name one.
+  private resolveCompanyScope(
     user: any,
     requestedCompanyId?: string,
-  ): Promise<string | null> {
+  ): { companyId: string | null; isSuperadmin: boolean } {
     const role = String(user?.roles || user?.role || '').toUpperCase();
-
-    if (
+    const isSuperadmin =
       role === UserRole.SUPERADMIN ||
       role === UserRole.ADMIN ||
-      role === 'SUPER_ADMIN'
-    ) {
-      if (requestedCompanyId) {
-        return requestedCompanyId;
-      }
+      role === 'SUPER_ADMIN';
 
-      if (user?.companyId) {
-        return user.companyId;
-      }
-
-      return this.firstCompanyId();
+    if (isSuperadmin) {
+      return {
+        companyId: requestedCompanyId || user?.companyId || null,
+        isSuperadmin,
+      };
     }
 
-    if (user?.companyId) {
-      return user.companyId;
-    }
-
-    return this.firstCompanyId();
+    return { companyId: user?.companyId || null, isSuperadmin };
   }
 
-  private async firstCompanyId(): Promise<string | null> {
-    const company = await this.companyModel.findOne();
-    return company ? company._id.toString() : null;
+  private findPage(companyId: string | null, type: LegalPageType) {
+    return this.legalModel.findOne({ companyId: companyId || null, type });
   }
 
   private defaultTitle(type: LegalPageType) {
@@ -64,10 +54,16 @@ export class LegalService {
 
   // An empty page is a valid state, because the company admin creates the
   // content later, so the app gets an empty body instead of an error.
-  private pagePayload(page: any, companyId: string, type: LegalPageType) {
+  private pagePayload(
+    page: any,
+    companyId: string | null,
+    type: LegalPageType,
+    scope: LegalPageScope,
+  ) {
     return {
       id: page ? String(page._id) : null,
       companyId,
+      scope,
       type,
       title: page?.title || this.defaultTitle(type),
       content: page?.content || '',
@@ -80,18 +76,37 @@ export class LegalService {
 
   async getPage(user: any, type: LegalPageType, companyIdQuery?: string) {
     try {
-      const companyId = await this.resolveCompanyId(user, companyIdQuery);
+      const { companyId } = this.resolveCompanyScope(user, companyIdQuery);
 
-      if (!companyId) {
-        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      // The company the caller belongs to answers first. A user without a
+      // company, or a company that did not create the page yet, gets the
+      // default page written by the superadmin.
+      const companyPage = companyId
+        ? await this.findPage(companyId, type)
+        : null;
+
+      if (companyPage?.content) {
+        return new ApiResponse(
+          200,
+          this.pagePayload(companyPage, companyId, type, 'COMPANY'),
+          Msg.LEGAL_PAGE_FETCHED,
+        );
       }
 
-      const page = await this.legalModel.findOne({ companyId, type });
+      const defaultPage = await this.findPage(null, type);
+
+      if (defaultPage?.content) {
+        return new ApiResponse(
+          200,
+          this.pagePayload(defaultPage, companyId, type, 'GLOBAL'),
+          Msg.LEGAL_PAGE_FETCHED,
+        );
+      }
 
       return new ApiResponse(
         200,
-        this.pagePayload(page, companyId, type),
-        page?.content ? Msg.LEGAL_PAGE_FETCHED : Msg.LEGAL_PAGE_NOT_CONFIGURED,
+        this.pagePayload(null, companyId, type, 'NONE'),
+        Msg.LEGAL_PAGE_NOT_CONFIGURED,
       );
     } catch (error) {
       console.error('Error while fetching legal page:', error);
@@ -101,16 +116,22 @@ export class LegalService {
 
   async savePage(user: any, type: LegalPageType, dto: UpdateLegalPageDto) {
     try {
-      const companyId = await this.resolveCompanyId(user, dto.companyId);
+      const { companyId, isSuperadmin } = this.resolveCompanyScope(
+        user,
+        dto.companyId,
+      );
 
-      if (!companyId) {
+      // A company admin without a company in his token has no page of his own,
+      // and he must not write the default page of the deployment either.
+      if (!companyId && !isSuperadmin) {
         return new ApiResponse(400, {}, Msg.COMPANY_CONTEXT_REQUIRED);
       }
 
-      const existing = await this.legalModel.findOne({ companyId, type });
+      const scope: LegalPageScope = companyId ? 'COMPANY' : 'GLOBAL';
+      const existing = await this.findPage(companyId, type);
 
       const page = await this.legalModel.findOneAndUpdate(
-        { companyId, type },
+        { companyId: companyId || null, type },
         {
           $set: {
             title: dto.title?.trim() || this.defaultTitle(type),
@@ -123,7 +144,7 @@ export class LegalService {
 
       return new ApiResponse(
         existing ? 200 : 201,
-        this.pagePayload(page, companyId, type),
+        this.pagePayload(page, companyId, type, scope),
         existing ? Msg.LEGAL_PAGE_UPDATED : Msg.LEGAL_PAGE_CREATED,
       );
     } catch (error) {

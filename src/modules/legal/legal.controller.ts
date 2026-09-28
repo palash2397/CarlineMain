@@ -51,8 +51,14 @@ export class LegalController {
   // ==========================================
   @Get('/privacy-policy')
   @Roles(...LEGAL_READER_ROLES)
-  @ApiQuery({ name: 'companyId', required: false })
-  @ApiOperation({ summary: 'Privacy policy of the company' })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Superadmin only, ignored for the other roles',
+  })
+  @ApiOperation({
+    summary: 'Privacy policy of the company, with the default page as fallback',
+  })
   getPrivacyPolicy(@Req() req: any, @Query('companyId') companyId?: string) {
     return this.legalService.getPage(
       req.user,
@@ -65,7 +71,7 @@ export class LegalController {
   @Roles(...LEGAL_EDITOR_ROLES)
   @ApiOperation({
     summary:
-      'Create or update the privacy policy (any company for a superadmin)',
+      'Create or update the privacy policy of a company or the default page',
   })
   savePrivacyPolicy(@Req() req: any, @Body() dto: UpdateLegalPageDto) {
     return this.legalService.savePage(
@@ -80,8 +86,15 @@ export class LegalController {
   // ==========================================
   @Get('/terms-and-conditions')
   @Roles(...LEGAL_READER_ROLES)
-  @ApiQuery({ name: 'companyId', required: false })
-  @ApiOperation({ summary: 'Terms and conditions of the company' })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description: 'Superadmin only, ignored for the other roles',
+  })
+  @ApiOperation({
+    summary:
+      'Terms and conditions of the company, with the default page as fallback',
+  })
   getTermsAndConditions(
     @Req() req: any,
     @Query('companyId') companyId?: string,
@@ -97,7 +110,7 @@ export class LegalController {
   @Roles(...LEGAL_EDITOR_ROLES)
   @ApiOperation({
     summary:
-      'Create or update the terms and conditions (any company for a superadmin)',
+      'Create or update the terms and conditions of a company or the default page',
   })
   saveTermsAndConditions(@Req() req: any, @Body() dto: UpdateLegalPageDto) {
     return this.legalService.savePage(

@@ -23,7 +23,7 @@ export class UpdateLegalPageDto {
   @ApiPropertyOptional({
     example: '68a7be6265952fbd505e90e6',
     description:
-      'Superadmin only. Company whose page has to be updated, ignored for a company admin.',
+      'Superadmin only. Company whose page has to be updated. Leave it out to update the default page of the deployment, which is shown to a user without a company.',
   })
   @IsOptional()
   @IsString()
