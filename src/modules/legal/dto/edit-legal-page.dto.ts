@@ -23,8 +23,10 @@ export class EditLegalPageDto {
   content?: string;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/privacy-policy.png',
-    description: 'Banner image of the page',
+    type: 'string',
+    format: 'binary',
+    description:
+      'Banner image of the page. Send the file as form-data in the image field, or a URL here on a JSON request.',
   })
   @IsOptional()
   @IsString()
