@@ -272,16 +272,31 @@ export class DriverService {
         }
       }
 
+      if (!company && driver.companyId) {
+        company = await this.companyModel.findOne({
+          $or: [
+            ...(isValidObjectId(driver.companyId)
+              ? [{ _id: driver.companyId }]
+              : []),
+            { companyId: driver.companyId },
+          ],
+        });
+      }
+
       const companyName =
         company?.displayName || company?.legalName || 'Carline';
 
       const targetStatus = dto.status;
+      const previousStatus = driver.status;
+      const isFirstTimeApproval =
+        (previousStatus === DriverStatus.PENDING_APPROVAL ||
+          !driver.isVerified ||
+          !driver.password) &&
+        (targetStatus === DriverStatus.ACTIVE ||
+          String(targetStatus).toUpperCase() === 'APPROVED');
 
-      if (
-        targetStatus === DriverStatus.ACTIVE ||
-        String(targetStatus).toUpperCase() === 'APPROVED'
-      ) {
-        // APPROVE DRIVER
+      if (isFirstTimeApproval) {
+        // INITIAL APPROVAL: Generate temporary password and send welcome email
         const tempPassword = generateRandomPassword(8);
 
         driver.status = DriverStatus.ACTIVE;
@@ -328,6 +343,29 @@ export class DriverService {
           Msg.DRIVER_APPROVED,
         );
       } else if (
+        targetStatus === DriverStatus.ACTIVE ||
+        String(targetStatus).toUpperCase() === 'APPROVED'
+      ) {
+        // RE-ACTIVATING AN ALREADY APPROVED DRIVER (Keep existing password & do not resend welcome email)
+        driver.status = DriverStatus.ACTIVE;
+        driver.isActive = true;
+        driver.rejectionReason = null;
+
+        await driver.save();
+
+        return new ApiResponse(
+          200,
+          {
+            _id: driver._id,
+            fullName: driver.fullName,
+            email: driver.email,
+            status: driver.status,
+            isActive: driver.isActive,
+            isVerified: driver.isVerified,
+          },
+          Msg.DRIVER_STATUS_UPDATED,
+        );
+      } else if (
         targetStatus === DriverStatus.REJECTED ||
         String(targetStatus).toUpperCase() === 'REJECTED'
       ) {
@@ -368,6 +406,7 @@ export class DriverService {
           Msg.DRIVER_STATUS_UPDATED,
         );
       } else {
+        // TOGGLE TO INACTIVE OR OTHER STATUS
         driver.status = targetStatus;
         if (targetStatus === DriverStatus.INACTIVE) {
           driver.isActive = false;
