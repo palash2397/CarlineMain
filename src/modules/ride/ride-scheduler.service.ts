@@ -26,4 +26,22 @@ export class RideSchedulerService {
       );
     }
   }
+
+  // A recurring booking is only a template, so its next ride is created here.
+  // From that point the ride is a normal scheduled ride and the job above hands
+  // it to the drivers.
+  @Cron(CronExpression.EVERY_MINUTE)
+  async createRecurringRides() {
+    try {
+      const created = await this.rideService.promoteDueRecurringRides();
+
+      if (created) {
+        this.logger.log(`Recurring rides created: ${created}`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error while creating recurring rides: ${String(error)}`,
+      );
+    }
+  }
 }

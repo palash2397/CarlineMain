@@ -284,6 +284,26 @@ export const Msg = {
   PROMO_USAGE_LIMIT: 'Promo code usage limit is over',
   PROMO_CODES_FETCHED: 'Promo codes fetched successfully',
 
+  // Recurring Booking
+  RECURRING_RIDE_CREATED: 'Recurring booking created successfully',
+  RECURRING_RIDE_FETCHED: 'Recurring booking fetched successfully',
+  RECURRING_RIDES_FETCHED: 'Recurring bookings fetched successfully',
+  RECURRING_RIDE_UPDATED: 'Recurring booking updated successfully',
+  RECURRING_RIDE_STATUS_UPDATED:
+    'Recurring booking status updated successfully',
+  RECURRING_RIDE_NOT_FOUND: 'Recurring booking not found',
+  RECURRING_DAYS_REQUIRED: 'Select at least one day for the recurring booking',
+  RECURRING_DAYS_INVALID:
+    'Day of week must be between 0 (Sunday) and 6 (Saturday)',
+  RECURRING_TIME_INVALID: 'Pickup time must be in 24 hour HH:mm format',
+  RECURRING_DATE_INVALID: 'Start date must be a valid date',
+  RECURRING_DATE_RANGE_INVALID: 'End date must be on or after the start date',
+  RECURRING_NO_OCCURRENCE:
+    'No upcoming pickup found for the selected days and time',
+  RECURRING_ALREADY_CANCELLED: 'This recurring booking is already cancelled',
+  RECURRING_USE_SERIES:
+    'Use the recurring booking API to book a repeating ride',
+
   // Driver Booking
   DRIVER_HOME_FETCHED: 'Driver home fetched successfully',
   DRIVER_DUTY_UPDATED: 'Duty status updated successfully',

@@ -18,9 +18,13 @@ import { Roles } from '../auth/roles/roles.decorator';
 
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';
+import { CreateRecurringRideDto } from './dto/create-recurring-ride.dto';
 import { EstimateFareDto } from './dto/estimate-fare.dto';
+import { MyRecurringRidesQueryDto } from './dto/my-recurring-rides-query.dto';
 import { MyRidesQueryDto } from './dto/my-rides-query.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
+import { UpdateRecurringRideStatusDto } from './dto/update-recurring-ride-status.dto';
+import { UpdateRecurringRideDto } from './dto/update-recurring-ride.dto';
 
 import { DriverCancelRideDto } from './dto/driver-cancel-ride.dto';
 import { DriverCollectPaymentDto } from './dto/driver-collect-payment.dto';
@@ -115,6 +119,80 @@ export class RideController {
   @ApiOperation({ summary: 'Cancel a booked ride' })
   async cancelRide(@Req() req: any, @Body() dto: CancelRideDto) {
     return this.rideService.cancelRide(req.user, dto);
+  }
+
+  // ==========================================================
+  // Recurring bookings - /ride/recurring/*
+  // ==========================================================
+  @Post('ride/recurring')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary:
+      'Create a recurring booking - the same ride repeats on the selected days and pickup time',
+  })
+  async createRecurringRide(
+    @Req() req: any,
+    @Body() dto: CreateRecurringRideDto,
+  ) {
+    return this.rideService.createRecurringRide(req.user, dto);
+  }
+
+  @Get('ride/recurring')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({ summary: 'Recurring bookings of the passenger' })
+  async myRecurringRides(
+    @Req() req: any,
+    @Query() query: MyRecurringRidesQueryDto,
+  ) {
+    return this.rideService.myRecurringRides(req.user, query);
+  }
+
+  @Get('ride/recurring/:id')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary: 'One recurring booking with its upcoming rides',
+  })
+  @ApiParam({ name: 'id', description: 'Recurring booking id' })
+  async recurringRideDetails(
+    @Req() req: any,
+    @Param('id') recurringId: string,
+  ) {
+    return this.rideService.recurringRideDetails(req.user, recurringId);
+  }
+
+  @Patch('ride/recurring/:id')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary: 'Edit a recurring booking - days, time, route or vehicle',
+  })
+  @ApiParam({ name: 'id', description: 'Recurring booking id' })
+  async updateRecurringRide(
+    @Req() req: any,
+    @Param('id') recurringId: string,
+    @Body() dto: UpdateRecurringRideDto,
+  ) {
+    return this.rideService.updateRecurringRide(req.user, recurringId, dto);
+  }
+
+  @Patch('ride/recurring/:id/status')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({ summary: 'Pause, resume or cancel a recurring booking' })
+  @ApiParam({ name: 'id', description: 'Recurring booking id' })
+  async updateRecurringRideStatus(
+    @Req() req: any,
+    @Param('id') recurringId: string,
+    @Body() dto: UpdateRecurringRideStatusDto,
+  ) {
+    return this.rideService.updateRecurringRideStatus(
+      req.user,
+      recurringId,
+      dto,
+    );
   }
 
   @Get('ride/:id')

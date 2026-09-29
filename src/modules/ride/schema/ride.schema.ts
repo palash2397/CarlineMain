@@ -96,6 +96,10 @@ export class Ride {
   @Prop({ type: Date, default: null })
   scheduledAt?: Date | null;
 
+  // Set when this ride came out of a recurring booking series.
+  @Prop({ type: String, default: null, index: true })
+  recurringId?: string | null;
+
   @Prop({ type: Number, default: 1 })
   passengerCount: number;
 
