@@ -286,6 +286,7 @@ export const Msg = {
 
   // Driver Booking
   DRIVER_HOME_FETCHED: 'Driver home fetched successfully',
+  DRIVER_DASHBOARD_FETCHED: 'Driver dashboard fetched successfully',
   DRIVER_DUTY_UPDATED: 'Duty status updated successfully',
   DRIVER_VEHICLE_NOT_SET:
     'Set your vehicle type before going online to receive rides',

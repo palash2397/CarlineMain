@@ -275,6 +275,17 @@ export class Driver {
   @Prop({ type: Date, default: null })
   lastLocationAt?: Date | null;
 
+  // Duty time of the running day is banked here, so the driver dashboard can
+  // show the online hours of today without a separate duty log collection.
+  @Prop({ type: Date, default: null })
+  onlineSince?: Date | null;
+
+  @Prop({ type: String, default: null })
+  onlineStatsDate?: string | null;
+
+  @Prop({ type: Number, default: 0 })
+  onlineStatsSeconds?: number;
+
   @Prop({ type: Number, default: null })
   rating?: number | null;
 }
