@@ -1618,6 +1618,61 @@ export class RideService {
   }
 
   // ==========================================================
+  // Dashboard tab: greeting, active vehicle, performance, today's analytics
+  // ==========================================================
+  async dashboard(driverId: string) {
+    try {
+      const driver = await this.driverModel.findById(driverId);
+
+      if (!driver) {
+        return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
+      }
+
+      const now = new Date();
+
+      const [vehicleType, runningRide, stats, today] = await Promise.all([
+        this.vehicleTypeForDriver(driver),
+        this.findRunningRide(driverId),
+        this.driverStats(driver),
+        this.todayAnalytics(driverId, now),
+      ]);
+
+      const onlineSeconds = this.onlineSecondsToday(driver, now);
+
+      return new ApiResponse(
+        200,
+        {
+          greeting: this.greetingFor(driver, now),
+          driver: this.driverProfile(driver),
+          duty: this.dutyPayload(driver),
+          activeVehicle: this.activeVehicleCard(driver, vehicleType),
+          performance: {
+            // A rejected request is not stored yet, so the accept rate is the
+            // share of the assigned rides that the driver did not cancel.
+            acceptRate: stats.acceptRate,
+            cancellationRate: stats.cancellationRate,
+            completedTrips: stats.totalTrips,
+            cancelledRides: stats.cancellations,
+          },
+          today: {
+            ...today,
+            rating: driver.rating ?? null,
+            onlineSeconds,
+            onlineMinutes: Math.floor(onlineSeconds / 60),
+            onlineDurationText: this.onlineDurationText(onlineSeconds),
+          },
+          currency: DEFAULT_CURRENCY,
+          activeRide: runningRide ? await this.ridePayload(runningRide) : null,
+        },
+        Msg.DRIVER_DASHBOARD_FETCHED,
+      );
+    } catch (error) {
+      console.error('Error while fetching driver dashboard:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
   // Duty (Go online / Go offline)
   // ==========================================================
   async setDuty(driverId: string, dto: DriverDutyDto) {
@@ -1640,6 +1695,17 @@ export class RideService {
 
       if (!dto.isOnline && (await this.findRunningRide(driverId))) {
         return new ApiResponse(400, {}, Msg.DRIVER_GO_OFFLINE_BLOCKED);
+      }
+
+      // Duty time of the day is banked on every switch, so the dashboard can
+      // show the online hours of today. The open session counts live from
+      // onlineSince until the driver goes offline again.
+      if (dto.isOnline !== !!driver.isOnline) {
+        if (dto.isOnline) {
+          driver.onlineSince = new Date();
+        } else {
+          this.closeOnlineSession(driver);
+        }
       }
 
       driver.isOnline = dto.isOnline;
@@ -2471,6 +2537,176 @@ export class RideService {
     };
   }
 
+  // ==========================================================
+  // Duty time of the running day (dashboard online hours)
+  // ==========================================================
+  // Adds the still open duty session to the online seconds of the running day
+  // and closes it.
+  private closeOnlineSession(driver: DriverDocument, at: Date = new Date()) {
+    const startedAt = driver.onlineSince;
+    driver.onlineSince = null;
+
+    if (!startedAt) {
+      return;
+    }
+
+    const dayKey = this.localDateKey(at);
+    const sessionSeconds = Math.max(
+      0,
+      Math.floor((at.getTime() - new Date(startedAt).getTime()) / 1000),
+    );
+    const banked =
+      driver.onlineStatsDate === dayKey ? driver.onlineStatsSeconds || 0 : 0;
+
+    driver.onlineStatsDate = dayKey;
+    driver.onlineStatsSeconds = banked + sessionSeconds;
+  }
+
+  private onlineSecondsToday(driver: DriverDocument, now: Date) {
+    const dayKey = this.localDateKey(now);
+    const banked =
+      driver.onlineStatsDate === dayKey ? driver.onlineStatsSeconds || 0 : 0;
+    const running =
+      driver.isOnline && driver.onlineSince
+        ? Math.max(
+            0,
+            Math.floor(
+              (now.getTime() - new Date(driver.onlineSince).getTime()) / 1000,
+            ),
+          )
+        : 0;
+
+    return banked + running;
+  }
+
+  private onlineDurationText(seconds: number) {
+    const minutes = Math.floor((seconds || 0) / 60);
+
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  // ==========================================================
+  // Today's analytics (earnings, trips and the earnings trend)
+  // ==========================================================
+  private async todayAnalytics(driverId: string, now: Date) {
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart.getTime() - DAY_IN_MS);
+
+    const rows = await this.rideModel.aggregate([
+      {
+        $match: {
+          driver: driverId,
+          status: RideStatus.RIDE_COMPLETED,
+          completedAt: { $gte: yesterdayStart },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          todayEarned: {
+            $sum: {
+              $cond: [
+                { $gte: ['$completedAt', todayStart] },
+                '$payableFare',
+                0,
+              ],
+            },
+          },
+          todayTrips: {
+            $sum: { $cond: [{ $gte: ['$completedAt', todayStart] }, 1, 0] },
+          },
+          yesterdayEarned: {
+            $sum: {
+              $cond: [{ $lt: ['$completedAt', todayStart] }, '$payableFare', 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    const earnings = this.round2(rows[0]?.todayEarned || 0);
+    const yesterdayEarnings = this.round2(rows[0]?.yesterdayEarned || 0);
+    const trend = this.trendPercent(earnings, yesterdayEarnings);
+
+    return {
+      date: this.localDateKey(now),
+      earnings,
+      earningsYesterday: yesterdayEarnings,
+      earningsTrendPercent: trend.percent,
+      earningsTrendDirection: trend.direction,
+      trips: rows[0]?.todayTrips || 0,
+    };
+  }
+
+  // Change of today against yesterday. Nothing earned so far today is reported
+  // as flat, so the card does not show a drop on every fresh morning. With no
+  // earnings yesterday any earning of today counts as a rise.
+  private trendPercent(current: number, previous: number) {
+    let percent = 0;
+
+    if (current > 0) {
+      percent =
+        previous > 0
+          ? this.round2(((current - previous) / previous) * 100)
+          : 100;
+    }
+
+    let direction = 'FLAT';
+
+    if (percent > 0) {
+      direction = 'UP';
+    } else if (percent < 0) {
+      direction = 'DOWN';
+    }
+
+    return { percent, direction };
+  }
+
+  private greetingFor(driver: DriverDocument, now: Date) {
+    const hour = now.getHours();
+
+    let label = 'Good Evening';
+    let timeOfDay = 'EVENING';
+
+    if (hour < 12) {
+      label = 'Good Morning';
+      timeOfDay = 'MORNING';
+    } else if (hour < 17) {
+      label = 'Good Afternoon';
+      timeOfDay = 'AFTERNOON';
+    }
+
+    const firstName = (driver.fullName || '').trim().split(/\s+/)[0];
+
+    return { text: `${label}, ${firstName || 'Driver'}!`, timeOfDay };
+  }
+
+  private activeVehicleCard(driver: DriverDocument, vehicleType: any) {
+    const makeAndModel = [driver.make, driver.modelAndYear]
+      .filter((part) => !!part)
+      .join(' ')
+      .trim();
+
+    return {
+      vehicleTypeId: vehicleType
+        ? String(vehicleType._id)
+        : driver.vehicleTypeId || null,
+      name: vehicleType ? vehicleType.name : driver.vehicleType || null,
+      displayName:
+        makeAndModel ||
+        (vehicleType ? vehicleType.name : driver.vehicleType) ||
+        driver.vehicleRegistrationNumber ||
+        null,
+      make: driver.make || null,
+      modelAndYear: driver.modelAndYear || null,
+      registrationNumber: driver.vehicleRegistrationNumber || null,
+      seats: vehicleType?.seats ?? null,
+      image: vehicleType?.image || null,
+      isActive: !!driver.isOnline,
+      status: driver.isOnline ? 'ONLINE' : 'OFFLINE',
+    };
+  }
   private async dailyEarnings(driverId: string, days: number) {
     const rows = await this.rideModel.aggregate([
       {
@@ -3022,5 +3258,14 @@ export class RideService {
 
   private dateKey(date: Date) {
     return date.toISOString().slice(0, 10);
+  }
+
+  // Day key (YYYY-MM-DD) of the running day, used by the dashboard cards which
+  // follow the day of the driver and not the UTC day.
+  private localDateKey(date: Date) {
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+
+    return `${date.getFullYear()}-${month}-${day}`;
   }
 }

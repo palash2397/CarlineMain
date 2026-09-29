@@ -209,6 +209,17 @@ export class RideController {
   // ==========================================================
   // Driver side - /driver-ride/*
   // ==========================================================
+  @Get('driver-ride/dashboard')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Driver dashboard - greeting, active vehicle, accept rate, cancellations, today earnings with trend, trips, online hours and rating',
+  })
+  async dashboard(@Req() req: any) {
+    return this.rideService.dashboard(req.user.id);
+  }
+
   @Get('driver-ride/home')
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
