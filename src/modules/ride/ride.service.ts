@@ -1628,6 +1628,8 @@ export class RideService {
         return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
       }
 
+      await this.healOnlineSession(driver);
+
       const now = new Date();
 
       const [vehicleType, runningRide, stats, today] = await Promise.all([
@@ -1699,13 +1701,14 @@ export class RideService {
 
       // Duty time of the day is banked on every switch, so the dashboard can
       // show the online hours of today. The open session counts live from
-      // onlineSince until the driver goes offline again.
-      if (dto.isOnline !== !!driver.isOnline) {
-        if (dto.isOnline) {
+      // onlineSince until the driver goes offline again. A driver who came
+      // online before this tracking existed gets his session opened here.
+      if (dto.isOnline) {
+        if (!driver.onlineSince) {
           driver.onlineSince = new Date();
-        } else {
-          this.closeOnlineSession(driver);
         }
+      } else if (driver.isOnline) {
+        this.closeOnlineSession(driver);
       }
 
       driver.isOnline = dto.isOnline;
@@ -2562,19 +2565,42 @@ export class RideService {
     driver.onlineStatsSeconds = banked + sessionSeconds;
   }
 
+  // A driver who is online but has no session start time (he came online before
+  // this duty tracking existed) gets the session opened on the first dashboard
+  // call, so the online hours start counting instead of staying at zero.
+  private async healOnlineSession(driver: DriverDocument) {
+    if (!driver.isOnline || driver.onlineSince) {
+      return;
+    }
+
+    const now = new Date();
+    driver.onlineSince = now;
+
+    await this.driverModel.updateOne(
+      { _id: driver._id },
+      { $set: { onlineSince: now } },
+    );
+  }
+
   private onlineSecondsToday(driver: DriverDocument, now: Date) {
     const dayKey = this.localDateKey(now);
     const banked =
       driver.onlineStatsDate === dayKey ? driver.onlineStatsSeconds || 0 : 0;
-    const running =
-      driver.isOnline && driver.onlineSince
-        ? Math.max(
-            0,
-            Math.floor(
-              (now.getTime() - new Date(driver.onlineSince).getTime()) / 1000,
-            ),
-          )
-        : 0;
+
+    if (!driver.isOnline || !driver.onlineSince) {
+      return banked;
+    }
+
+    // Only the part of the session that falls in the running day counts, so a
+    // session that runs through midnight never shows more than a day.
+    const dayStart = this.startOfDay(now);
+    const sessionStart = new Date(driver.onlineSince);
+    const from =
+      sessionStart.getTime() > dayStart.getTime() ? sessionStart : dayStart;
+    const running = Math.max(
+      0,
+      Math.floor((now.getTime() - from.getTime()) / 1000),
+    );
 
     return banked + running;
   }
@@ -2589,8 +2615,7 @@ export class RideService {
   // Today's analytics (earnings, trips and the earnings trend)
   // ==========================================================
   private async todayAnalytics(driverId: string, now: Date) {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = this.startOfDay(now);
     const yesterdayStart = new Date(todayStart.getTime() - DAY_IN_MS);
 
     const rows = await this.rideModel.aggregate([
