@@ -11,6 +11,10 @@ import {
 import { User, UserSchema } from '../user/schema/user.schema';
 
 import { Promo, PromoSchema } from './schema/promo.schema';
+import {
+  RecurringBooking,
+  RecurringBookingSchema,
+} from './schema/recurring-booking.schema';
 import { Ride, RideSchema } from './schema/ride.schema';
 import { RideController } from './ride.controller';
 import { RideSchedulerService } from './ride-scheduler.service';
@@ -21,6 +25,7 @@ import { RideService } from './ride.service';
     MongooseModule.forFeature([
       { name: Ride.name, schema: RideSchema },
       { name: Promo.name, schema: PromoSchema },
+      { name: RecurringBooking.name, schema: RecurringBookingSchema },
       { name: VehicleType.name, schema: VehicleTypeSchema },
       { name: Driver.name, schema: DriverSchema },
       { name: Pricing.name, schema: PricingSchema },

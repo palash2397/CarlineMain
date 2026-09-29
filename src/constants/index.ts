@@ -31,6 +31,17 @@ export const SCHEDULED_DISPATCH_LEAD_MINUTES = 15;
 // How many due scheduled rides one scheduler run promotes.
 export const SCHEDULED_DISPATCH_BATCH_SIZE = 50;
 
+// A recurring booking creates the ride of its next pickup this many minutes
+// before the pickup time. From there the normal scheduled dispatch takes over,
+// so a recurring ride reaches the drivers exactly like a one time ride.
+export const RECURRING_MATERIALIZE_LEAD_MINUTES = 60;
+
+// How many recurring series one scheduler run turns into a ride.
+export const RECURRING_DISPATCH_BATCH_SIZE = 50;
+
+// How far ahead the next pickup of a series is looked up (one year of days).
+export const RECURRING_LOOKAHEAD_DAYS = 370;
+
 // Socket events shared by the passenger app and the driver app.
 export const RIDE_EVENTS = {
   CREATED: 'ride:created',

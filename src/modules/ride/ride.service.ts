@@ -12,6 +12,7 @@ import { CancelledBy } from 'src/common/enums/ride/cancelled-by.enum';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
 import { PromoType } from 'src/common/enums/ride/promo-type.enum';
+import { RecurringStatus } from 'src/common/enums/ride/recurring-status.enum';
 import {
   ACTIVE_RIDE_STATUSES,
   RideStatus,
@@ -29,6 +30,10 @@ import {
 
 import { Promo, PromoDocument } from './schema/promo.schema';
 import {
+  RecurringBooking,
+  RecurringBookingDocument,
+} from './schema/recurring-booking.schema';
+import {
   Ride,
   RideDocument,
   RideFareBreakdown,
@@ -42,6 +47,9 @@ import {
   DRIVER_RUNNING_STATUSES,
   DRIVER_SEARCH_RADIUS_KM,
   KM_PER_MILE,
+  RECURRING_DISPATCH_BATCH_SIZE,
+  RECURRING_LOOKAHEAD_DAYS,
+  RECURRING_MATERIALIZE_LEAD_MINUTES,
   RIDE_EVENTS,
   SCHEDULED_DISPATCH_BATCH_SIZE,
   SCHEDULED_DISPATCH_LEAD_MINUTES,
@@ -49,6 +57,7 @@ import {
 
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';
+import { CreateRecurringRideDto } from './dto/create-recurring-ride.dto';
 import { DriverCancelRideDto } from './dto/driver-cancel-ride.dto';
 import { DriverCollectPaymentDto } from './dto/driver-collect-payment.dto';
 import { DriverDutyDto } from './dto/driver-duty.dto';
@@ -61,8 +70,11 @@ import { DriverRideHistoryQueryDto } from './dto/driver-ride-history-query.dto';
 import { DriverRideIdDto } from './dto/driver-ride-id.dto';
 import { DriverStartRideDto } from './dto/driver-start-ride.dto';
 import { EstimateFareDto } from './dto/estimate-fare.dto';
+import { MyRecurringRidesQueryDto } from './dto/my-recurring-rides-query.dto';
 import { MyRidesQueryDto } from './dto/my-rides-query.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
+import { UpdateRecurringRideStatusDto } from './dto/update-recurring-ride-status.dto';
+import { UpdateRecurringRideDto } from './dto/update-recurring-ride.dto';
 
 const CANCELLABLE_STATUSES = [
   RideStatus.SCHEDULED,
@@ -102,6 +114,8 @@ export class RideService {
     private readonly rideModel: Model<RideDocument>,
     @InjectModel(Promo.name)
     private readonly promoModel: Model<PromoDocument>,
+    @InjectModel(RecurringBooking.name)
+    private readonly recurringModel: Model<RecurringBookingDocument>,
     @InjectModel(VehicleType.name)
     private readonly vehicleTypeModel: Model<VehicleTypeDocument>,
     @InjectModel(Driver.name)
@@ -258,6 +272,11 @@ export class RideService {
 
       const rideType = dto.rideType || RideType.INSTANT;
       let scheduledAt: Date | null = null;
+
+      // A repeating ride is created from the recurring booking API, not here.
+      if (rideType === RideType.RECURRING) {
+        return new ApiResponse(400, {}, Msg.RECURRING_USE_SERIES);
+      }
 
       if (rideType === RideType.SCHEDULED) {
         if (!dto.scheduledAt) {
@@ -522,7 +541,9 @@ export class RideService {
 
     const due = await this.rideModel
       .find({
-        rideType: RideType.SCHEDULED,
+        // A recurring pickup is created as a scheduled ride, so both are handed
+        // to the drivers from here.
+        rideType: { $in: [RideType.SCHEDULED, RideType.RECURRING] },
         status: RideStatus.SCHEDULED,
         scheduledAt: { $ne: null, $lte: dueBefore },
       })
@@ -563,6 +584,467 @@ export class RideService {
     }
 
     return promoted;
+  }
+
+  // ==========================================================
+  // Recurring bookings (a ride that repeats on fixed days)
+  // ==========================================================
+  // A series is only a template. Every pickup gets its own ride, created by the
+  // scheduler, so tracking, driver assignment, cancel and history stay the same
+  // as a one time ride.
+  async createRecurringRide(user: any, dto: CreateRecurringRideDto) {
+    try {
+      const daysOfWeek = this.cleanDaysOfWeek(dto.daysOfWeek);
+
+      if (!daysOfWeek.length) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DAYS_REQUIRED);
+      }
+
+      if (!this.parsePickupTime(dto.pickupTime)) {
+        return new ApiResponse(400, {}, Msg.RECURRING_TIME_INVALID);
+      }
+
+      const startDate = new Date(dto.startDate);
+
+      if (Number.isNaN(startDate.getTime())) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+      }
+
+      let endDate: Date | null = null;
+
+      if (dto.endDate) {
+        endDate = new Date(dto.endDate);
+
+        if (Number.isNaN(endDate.getTime())) {
+          return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+        }
+
+        if (
+          this.endOfDay(endDate).getTime() <
+          this.startOfDay(startDate).getTime()
+        ) {
+          return new ApiResponse(400, {}, Msg.RECURRING_DATE_RANGE_INVALID);
+        }
+      }
+
+      if (!Types.ObjectId.isValid(dto.vehicleTypeId)) {
+        return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+      }
+
+      const vehicleType = await this.vehicleTypeModel.findById(
+        dto.vehicleTypeId,
+      );
+
+      if (!vehicleType || vehicleType.status !== 'Active') {
+        return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+      }
+
+      const promoCheck = await this.resolvePromo(dto.promoCode);
+
+      if (dto.promoCode && !promoCheck.promo) {
+        return new ApiResponse(400, {}, promoCheck.error || Msg.PROMO_INVALID);
+      }
+
+      const nextOccurrenceAt = this.nextOccurrenceFor(
+        {
+          daysOfWeek,
+          pickupTime: dto.pickupTime,
+          startDate,
+          endDate,
+        },
+        new Date(),
+      );
+
+      // Nothing to run in the coming year, so the series would never book.
+      if (!nextOccurrenceAt) {
+        return new ApiResponse(400, {}, Msg.RECURRING_NO_OCCURRENCE);
+      }
+
+      const series = await this.recurringModel.create({
+        user: user.id,
+        companyId: user.companyId || null,
+        vehicleTypeId: String((vehicleType as any)._id),
+        vehicleTypeName: vehicleType.name,
+        pickup: this.locationPayload(dto.pickup),
+        dropoff: this.locationPayload(dto.dropoff),
+        daysOfWeek,
+        pickupTime: dto.pickupTime,
+        startDate: this.startOfDay(startDate),
+        endDate: endDate ? this.endOfDay(endDate) : null,
+        passengerCount: dto.passengerCount || 1,
+        paymentMethod: dto.paymentMethod || PaymentMethod.CASH,
+        notes: dto.notes || null,
+        promoCode: promoCheck.promo ? promoCheck.promo.code : null,
+        status: RecurringStatus.ACTIVE,
+        nextOccurrenceAt,
+      });
+
+      return new ApiResponse(
+        200,
+        this.recurringPayload(series),
+        Msg.RECURRING_RIDE_CREATED,
+      );
+    } catch (error) {
+      console.error('Error while creating recurring ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async myRecurringRides(user: any, query: MyRecurringRidesQueryDto) {
+    try {
+      const page = query.page || 1;
+      const limit = query.limit || 10;
+
+      const filter: any = { user: user.id };
+
+      if (query.status) {
+        filter.status = query.status;
+      }
+
+      const [items, total] = await Promise.all([
+        this.recurringModel
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit),
+        this.recurringModel.countDocuments(filter),
+      ]);
+
+      return new ApiResponse(
+        200,
+        {
+          items: items.map((series) => this.recurringPayload(series)),
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+        },
+        Msg.RECURRING_RIDES_FETCHED,
+      );
+    } catch (error) {
+      console.error('Error while fetching recurring rides:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async recurringRideDetails(user: any, recurringId: string) {
+    try {
+      const series = await this.findRecurringRide(user, recurringId);
+
+      if (!series) {
+        return new ApiResponse(404, {}, Msg.RECURRING_RIDE_NOT_FOUND);
+      }
+
+      const rides = await this.rideModel
+        .find({
+          recurringId: String(series._id),
+          status: {
+            $nin: [RideStatus.RIDE_COMPLETED, RideStatus.RIDE_CANCELLED],
+          },
+        })
+        .sort({ scheduledAt: 1 })
+        .limit(20);
+
+      return new ApiResponse(
+        200,
+        {
+          ...this.recurringPayload(series),
+          upcomingRides: rides.map((ride) => this.rideSummary(ride)),
+        },
+        Msg.RECURRING_RIDE_FETCHED,
+      );
+    } catch (error) {
+      console.error('Error while fetching recurring ride details:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // The template and the pattern can be changed, rides that are already
+  // created stay as they are. The next pickup is looked up again, so the
+  // scheduler picks the change up on its next run.
+  async updateRecurringRide(
+    user: any,
+    recurringId: string,
+    dto: UpdateRecurringRideDto,
+  ) {
+    try {
+      const series = await this.findRecurringRide(user, recurringId);
+
+      if (!series) {
+        return new ApiResponse(404, {}, Msg.RECURRING_RIDE_NOT_FOUND);
+      }
+
+      if (series.status === RecurringStatus.CANCELLED) {
+        return new ApiResponse(400, {}, Msg.RECURRING_ALREADY_CANCELLED);
+      }
+
+      const daysOfWeek =
+        dto.daysOfWeek !== undefined
+          ? this.cleanDaysOfWeek(dto.daysOfWeek)
+          : series.daysOfWeek;
+
+      if (!daysOfWeek.length) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DAYS_REQUIRED);
+      }
+
+      const pickupTime = dto.pickupTime ?? series.pickupTime;
+
+      if (!this.parsePickupTime(pickupTime)) {
+        return new ApiResponse(400, {}, Msg.RECURRING_TIME_INVALID);
+      }
+
+      const startDate =
+        dto.startDate !== undefined
+          ? new Date(dto.startDate)
+          : series.startDate;
+
+      if (Number.isNaN(new Date(startDate).getTime())) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+      }
+
+      // A null end date makes the series open ended again.
+      let endDate: Date | null = series.endDate || null;
+
+      if (dto.endDate !== undefined) {
+        endDate = dto.endDate === null ? null : new Date(dto.endDate);
+
+        if (endDate && Number.isNaN(endDate.getTime())) {
+          return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+        }
+      }
+
+      if (
+        endDate &&
+        this.endOfDay(endDate).getTime() < this.startOfDay(startDate).getTime()
+      ) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DATE_RANGE_INVALID);
+      }
+
+      if (dto.vehicleTypeId !== undefined) {
+        if (!Types.ObjectId.isValid(dto.vehicleTypeId)) {
+          return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+        }
+
+        const vehicleType = await this.vehicleTypeModel.findById(
+          dto.vehicleTypeId,
+        );
+
+        if (!vehicleType || vehicleType.status !== 'Active') {
+          return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+        }
+
+        series.vehicleTypeId = String((vehicleType as any)._id);
+        series.vehicleTypeName = vehicleType.name;
+      }
+
+      if (dto.promoCode !== undefined) {
+        const promoCheck = await this.resolvePromo(dto.promoCode);
+
+        if (dto.promoCode && !promoCheck.promo) {
+          return new ApiResponse(
+            400,
+            {},
+            promoCheck.error || Msg.PROMO_INVALID,
+          );
+        }
+
+        series.promoCode = promoCheck.promo ? promoCheck.promo.code : null;
+      }
+
+      if (dto.pickup) {
+        series.pickup = this.locationPayload(dto.pickup);
+      }
+
+      if (dto.dropoff) {
+        series.dropoff = this.locationPayload(dto.dropoff);
+      }
+
+      if (dto.passengerCount !== undefined) {
+        series.passengerCount = dto.passengerCount;
+      }
+
+      if (dto.paymentMethod !== undefined) {
+        series.paymentMethod = dto.paymentMethod;
+      }
+
+      if (dto.notes !== undefined) {
+        series.notes = dto.notes || null;
+      }
+
+      series.daysOfWeek = daysOfWeek;
+      series.pickupTime = pickupTime;
+      series.startDate = this.startOfDay(startDate);
+      series.endDate = endDate ? this.endOfDay(endDate) : null;
+
+      if (series.status === RecurringStatus.ACTIVE) {
+        series.nextOccurrenceAt = await this.nextFreeOccurrence(
+          series,
+          new Date(),
+        );
+      }
+
+      await series.save();
+
+      return new ApiResponse(
+        200,
+        this.recurringPayload(series),
+        Msg.RECURRING_RIDE_UPDATED,
+      );
+    } catch (error) {
+      console.error('Error while updating recurring ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // PAUSE holds the series, ACTIVE resumes it from the next pickup and
+  // CANCELLED closes it for good.
+  async updateRecurringRideStatus(
+    user: any,
+    recurringId: string,
+    dto: UpdateRecurringRideStatusDto,
+  ) {
+    try {
+      const series = await this.findRecurringRide(user, recurringId);
+
+      if (!series) {
+        return new ApiResponse(404, {}, Msg.RECURRING_RIDE_NOT_FOUND);
+      }
+
+      if (series.status === RecurringStatus.CANCELLED) {
+        return new ApiResponse(400, {}, Msg.RECURRING_ALREADY_CANCELLED);
+      }
+
+      series.status = dto.status;
+
+      if (dto.status === RecurringStatus.ACTIVE) {
+        // A pause never replays the pickups that were missed, the next one is
+        // looked up from now.
+        const nextOccurrenceAt = await this.nextFreeOccurrence(
+          series,
+          new Date(),
+        );
+
+        if (!nextOccurrenceAt) {
+          return new ApiResponse(400, {}, Msg.RECURRING_NO_OCCURRENCE);
+        }
+
+        series.nextOccurrenceAt = nextOccurrenceAt;
+        await series.save();
+      } else if (dto.status === RecurringStatus.PAUSED) {
+        series.nextOccurrenceAt = null;
+        await series.save();
+      } else {
+        series.cancelReason = dto.reason || null;
+        series.cancelledAt = new Date();
+        series.nextOccurrenceAt = null;
+        await series.save();
+
+        // Rides of the series that are not dispatched yet are closed with it,
+        // so a cancelled series never books again.
+        const pending = await this.rideModel.find({
+          recurringId: String(series._id),
+          status: RideStatus.SCHEDULED,
+        });
+
+        for (const ride of pending) {
+          ride.status = RideStatus.RIDE_CANCELLED;
+          ride.cancelledBy = CancelledBy.USER;
+          ride.cancelReason = dto.reason || null;
+          ride.cancelledAt = new Date();
+          await ride.save();
+
+          this.socketService.emitToRide(
+            String(ride._id),
+            RIDE_EVENTS.CANCELLED,
+            {
+              rideId: String(ride._id),
+              status: ride.status,
+              reason: ride.cancelReason,
+              cancelledBy: ride.cancelledBy,
+              cancelledAt: ride.cancelledAt,
+            },
+          );
+        }
+      }
+
+      return new ApiResponse(
+        200,
+        this.recurringPayload(series),
+        Msg.RECURRING_RIDE_STATUS_UPDATED,
+      );
+    } catch (error) {
+      console.error('Error while updating recurring ride status:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Recurring bookings that are due get their ride created
+  // ==========================================================
+  // Read from the database on every run like the scheduled dispatch, so a
+  // restart never drops a pickup.
+  async promoteDueRecurringRides() {
+    const dueBefore = new Date(
+      Date.now() + RECURRING_MATERIALIZE_LEAD_MINUTES * 60 * 1000,
+    );
+
+    const due = await this.recurringModel
+      .find({
+        status: RecurringStatus.ACTIVE,
+        nextOccurrenceAt: { $ne: null, $lte: dueBefore },
+      })
+      .sort({ nextOccurrenceAt: 1 })
+      .limit(RECURRING_DISPATCH_BATCH_SIZE);
+
+    let created = 0;
+
+    for (const series of due) {
+      const occurrenceAt = series.nextOccurrenceAt;
+
+      if (!occurrenceAt) {
+        continue;
+      }
+
+      const following = this.nextOccurrenceFor(
+        this.recurringRule(series),
+        occurrenceAt,
+      );
+
+      // Claimed first, so two scheduler runs never create the same ride twice.
+      const claimed = await this.recurringModel.findOneAndUpdate(
+        {
+          _id: series._id,
+          status: RecurringStatus.ACTIVE,
+          nextOccurrenceAt: occurrenceAt,
+        },
+        { $set: { nextOccurrenceAt: following } },
+        { new: true },
+      );
+
+      if (!claimed) {
+        continue;
+      }
+
+      const ride = await this.createRecurringRideFor(claimed, occurrenceAt);
+
+      if (!ride) {
+        // The pickup is handed back, so the next run tries it again.
+        await this.recurringModel.updateOne(
+          { _id: claimed._id, nextOccurrenceAt: following },
+          { $set: { nextOccurrenceAt: occurrenceAt } },
+        );
+        continue;
+      }
+
+      await this.recurringModel.updateOne(
+        { _id: claimed._id },
+        { $inc: { ridesCreated: 1 }, $set: { lastRideAt: new Date() } },
+      );
+
+      created += 1;
+    }
+
+    return created;
   }
 
   // ==========================================================
@@ -1048,6 +1530,7 @@ export class RideService {
       passengerCount: ride.passengerCount,
       rideType: ride.rideType,
       scheduledAt: ride.scheduledAt || null,
+      recurringId: ride.recurringId || null,
       paymentMethod: ride.paymentMethod,
       paymentStatus: ride.paymentStatus,
       notes: ride.notes || null,
@@ -2152,6 +2635,7 @@ export class RideService {
       status: ride.status,
       rideType: ride.rideType,
       scheduledAt: ride.scheduledAt || null,
+      recurringId: ride.recurringId || null,
       pickup: ride.pickup,
       dropoff: ride.dropoff,
       distanceKm: ride.distanceKm,
@@ -2284,6 +2768,245 @@ export class RideService {
       event,
       payload,
     );
+  }
+
+  // ==========================================================
+  // Recurring booking helpers
+  // ==========================================================
+  private recurringRule(series: any) {
+    return {
+      daysOfWeek: series.daysOfWeek || [],
+      pickupTime: series.pickupTime,
+      startDate: series.startDate,
+      endDate: series.endDate || null,
+    };
+  }
+
+  private cleanDaysOfWeek(days: number[]) {
+    const cleaned = (Array.isArray(days) ? days : [])
+      .map((day) => Number(day))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+
+    return [...new Set(cleaned)].sort((a, b) => a - b);
+  }
+
+  private parsePickupTime(value: string) {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec((value || '').trim());
+
+    if (!match) {
+      return null;
+    }
+
+    return { hours: Number(match[1]), minutes: Number(match[2]) };
+  }
+
+  private startOfDay(value: Date) {
+    const date = new Date(value);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  private endOfDay(value: Date) {
+    const date = new Date(value);
+    date.setHours(23, 59, 59, 999);
+    return date;
+  }
+
+  // First pickup of a series that is still ahead of `from`, null when the
+  // series has no pickup left to run.
+  private nextOccurrenceFor(
+    rule: {
+      daysOfWeek: number[];
+      pickupTime: string;
+      startDate: Date;
+      endDate?: Date | null;
+    },
+    from: Date,
+  ) {
+    const time = this.parsePickupTime(rule.pickupTime);
+
+    if (!time) {
+      return null;
+    }
+
+    const days = this.cleanDaysOfWeek(rule.daysOfWeek);
+
+    if (!days.length) {
+      return null;
+    }
+
+    const firstDay = this.startOfDay(rule.startDate);
+    const lastDay = rule.endDate ? this.endOfDay(rule.endDate) : null;
+    const cursor = this.startOfDay(
+      new Date(Math.max(from.getTime(), firstDay.getTime())),
+    );
+
+    for (let offset = 0; offset <= RECURRING_LOOKAHEAD_DAYS; offset += 1) {
+      const day = new Date(cursor);
+      day.setDate(day.getDate() + offset);
+
+      if (!days.includes(day.getDay())) {
+        continue;
+      }
+
+      const occurrence = new Date(day);
+      occurrence.setHours(time.hours, time.minutes, 0, 0);
+
+      // The series is over, so no pickup is left.
+      if (lastDay && occurrence.getTime() > lastDay.getTime()) {
+        return null;
+      }
+
+      if (occurrence.getTime() > from.getTime()) {
+        return occurrence;
+      }
+    }
+
+    return null;
+  }
+
+  // Same lookup, but a pickup that already has its ride is skipped, so an edit
+  // or a resume never books the same pickup twice.
+  private async nextFreeOccurrence(series: any, from: Date) {
+    const rule = this.recurringRule(series);
+    let occurrence = this.nextOccurrenceFor(rule, from);
+    let guard = 0;
+
+    while (occurrence && guard < RECURRING_LOOKAHEAD_DAYS) {
+      const rideExists = await this.rideModel.exists({
+        recurringId: String(series._id),
+        scheduledAt: occurrence,
+      });
+
+      if (!rideExists) {
+        return occurrence;
+      }
+
+      occurrence = this.nextOccurrenceFor(rule, occurrence);
+      guard += 1;
+    }
+
+    return occurrence;
+  }
+
+  private findRecurringRide(user: any, recurringId: string) {
+    if (!Types.ObjectId.isValid(recurringId)) {
+      return null;
+    }
+
+    return this.recurringModel.findOne({ _id: recurringId, user: user.id });
+  }
+
+  private recurringPayload(series: any) {
+    return {
+      recurringId: String(series._id),
+      status: series.status,
+      vehicleTypeId: series.vehicleTypeId,
+      vehicleTypeName: series.vehicleTypeName || null,
+      pickup: series.pickup,
+      dropoff: series.dropoff,
+      daysOfWeek: series.daysOfWeek || [],
+      pickupTime: series.pickupTime,
+      startDate: series.startDate || null,
+      endDate: series.endDate || null,
+      passengerCount: series.passengerCount,
+      paymentMethod: series.paymentMethod,
+      notes: series.notes || null,
+      promoCode: series.promoCode || null,
+      nextOccurrenceAt: series.nextOccurrenceAt || null,
+      ridesCreated: series.ridesCreated || 0,
+      lastRideAt: series.lastRideAt || null,
+      cancelReason: series.cancelReason || null,
+      cancelledAt: series.cancelledAt || null,
+      createdAt: series.createdAt || null,
+      updatedAt: series.updatedAt || null,
+    };
+  }
+
+  // The ride of one pickup of a series. It waits exactly like a scheduled
+  // ride, so the same dispatch notifies the drivers before the pickup.
+  private async createRecurringRideFor(
+    series: RecurringBookingDocument,
+    occurrenceAt: Date,
+  ) {
+    try {
+      const vehicleType = await this.vehicleTypeModel.findById(
+        series.vehicleTypeId,
+      );
+
+      if (!vehicleType || vehicleType.status !== 'Active') {
+        return null;
+      }
+
+      const route = await this.resolveDistance(series.pickup, series.dropoff);
+
+      if (route.distanceKm === null) {
+        console.error(
+          'Recurring ride skipped, distance not resolved:',
+          route.routeError,
+        );
+        return null;
+      }
+
+      const promoCheck = await this.resolvePromo(series.promoCode || undefined);
+      const pricing = await this.pricingModel.findOne({}).lean();
+      const fare = this.calculateFare(vehicleType, pricing, {
+        distanceKm: route.distanceKm,
+        durationMinutes: route.durationMinutes || 0,
+        promo: promoCheck.promo,
+      });
+
+      const ride = await this.rideModel.create({
+        user: series.user,
+        companyId: series.companyId || null,
+        vehicleTypeId: String((vehicleType as any)._id),
+        vehicleTypeName: vehicleType.name,
+        status: RideStatus.SCHEDULED,
+        pickup: series.pickup,
+        dropoff: series.dropoff,
+        distanceKm: Number(route.distanceKm.toFixed(2)),
+        durationMinutes: Math.round(route.durationMinutes || 0),
+        etaMinutes: Math.round(route.durationMinutes || 0),
+        routeSource: route.routeSource,
+        fare,
+        totalFare: fare.totalFare,
+        payableFare: fare.payableFare,
+        promoCode: promoCheck.promo ? promoCheck.promo.code : null,
+        discount: fare.discount,
+        rideType: RideType.RECURRING,
+        scheduledAt: occurrenceAt,
+        recurringId: String(series._id),
+        passengerCount: series.passengerCount || 1,
+        paymentMethod: series.paymentMethod || PaymentMethod.CASH,
+        paymentStatus: PaymentStatus.PENDING,
+        notes: series.notes || null,
+        otp: generateOtp(),
+      });
+
+      if (promoCheck.promo) {
+        await this.promoModel.updateOne(
+          { _id: (promoCheck.promo as any)._id },
+          { $inc: { usedCount: 1 } },
+        );
+      }
+
+      // The passenger sees the ride of the next pickup right away, the drivers
+      // are only told by the scheduled dispatch.
+      const rideId = String(ride._id);
+
+      this.socketService.joinActorToRide(series.user, rideId);
+      this.socketService.emitToRideAndActor(
+        series.user,
+        rideId,
+        RIDE_EVENTS.CREATED,
+        this.rideSummary(ride, vehicleType),
+      );
+
+      return ride;
+    } catch (error) {
+      console.error('Error while creating the recurring ride:', error);
+      return null;
+    }
   }
 
   private round2(value: number) {
