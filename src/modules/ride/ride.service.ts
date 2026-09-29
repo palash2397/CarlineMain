@@ -12,6 +12,7 @@ import { CancelledBy } from 'src/common/enums/ride/cancelled-by.enum';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
 import { PromoType } from 'src/common/enums/ride/promo-type.enum';
+import { RecurrenceFrequency } from 'src/common/enums/ride/recurrence-frequency.enum';
 import { RecurringStatus } from 'src/common/enums/ride/recurring-status.enum';
 import {
   ACTIVE_RIDE_STATUSES,
@@ -594,10 +595,15 @@ export class RideService {
   // as a one time ride.
   async createRecurringRide(user: any, dto: CreateRecurringRideDto) {
     try {
-      const daysOfWeek = this.cleanDaysOfWeek(dto.daysOfWeek);
+      const frequency = dto.frequency || RecurrenceFrequency.WEEKLY;
+      const pattern = this.recurringPattern(
+        frequency,
+        dto.daysOfWeek,
+        dto.daysOfMonth,
+      );
 
-      if (!daysOfWeek.length) {
-        return new ApiResponse(400, {}, Msg.RECURRING_DAYS_REQUIRED);
+      if (pattern.error) {
+        return new ApiResponse(400, {}, pattern.error);
       }
 
       if (!this.parsePickupTime(dto.pickupTime)) {
@@ -647,7 +653,9 @@ export class RideService {
 
       const nextOccurrenceAt = this.nextOccurrenceFor(
         {
-          daysOfWeek,
+          frequency,
+          daysOfWeek: pattern.daysOfWeek,
+          daysOfMonth: pattern.daysOfMonth,
           pickupTime: dto.pickupTime,
           startDate,
           endDate,
@@ -667,7 +675,9 @@ export class RideService {
         vehicleTypeName: vehicleType.name,
         pickup: this.locationPayload(dto.pickup),
         dropoff: this.locationPayload(dto.dropoff),
-        daysOfWeek,
+        frequency,
+        daysOfWeek: pattern.daysOfWeek,
+        daysOfMonth: pattern.daysOfMonth,
         pickupTime: dto.pickupTime,
         startDate: this.startOfDay(startDate),
         endDate: endDate ? this.endOfDay(endDate) : null,
@@ -778,13 +788,19 @@ export class RideService {
         return new ApiResponse(400, {}, Msg.RECURRING_ALREADY_CANCELLED);
       }
 
-      const daysOfWeek =
-        dto.daysOfWeek !== undefined
-          ? this.cleanDaysOfWeek(dto.daysOfWeek)
-          : series.daysOfWeek;
+      const frequency =
+        dto.frequency !== undefined
+          ? dto.frequency
+          : series.frequency || RecurrenceFrequency.WEEKLY;
 
-      if (!daysOfWeek.length) {
-        return new ApiResponse(400, {}, Msg.RECURRING_DAYS_REQUIRED);
+      const pattern = this.recurringPattern(
+        frequency,
+        dto.daysOfWeek !== undefined ? dto.daysOfWeek : series.daysOfWeek,
+        dto.daysOfMonth !== undefined ? dto.daysOfMonth : series.daysOfMonth,
+      );
+
+      if (pattern.error) {
+        return new ApiResponse(400, {}, pattern.error);
       }
 
       const pickupTime = dto.pickupTime ?? series.pickupTime;
@@ -871,7 +887,9 @@ export class RideService {
         series.notes = dto.notes || null;
       }
 
-      series.daysOfWeek = daysOfWeek;
+      series.frequency = frequency;
+      series.daysOfWeek = pattern.daysOfWeek;
+      series.daysOfMonth = pattern.daysOfMonth;
       series.pickupTime = pickupTime;
       series.startDate = this.startOfDay(startDate);
       series.endDate = endDate ? this.endOfDay(endDate) : null;
@@ -3011,14 +3029,55 @@ export class RideService {
   // ==========================================================
   private recurringRule(series: any) {
     return {
+      frequency: series.frequency || RecurrenceFrequency.WEEKLY,
       daysOfWeek: series.daysOfWeek || [],
+      daysOfMonth: series.daysOfMonth || [],
       pickupTime: series.pickupTime,
       startDate: series.startDate,
       endDate: series.endDate || null,
     };
   }
 
-  private cleanDaysOfWeek(days: number[]) {
+  private cleanDaysOfMonth(days?: number[]) {
+    const cleaned = (Array.isArray(days) ? days : [])
+      .map((day) => Number(day))
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31);
+
+    return [...new Set(cleaned)].sort((a, b) => a - b);
+  }
+
+  // The days the series runs on: weekdays of the week for WEEKLY, days of the
+  // month for MONTHLY. One day of the month is a fixed date, several days are
+  // custom dates. An empty or invalid pattern returns the message to answer.
+  private recurringPattern(
+    frequency: RecurrenceFrequency,
+    daysOfWeek?: number[],
+    daysOfMonth?: number[],
+  ) {
+    if (frequency === RecurrenceFrequency.MONTHLY) {
+      const monthDays = this.cleanDaysOfMonth(daysOfMonth);
+
+      return monthDays.length
+        ? { error: null, daysOfWeek: [], daysOfMonth: monthDays }
+        : {
+            error: Msg.RECURRING_MONTH_DAYS_REQUIRED,
+            daysOfWeek: [],
+            daysOfMonth: [],
+          };
+    }
+
+    const weekDays = this.cleanDaysOfWeek(daysOfWeek);
+
+    return weekDays.length
+      ? { error: null, daysOfWeek: weekDays, daysOfMonth: [] }
+      : {
+          error: Msg.RECURRING_DAYS_REQUIRED,
+          daysOfWeek: [],
+          daysOfMonth: [],
+        };
+  }
+
+  private cleanDaysOfWeek(days?: number[]) {
     const cleaned = (Array.isArray(days) ? days : [])
       .map((day) => Number(day))
       .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
@@ -3052,7 +3111,9 @@ export class RideService {
   // series has no pickup left to run.
   private nextOccurrenceFor(
     rule: {
+      frequency?: RecurrenceFrequency;
       daysOfWeek: number[];
+      daysOfMonth: number[];
       pickupTime: string;
       startDate: Date;
       endDate?: Date | null;
@@ -3065,7 +3126,10 @@ export class RideService {
       return null;
     }
 
-    const days = this.cleanDaysOfWeek(rule.daysOfWeek);
+    const monthly = rule.frequency === RecurrenceFrequency.MONTHLY;
+    const days = monthly
+      ? this.cleanDaysOfMonth(rule.daysOfMonth)
+      : this.cleanDaysOfWeek(rule.daysOfWeek);
 
     if (!days.length) {
       return null;
@@ -3081,7 +3145,9 @@ export class RideService {
       const day = new Date(cursor);
       day.setDate(day.getDate() + offset);
 
-      if (!days.includes(day.getDay())) {
+      // WEEKLY matches the weekday of the day, MONTHLY its day of the month.
+      // A day the month does not have (31 in February) has no pickup at all.
+      if (!days.includes(monthly ? day.getDate() : day.getDay())) {
         continue;
       }
 
@@ -3141,7 +3207,9 @@ export class RideService {
       vehicleTypeName: series.vehicleTypeName || null,
       pickup: series.pickup,
       dropoff: series.dropoff,
+      frequency: series.frequency || RecurrenceFrequency.WEEKLY,
       daysOfWeek: series.daysOfWeek || [],
+      daysOfMonth: series.daysOfMonth || [],
       pickupTime: series.pickupTime,
       startDate: series.startDate || null,
       endDate: series.endDate || null,

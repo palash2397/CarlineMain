@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
+import { RecurrenceFrequency } from 'src/common/enums/ride/recurrence-frequency.enum';
 import { RecurringStatus } from 'src/common/enums/ride/recurring-status.enum';
 
 import type { RideLocation } from './ride.schema';
@@ -32,9 +33,22 @@ export class RecurringBooking {
   @Prop({ type: Object, required: true })
   dropoff: RideLocation;
 
-  // 0 = Sunday ... 6 = Saturday.
-  @Prop({ type: [Number], required: true })
+  // How the series repeats. WEEKLY uses daysOfWeek, MONTHLY uses daysOfMonth.
+  @Prop({
+    type: String,
+    enum: RecurrenceFrequency,
+    default: RecurrenceFrequency.WEEKLY,
+  })
+  frequency: RecurrenceFrequency;
+
+  // 0 = Sunday ... 6 = Saturday, used by a WEEKLY series.
+  @Prop({ type: [Number], default: [] })
   daysOfWeek: number[];
+
+  // Days of the month (1 - 31), used by a MONTHLY series. A day a month does
+  // not have (31 in February) simply has no pickup.
+  @Prop({ type: [Number], default: [] })
+  daysOfMonth: number[];
 
   // Pickup time of the day in 24 hour HH:mm format.
   @Prop({ type: String, required: true })
