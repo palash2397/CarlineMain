@@ -293,6 +293,8 @@ export const Msg = {
     'Recurring booking status updated successfully',
   RECURRING_RIDE_NOT_FOUND: 'Recurring booking not found',
   RECURRING_DAYS_REQUIRED: 'Select at least one day for the recurring booking',
+  RECURRING_MONTH_DAYS_REQUIRED:
+    'Select at least one day of the month (1 - 31) for the monthly recurring booking',
   RECURRING_DAYS_INVALID:
     'Day of week must be between 0 (Sunday) and 6 (Saturday)',
   RECURRING_TIME_INVALID: 'Pickup time must be in 24 hour HH:mm format',

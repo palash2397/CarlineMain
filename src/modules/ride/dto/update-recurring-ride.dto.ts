@@ -16,6 +16,7 @@ import {
 } from 'class-validator';
 
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
+import { RecurrenceFrequency } from 'src/common/enums/ride/recurrence-frequency.enum';
 import { MAX_PASSENGERS } from 'src/constants';
 
 import { RideLocationDto } from './ride-location.dto';
@@ -40,9 +41,32 @@ export class UpdateRecurringRideDto {
   vehicleTypeId?: string;
 
   @ApiPropertyOptional({
+    enum: RecurrenceFrequency,
+    description:
+      'Switch the series between WEEKLY (daysOfWeek) and MONTHLY (daysOfMonth)',
+  })
+  @IsOptional()
+  @IsEnum(RecurrenceFrequency)
+  frequency?: RecurrenceFrequency;
+
+  @ApiPropertyOptional({
+    example: [5, 15, 25],
+    type: [Number],
+    description:
+      'MONTHLY only: days of the month, 1 - 31 (one day = fixed date, several days = custom dates)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(31, { each: true })
+  daysOfMonth?: number[];
+
+  @ApiPropertyOptional({
     example: [1, 2, 3, 4, 5],
     type: [Number],
-    description: 'Repeat days, 0 = Sunday ... 6 = Saturday',
+    description: 'WEEKLY only: repeat days, 0 = Sunday ... 6 = Saturday',
   })
   @IsOptional()
   @IsArray()
