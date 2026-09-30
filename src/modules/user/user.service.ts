@@ -87,13 +87,16 @@ export class UserService {
           .lean();
 
         if (driver) {
-          const baseUrl = process.env.BASE_URL || 'http://localhost:4016';
+          const baseUrl = (
+            process.env.BASE_URL || 'http://localhost:4016'
+          ).replace(/\/$/, '');
+          const filename = driver.avatar
+            ? driver.avatar.split('/').pop()
+            : null;
           user = {
             ...driver,
-            avatar: driver.avatar
-              ? driver.avatar.startsWith('http')
-                ? driver.avatar
-                : `${baseUrl}/api/v1/uploads/driver/${driver.avatar}`
+            avatar: filename
+              ? `${baseUrl}/api/v1/uploads/driver/${filename}`
               : process.env.DEFAULT_IMAGE,
           };
           return new ApiResponse(200, user, Msg.USER_FETCHED);
@@ -104,8 +107,13 @@ export class UserService {
         return new ApiResponse(400, {}, Msg.USER_NOT_FOUND);
       }
 
-      user.avatar = user.avatar
-        ? `${process.env.BASE_URL}/api/v1/uploads/profile/${user.avatar}`
+      const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+        /\/$/,
+        '',
+      );
+      const filename = user.avatar ? user.avatar.split('/').pop() : null;
+      user.avatar = filename
+        ? `${baseUrl}/api/v1/uploads/profile/${filename}`
         : process.env.DEFAULT_IMAGE;
 
       return new ApiResponse(200, user, Msg.USER_FETCHED);
@@ -150,15 +158,23 @@ export class UserService {
 
       if (file) {
         if (user.avatar) {
-          deleteOldFile('user', user.avatar);
+          const oldAvatar = user.avatar.split('/').pop();
+          if (oldAvatar) deleteOldFile('user', oldAvatar);
         }
 
         updatedUser.avatar = file.filename;
         await updatedUser.save();
       }
 
-      updatedUser.avatar = updatedUser.avatar
-        ? `${process.env.BASE_URL}/api/v1/uploads/profile/${updatedUser.avatar}`
+      const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+        /\/$/,
+        '',
+      );
+      const updatedFilename = updatedUser.avatar
+        ? updatedUser.avatar.split('/').pop()
+        : null;
+      updatedUser.avatar = updatedFilename
+        ? `${baseUrl}/api/v1/uploads/profile/${updatedFilename}`
         : process.env.DEFAULT_IMAGE;
 
       const data = {

@@ -25,9 +25,10 @@ export class VehicleTypeService {
       '',
     );
     if (item.image) {
-      item.image = item.image.startsWith('http')
-        ? item.image
-        : `${baseUrl}/api/v1/uploads/vehicle-types/${item.image}`;
+      const filename = item.image.split('/').pop();
+      item.image = filename
+        ? `${baseUrl}/api/v1/uploads/vehicle-types/${filename}`
+        : null;
     }
     return item;
   }

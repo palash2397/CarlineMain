@@ -50,9 +50,10 @@ export class DriverService {
     delete item.otpExpireAt;
 
     if (item.avatar) {
-      item.avatar = item.avatar.startsWith('http')
-        ? item.avatar
-        : `${baseUrl}/api/v1/uploads/driver/${item.avatar}`;
+      const filename = item.avatar.split('/').pop();
+      item.avatar = filename
+        ? `${baseUrl}/api/v1/uploads/driver/${filename}`
+        : process.env.DEFAULT_IMAGE || null;
     } else {
       item.avatar = process.env.DEFAULT_IMAGE || null;
     }
@@ -65,9 +66,10 @@ export class DriverService {
     ];
     docFields.forEach((docField) => {
       if (item[docField]) {
-        item[docField] = item[docField].startsWith('http')
-          ? item[docField]
-          : `${baseUrl}/api/v1/uploads/driver/${item[docField]}`;
+        const filename = item[docField].split('/').pop();
+        item[docField] = filename
+          ? `${baseUrl}/api/v1/uploads/driver/${filename}`
+          : process.env.DEFAULT_IMAGE_FOR_EVERYTHING || null;
       } else {
         item[docField] = process.env.DEFAULT_IMAGE_FOR_EVERYTHING || null;
       }

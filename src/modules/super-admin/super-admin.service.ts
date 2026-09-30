@@ -378,10 +378,15 @@ export class SuperAdminService implements OnModuleInit {
       '',
     );
 
+    delete comp.password;
+    delete comp.otp;
+    delete comp.otpExpireAt;
+
     if (comp.branding?.logo) {
-      comp.branding.logo = comp.branding.logo.startsWith('http')
-        ? comp.branding.logo
-        : `${baseUrl}/api/v1/uploads/company/${comp.branding.logo}`;
+      const filename = comp.branding.logo.split('/').pop();
+      comp.branding.logo = filename
+        ? `${baseUrl}/api/v1/uploads/company/${filename}`
+        : '';
     }
 
     if (Array.isArray(comp.documents)) {
@@ -389,9 +394,10 @@ export class SuperAdminService implements OnModuleInit {
         if (!doc) return doc;
         const docItem = { ...doc };
         if (docItem.documentUrl) {
-          docItem.documentUrl = docItem.documentUrl.startsWith('http')
-            ? docItem.documentUrl
-            : `${baseUrl}/api/v1/uploads/company/${docItem.documentUrl}`;
+          const filename = docItem.documentUrl.split('/').pop();
+          docItem.documentUrl = filename
+            ? `${baseUrl}/api/v1/uploads/company/${filename}`
+            : '';
         }
         return docItem;
       });
