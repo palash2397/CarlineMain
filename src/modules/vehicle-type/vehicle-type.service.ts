@@ -17,6 +17,21 @@ export class VehicleTypeService {
     private readonly vehicleTypeModel: Model<VehicleTypeDocument>,
   ) {}
 
+  private formatVehicleType(vt: any) {
+    if (!vt) return vt;
+    const item = vt.toObject ? vt.toObject() : { ...vt };
+    const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+      /\/$/,
+      '',
+    );
+    if (item.image) {
+      item.image = item.image.startsWith('http')
+        ? item.image
+        : `${baseUrl}/api/v1/uploads/vehicle-types/${item.image}`;
+    }
+    return item;
+  }
+
   async createVehicleType(
     dto: CreateVehicleTypeDto,
     file?: Express.Multer.File,
@@ -33,11 +48,10 @@ export class VehicleTypeService {
         return new ApiResponse(409, {}, Msg.VEHICLE_TYPE_ALREADY_EXISTS);
       }
 
-      const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
       let imageUrl = dto.imageUrl?.trim() || null;
 
       if (file) {
-        imageUrl = `${baseUrl}/api/v1/uploads/vehicle-types/${file.filename}`;
+        imageUrl = file.filename;
       }
 
       const created = await this.vehicleTypeModel.create({
@@ -56,7 +70,11 @@ export class VehicleTypeService {
         createdBy: user?.email || user?.id || null,
       });
 
-      return new ApiResponse(201, created, Msg.VEHICLE_TYPE_CREATED);
+      return new ApiResponse(
+        201,
+        this.formatVehicleType(created),
+        Msg.VEHICLE_TYPE_CREATED,
+      );
     } catch (error: any) {
       console.error('Error while creating vehicle type:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
@@ -98,7 +116,7 @@ export class VehicleTypeService {
       return new ApiResponse(
         200,
         {
-          vehicleTypes,
+          vehicleTypes: vehicleTypes.map((t) => this.formatVehicleType(t)),
           totalCount,
           totalPages,
           currentPage: page,
@@ -123,7 +141,11 @@ export class VehicleTypeService {
         return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
       }
 
-      return new ApiResponse(200, vehicleType, Msg.DATA_FETCHED);
+      return new ApiResponse(
+        200,
+        this.formatVehicleType(vehicleType),
+        Msg.DATA_FETCHED,
+      );
     } catch (error: any) {
       console.error('Error while getting vehicle type by id:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
@@ -174,15 +196,22 @@ export class VehicleTypeService {
         vehicleType.sortOrder = Number(dto.sortOrder);
 
       if (file) {
-        const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
-        vehicleType.image = `${baseUrl}/api/v1/uploads/vehicle-types/${file.filename}`;
+        if (vehicleType.image) {
+          const oldImage = vehicleType.image.split('/').pop();
+          if (oldImage) deleteOldFile('vehicle-types', oldImage);
+        }
+        vehicleType.image = file.filename;
       } else if (dto.imageUrl !== undefined) {
         vehicleType.image = dto.imageUrl?.trim() || null;
       }
 
       await vehicleType.save();
 
-      return new ApiResponse(200, vehicleType, Msg.VEHICLE_TYPE_UPDATED);
+      return new ApiResponse(
+        200,
+        this.formatVehicleType(vehicleType),
+        Msg.VEHICLE_TYPE_UPDATED,
+      );
     } catch (error: any) {
       console.error('Error while updating vehicle type:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
@@ -205,7 +234,11 @@ export class VehicleTypeService {
         return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
       }
 
-      return new ApiResponse(200, vehicleType, Msg.VEHICLE_TYPE_STATUS_UPDATED);
+      return new ApiResponse(
+        200,
+        this.formatVehicleType(vehicleType),
+        Msg.VEHICLE_TYPE_STATUS_UPDATED,
+      );
     } catch (error: any) {
       console.error('Error while updating vehicle type status:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);

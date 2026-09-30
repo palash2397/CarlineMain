@@ -25,12 +25,22 @@ export class LegalService {
   // An empty page is a valid state, because the superadmin creates the content
   // later, so the app gets an empty body instead of an error.
   private pagePayload(page: any, type: LegalPageType) {
+    const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+      /\/$/,
+      '',
+    );
+    const imageUrl = page?.image
+      ? page.image.startsWith('http')
+        ? page.image
+        : `${baseUrl}/api/v1/uploads/legal/${page.image}`
+      : null;
+
     return {
       id: page ? String(page._id) : null,
       type,
       title: page?.title || this.defaultTitle(type),
       content: page?.content || '',
-      image: page?.image || null,
+      image: imageUrl,
       isConfigured: Boolean(page?.content),
       updatedBy: page?.updatedBy || null,
       createdAt: page?.createdAt || null,
@@ -50,8 +60,7 @@ export class LegalService {
     file?: Express.Multer.File,
   ): string | null | undefined {
     if (file) {
-      const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
-      return `${baseUrl}/api/v1/uploads/legal/${file.filename}`;
+      return file.filename;
     }
 
     return dto.image !== undefined ? dto.image.trim() || null : undefined;

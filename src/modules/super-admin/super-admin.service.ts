@@ -294,12 +294,18 @@ export class SuperAdminService implements OnModuleInit {
           : dto.branding?.displayNameOverride || '',
     };
 
-    const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
+    const extractFilename = (url?: string | null) => {
+      if (!url) return '';
+      const parts = url.split('/');
+      return parts[parts.length - 1];
+    };
 
     // Process Logo File
     const logoFile = files?.logo?.[0] || files?.companyLogo?.[0];
     if (logoFile) {
-      branding.logo = `${baseUrl}/api/v1/uploads/company/${logoFile.filename}`;
+      branding.logo = logoFile.filename;
+    } else if (branding.logo) {
+      branding.logo = extractFilename(branding.logo);
     }
 
     // Process Document Files (PDFs / Images)
@@ -320,11 +326,20 @@ export class SuperAdminService implements OnModuleInit {
       documents = [];
     }
 
+    // Clean existing documents URLs to only store filename
+    documents = documents.map((doc: any) => {
+      if (!doc) return doc;
+      return {
+        ...doc,
+        documentUrl: extractFilename(doc.documentUrl),
+      };
+    });
+
     if (docFiles.length > 0) {
       docFiles.forEach((file: Express.Multer.File, index: number) => {
-        const fileUrl = `${baseUrl}/api/v1/uploads/company/${file.filename}`;
+        const fileName = file.filename;
         if (documents[index]) {
-          documents[index].documentUrl = fileUrl;
+          documents[index].documentUrl = fileName;
           if (!documents[index].documentName) {
             documents[index].documentName =
               dto.documentName || file.originalname;
@@ -337,7 +352,7 @@ export class SuperAdminService implements OnModuleInit {
           documents.push({
             documentType: dto.documentType || 'Business License',
             documentName: dto.documentName || file.originalname,
-            documentUrl: fileUrl,
+            documentUrl: fileName,
             issueDate: dto.issueDate || new Date().toISOString().split('T')[0],
             expiryDate: dto.expiryDate || '',
             status: 'Approved',
@@ -353,6 +368,36 @@ export class SuperAdminService implements OnModuleInit {
     dto.documents = documents;
 
     return dto;
+  }
+
+  private formatCompanyResponse(company: any) {
+    if (!company) return company;
+    const comp = company.toObject ? company.toObject() : { ...company };
+    const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+      /\/$/,
+      '',
+    );
+
+    if (comp.branding?.logo) {
+      comp.branding.logo = comp.branding.logo.startsWith('http')
+        ? comp.branding.logo
+        : `${baseUrl}/api/v1/uploads/company/${comp.branding.logo}`;
+    }
+
+    if (Array.isArray(comp.documents)) {
+      comp.documents = comp.documents.map((doc: any) => {
+        if (!doc) return doc;
+        const docItem = { ...doc };
+        if (docItem.documentUrl) {
+          docItem.documentUrl = docItem.documentUrl.startsWith('http')
+            ? docItem.documentUrl
+            : `${baseUrl}/api/v1/uploads/company/${docItem.documentUrl}`;
+        }
+        return docItem;
+      });
+    }
+
+    return comp;
   }
 
   async createCompany(body: any, files?: any, adminUser?: any) {
@@ -476,7 +521,7 @@ export class SuperAdminService implements OnModuleInit {
       return new ApiResponse(
         201,
         {
-          company: newCompany,
+          company: this.formatCompanyResponse(newCompany),
           adminAccount: {
             _id: newCompany._id,
             email: newCompany.primaryContact.email,
@@ -535,7 +580,7 @@ export class SuperAdminService implements OnModuleInit {
       return new ApiResponse(
         200,
         {
-          data: companies,
+          data: companies.map((c) => this.formatCompanyResponse(c)),
           total,
           page,
           limit,
@@ -618,7 +663,7 @@ export class SuperAdminService implements OnModuleInit {
       return new ApiResponse(
         200,
         {
-          ...company,
+          ...this.formatCompanyResponse(company),
           adminUser,
         },
         Msg.COMPANY_FETCHED,
@@ -733,7 +778,11 @@ export class SuperAdminService implements OnModuleInit {
 
       await company.save();
 
-      return new ApiResponse(200, company, Msg.COMPANY_UPDATED);
+      return new ApiResponse(
+        200,
+        this.formatCompanyResponse(company),
+        Msg.COMPANY_UPDATED,
+      );
     } catch (error) {
       console.log('Error while updating company:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);

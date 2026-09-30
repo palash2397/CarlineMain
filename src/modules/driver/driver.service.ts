@@ -37,6 +37,45 @@ export class DriverService {
     private readonly vehicleTypeService: VehicleTypeService,
   ) {}
 
+  private formatDriverResponse(driver: any) {
+    if (!driver) return driver;
+    const item = driver.toObject ? driver.toObject() : { ...driver };
+    const baseUrl = (process.env.BASE_URL || 'http://localhost:4016').replace(
+      /\/$/,
+      '',
+    );
+
+    delete item.password;
+    delete item.otp;
+    delete item.otpExpireAt;
+
+    if (item.avatar) {
+      item.avatar = item.avatar.startsWith('http')
+        ? item.avatar
+        : `${baseUrl}/api/v1/uploads/driver/${item.avatar}`;
+    } else {
+      item.avatar = process.env.DEFAULT_IMAGE || null;
+    }
+
+    const docFields = [
+      'insuranceProofUrl',
+      'governmentIdUrl',
+      'licenseCopyUrl',
+      'vehicleRegistrationDocUrl',
+    ];
+    docFields.forEach((docField) => {
+      if (item[docField]) {
+        item[docField] = item[docField].startsWith('http')
+          ? item[docField]
+          : `${baseUrl}/api/v1/uploads/driver/${item[docField]}`;
+      } else {
+        item[docField] = process.env.DEFAULT_IMAGE_FOR_EVERYTHING || null;
+      }
+    });
+
+    return item;
+  }
+
   async registerDriver(
     dto: RegisterDriverDto,
     files?: {
@@ -225,7 +264,6 @@ export class DriverService {
           }
         }
       } else {
-        // Company Admin or Staff
         if (userId && isValidObjectId(userId)) {
           targetCompany = await this.companyModel.findOne({ _id: userId });
         }
@@ -295,7 +333,14 @@ export class DriverService {
 
       return new ApiResponse(
         200,
-        { drivers, total, page, limit },
+        {
+          drivers: drivers.map((driver: any) =>
+            this.formatDriverResponse(driver),
+          ),
+          total,
+          page,
+          limit,
+        },
         Msg.DRIVERS_FETCHED,
       );
     } catch (error) {
@@ -497,38 +542,7 @@ export class DriverService {
         return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
       }
 
-      const baseUrl = process.env.BASE_URL || 'http://localhost:4016';
-      if (driver.avatar) {
-        driver.avatar = driver.avatar.startsWith('http')
-          ? driver.avatar
-          : `${baseUrl}/api/v1/uploads/driver/${driver.avatar}`;
-      } else {
-        driver.avatar = process.env.DEFAULT_IMAGE;
-      }
-
-      driver.insuranceProofUrl = driver.insuranceProofUrl
-        ? driver.insuranceProofUrl.startsWith('http')
-          ? driver.insuranceProofUrl
-          : `${baseUrl}/api/v1/uploads/driver/${driver.insuranceProofUrl}`
-        : process.env.DEFAULT_IMAGE_FOR_EVERYTHING;
-
-      driver.governmentIdUrl = driver.governmentIdUrl
-        ? driver.governmentIdUrl.startsWith('http')
-          ? driver.governmentIdUrl
-          : `${baseUrl}/api/v1/uploads/driver/${driver.governmentIdUrl}`
-        : process.env.DEFAULT_IMAGE_FOR_EVERYTHING;
-
-      driver.licenseCopyUrl = driver.licenseCopyUrl
-        ? driver.licenseCopyUrl.startsWith('http')
-          ? driver.licenseCopyUrl
-          : `${baseUrl}/api/v1/uploads/driver/${driver.licenseCopyUrl}`
-        : process.env.DEFAULT_IMAGE_FOR_EVERYTHING;
-
-      driver.vehicleRegistrationDocUrl = driver.vehicleRegistrationDocUrl
-        ? driver.vehicleRegistrationDocUrl.startsWith('http')
-          ? driver.vehicleRegistrationDocUrl
-          : `${baseUrl}/api/v1/uploads/driver/${driver.vehicleRegistrationDocUrl}`
-        : process.env.DEFAULT_IMAGE_FOR_EVERYTHING;
+      const formattedDriver = this.formatDriverResponse(driver);
 
       let company: any = null;
       if (driver.companyId) {
@@ -538,7 +552,11 @@ export class DriverService {
           .lean();
       }
 
-      return new ApiResponse(200, { ...driver, company }, Msg.DRIVER_FETCHED);
+      return new ApiResponse(
+        200,
+        { ...formattedDriver, company },
+        Msg.DRIVER_FETCHED,
+      );
     } catch (error) {
       console.error('Error while getting driver profile:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
@@ -573,31 +591,32 @@ export class DriverService {
       if (files?.avatar?.[0]) {
         const oldAvatar = extractFilename(driver.avatar);
         if (oldAvatar) deleteOldFile('driver', oldAvatar);
-        driver.avatar = `${baseUrl}/api/v1/uploads/driver/${files.avatar[0].filename}`;
+        driver.avatar = files.avatar[0].filename;
       }
 
       if (files?.governmentId?.[0]) {
         const oldDoc = extractFilename(driver.governmentIdUrl);
         if (oldDoc) deleteOldFile('driver', oldDoc);
-        driver.governmentIdUrl = `${baseUrl}/api/v1/uploads/driver/${files.governmentId[0].filename}`;
+        driver.governmentIdUrl = files.governmentId[0].filename;
       }
 
       if (files?.licenseCopy?.[0]) {
         const oldDoc = extractFilename(driver.licenseCopyUrl);
         if (oldDoc) deleteOldFile('driver', oldDoc);
-        driver.licenseCopyUrl = `${baseUrl}/api/v1/uploads/driver/${files.licenseCopy[0].filename}`;
+        driver.licenseCopyUrl = files.licenseCopy[0].filename;
       }
 
       if (files?.vehicleRegistrationDoc?.[0]) {
         const oldDoc = extractFilename(driver.vehicleRegistrationDocUrl);
         if (oldDoc) deleteOldFile('driver', oldDoc);
-        driver.vehicleRegistrationDocUrl = `${baseUrl}/api/v1/uploads/driver/${files.vehicleRegistrationDoc[0].filename}`;
+        driver.vehicleRegistrationDocUrl =
+          files.vehicleRegistrationDoc[0].filename;
       }
 
       if (files?.insuranceProof?.[0]) {
         const oldDoc = extractFilename(driver.insuranceProofUrl);
         if (oldDoc) deleteOldFile('driver', oldDoc);
-        driver.insuranceProofUrl = `${baseUrl}/api/v1/uploads/driver/${files.insuranceProof[0].filename}`;
+        driver.insuranceProofUrl = files.insuranceProof[0].filename;
       }
 
       const updateFields = [
@@ -653,6 +672,22 @@ export class DriverService {
       } else {
         responseData.avatar = process.env.DEFAULT_IMAGE;
       }
+
+      const docFields = [
+        'insuranceProofUrl',
+        'governmentIdUrl',
+        'licenseCopyUrl',
+        'vehicleRegistrationDocUrl',
+      ];
+      docFields.forEach((docField) => {
+        if (responseData[docField]) {
+          responseData[docField] = responseData[docField].startsWith('http')
+            ? responseData[docField]
+            : `${baseUrl}/api/v1/uploads/driver/${responseData[docField]}`;
+        } else {
+          responseData[docField] = process.env.DEFAULT_IMAGE_FOR_EVERYTHING;
+        }
+      });
 
       return new ApiResponse(200, responseData, Msg.DRIVER_UPDATED);
     } catch (error) {
