@@ -186,34 +186,86 @@ export class DriverService {
     }
   }
 
-  async getCompanyDrivers(dto: any, id: string) {
+  async getCompanyDrivers(dto: any, userOrId: any) {
     try {
-      const page = parseInt(dto?.page) || 1;
-      const limit = parseInt(dto?.limit) || 10;
+      const page = Math.max(1, parseInt(dto?.page) || 1);
+      const limit = Math.max(1, parseInt(dto?.limit) || 10);
       const skip = (page - 1) * limit;
 
-      let company = await this.companyModel.findOne({ _id: id });
-      if (!company) {
-        const companyUser = await this.companyUserModel.findOne({ _id: id });
-        if (companyUser) {
-          company = await this.companyModel.findOne({
+      const userId =
+        typeof userOrId === 'string' ? userOrId : userOrId?.id || userOrId?._id;
+      const userRoles = Array.isArray(userOrId?.roles)
+        ? userOrId.roles
+        : [userOrId?.roles || userOrId?.role].filter(Boolean);
+      const isSuperAdmin =
+        userRoles.includes(UserRole.SUPERADMIN) ||
+        userRoles.includes(UserRole.ADMIN);
+
+      let companyFilter: any = {};
+      let targetCompany: any = null;
+
+      if (isSuperAdmin) {
+        if (dto?.companyId) {
+          if (isValidObjectId(dto.companyId)) {
+            targetCompany = await this.companyModel.findById(dto.companyId);
+          }
+          if (!targetCompany) {
+            targetCompany = await this.companyModel.findOne({
+              companyId: dto.companyId,
+            });
+          }
+          if (targetCompany) {
+            const cIds = [
+              targetCompany._id.toString(),
+              targetCompany.companyId,
+            ].filter(Boolean);
+            companyFilter.companyId = { $in: cIds };
+          } else {
+            companyFilter.companyId = dto.companyId;
+          }
+        }
+      } else {
+        // Company Admin or Staff
+        if (userId && isValidObjectId(userId)) {
+          targetCompany = await this.companyModel.findOne({ _id: userId });
+        }
+        if (!targetCompany && userId) {
+          const compUser = await this.companyUserModel.findOne({ _id: userId });
+          if (compUser && compUser.companyId) {
+            targetCompany = await this.companyModel.findOne({
+              $or: [
+                ...(isValidObjectId(compUser.companyId)
+                  ? [{ _id: compUser.companyId }]
+                  : []),
+                { companyId: compUser.companyId },
+              ],
+            });
+          }
+        }
+
+        if (!targetCompany && userOrId?.companyId) {
+          targetCompany = await this.companyModel.findOne({
             $or: [
-              { _id: companyUser.companyId },
-              { companyId: companyUser.companyId },
+              ...(isValidObjectId(userOrId.companyId)
+                ? [{ _id: userOrId.companyId }]
+                : []),
+              { companyId: userOrId.companyId },
             ],
           });
         }
+
+        if (!targetCompany) {
+          return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+        }
+
+        const cIds = [
+          targetCompany._id.toString(),
+          targetCompany.companyId,
+        ].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
       }
 
-      if (!company) {
-        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
-      }
-
-      const filter: any = {
-        companyId: {
-          $in: [company._id.toString(), company.companyId].filter(Boolean),
-        },
-      };
+      const filter: any = { ...companyFilter };
 
       if (dto?.search) {
         filter.$or = [
@@ -227,6 +279,10 @@ export class DriverService {
 
       if (dto?.status && dto.status !== 'All') {
         filter.status = dto.status;
+      }
+
+      if (dto?.vehicleType) {
+        filter.vehicleType = dto.vehicleType;
       }
 
       const total = await this.driverModel.countDocuments(filter);

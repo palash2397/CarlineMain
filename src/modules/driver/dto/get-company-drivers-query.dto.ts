@@ -45,4 +45,12 @@ export class GetCompanyDriversQueryDto {
   @IsOptional()
   @IsString()
   vehicleType?: string;
+
+  @ApiPropertyOptional({
+    example: '6aa8ee8df20e855656388cc7',
+    description: 'Company ID (Allowed for Super Admin to filter drivers of a specific company)',
+  })
+  @IsOptional()
+  @IsString()
+  companyId?: string;
 }

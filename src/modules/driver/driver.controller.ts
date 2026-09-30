@@ -72,8 +72,8 @@ export class DriverController {
   }
 
   @Get('/company-drivers/all')
-  // @ApiBearerAuth('access-token')
-  // @UseGuards(JwtAuthGuard, RoleGuard)
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
     UserRole.COMPANY_ADMIN,
     ...COMPANY_STAFF_ROLES,
@@ -89,11 +89,12 @@ export class DriverController {
     enum: ['All', ...Object.values(DriverStatus)],
   })
   @ApiQuery({ name: 'vehicleType', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
   async getCompanyDrivers(
     @Query() query: GetCompanyDriversQueryDto,
     @Req() req: any,
   ) {
-    return this.driverService.getCompanyDrivers(query, req.user.id);
+    return this.driverService.getCompanyDrivers(query, req.user);
   }
 
   @Patch(['/status'])
