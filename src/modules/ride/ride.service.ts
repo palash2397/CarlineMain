@@ -597,7 +597,8 @@ export class RideService {
     try {
       const frequency = dto.frequency || RecurrenceFrequency.WEEKLY;
 
-      const startDate = new Date(dto.startDate);
+      // startDate is optional, defaults to today at 00:00
+      const startDate = dto.startDate ? new Date(dto.startDate) : new Date();
 
       if (Number.isNaN(startDate.getTime())) {
         return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);

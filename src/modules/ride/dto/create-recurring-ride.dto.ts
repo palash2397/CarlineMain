@@ -109,14 +109,15 @@ export class CreateRecurringRideDto {
   })
   pickupTime: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '2026-10-01',
     description:
       'First day the series may run (pickup time is added by the backend)',
   })
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
-  startDate: Date;
+  startDate?: Date;
 
   @ApiPropertyOptional({
     example: '2026-12-31',
