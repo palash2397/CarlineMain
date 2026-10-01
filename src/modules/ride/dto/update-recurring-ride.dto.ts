@@ -43,7 +43,7 @@ export class UpdateRecurringRideDto {
   @ApiPropertyOptional({
     enum: RecurrenceFrequency,
     description:
-      'Switch the series between WEEKLY (daysOfWeek) and MONTHLY (daysOfMonth)',
+      'Switch the repeat mode: DAILY = every day, WEEKLY = daysOfWeek (Mon - Fri is [1,2,3,4,5]), MONTHLY = daysOfMonth. Monthly keeps the day of startDate when daysOfMonth is not sent',
   })
   @IsOptional()
   @IsEnum(RecurrenceFrequency)
@@ -53,7 +53,7 @@ export class UpdateRecurringRideDto {
     example: [5, 15, 25],
     type: [Number],
     description:
-      'MONTHLY only: days of the month, 1 - 31 (one day = fixed date, several days = custom dates)',
+      'MONTHLY only: days of the month, 1 - 31 (one day = fixed date, several days = custom dates). Optional: the day of startDate is used when it is not sent',
   })
   @IsOptional()
   @IsArray()

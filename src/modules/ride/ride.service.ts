@@ -596,10 +596,20 @@ export class RideService {
   async createRecurringRide(user: any, dto: CreateRecurringRideDto) {
     try {
       const frequency = dto.frequency || RecurrenceFrequency.WEEKLY;
+
+      const startDate = new Date(dto.startDate);
+
+      if (Number.isNaN(startDate.getTime())) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+      }
+
+      // MONTHLY has no day picker in the app: a monthly series without days
+      // repeats on the day of its start date.
       const pattern = this.recurringPattern(
         frequency,
         dto.daysOfWeek,
         dto.daysOfMonth,
+        startDate,
       );
 
       if (pattern.error) {
@@ -608,12 +618,6 @@ export class RideService {
 
       if (!this.parsePickupTime(dto.pickupTime)) {
         return new ApiResponse(400, {}, Msg.RECURRING_TIME_INVALID);
-      }
-
-      const startDate = new Date(dto.startDate);
-
-      if (Number.isNaN(startDate.getTime())) {
-        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
       }
 
       let endDate: Date | null = null;
@@ -793,10 +797,22 @@ export class RideService {
           ? dto.frequency
           : series.frequency || RecurrenceFrequency.WEEKLY;
 
+      const startDate =
+        dto.startDate !== undefined
+          ? new Date(dto.startDate)
+          : series.startDate;
+
+      if (Number.isNaN(new Date(startDate).getTime())) {
+        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
+      }
+
+      // MONTHLY has no day picker in the app: when the series has no day of the
+      // month yet, the day of its start date is used.
       const pattern = this.recurringPattern(
         frequency,
         dto.daysOfWeek !== undefined ? dto.daysOfWeek : series.daysOfWeek,
         dto.daysOfMonth !== undefined ? dto.daysOfMonth : series.daysOfMonth,
+        new Date(startDate),
       );
 
       if (pattern.error) {
@@ -807,15 +823,6 @@ export class RideService {
 
       if (!this.parsePickupTime(pickupTime)) {
         return new ApiResponse(400, {}, Msg.RECURRING_TIME_INVALID);
-      }
-
-      const startDate =
-        dto.startDate !== undefined
-          ? new Date(dto.startDate)
-          : series.startDate;
-
-      if (Number.isNaN(new Date(startDate).getTime())) {
-        return new ApiResponse(400, {}, Msg.RECURRING_DATE_INVALID);
       }
 
       // A null end date makes the series open ended again.
@@ -3046,16 +3053,31 @@ export class RideService {
     return [...new Set(cleaned)].sort((a, b) => a - b);
   }
 
-  // The days the series runs on: weekdays of the week for WEEKLY, days of the
-  // month for MONTHLY. One day of the month is a fixed date, several days are
-  // custom dates. An empty or invalid pattern returns the message to answer.
+  // The days the series runs on: every day for DAILY, weekdays of the week for
+  // WEEKLY, days of the month for MONTHLY. One day of the month is a fixed
+  // date, several days are custom dates. The app has no monthly day picker, so
+  // a monthly series without days falls back to the day of its start date. An
+  // empty or invalid pattern returns the message to answer.
   private recurringPattern(
     frequency: RecurrenceFrequency,
     daysOfWeek?: number[],
     daysOfMonth?: number[],
+    startDate?: Date,
   ) {
+    if (frequency === RecurrenceFrequency.DAILY) {
+      return { error: null, daysOfWeek: [], daysOfMonth: [] };
+    }
+
     if (frequency === RecurrenceFrequency.MONTHLY) {
-      const monthDays = this.cleanDaysOfMonth(daysOfMonth);
+      let monthDays = this.cleanDaysOfMonth(daysOfMonth);
+
+      if (
+        !monthDays.length &&
+        startDate &&
+        !Number.isNaN(startDate.getTime())
+      ) {
+        monthDays = this.cleanDaysOfMonth([startDate.getDate()]);
+      }
 
       return monthDays.length
         ? { error: null, daysOfWeek: [], daysOfMonth: monthDays }
@@ -3127,11 +3149,13 @@ export class RideService {
     }
 
     const monthly = rule.frequency === RecurrenceFrequency.MONTHLY;
+    const daily = rule.frequency === RecurrenceFrequency.DAILY;
     const days = monthly
       ? this.cleanDaysOfMonth(rule.daysOfMonth)
       : this.cleanDaysOfWeek(rule.daysOfWeek);
 
-    if (!days.length) {
+    // DAILY has no day list, it runs on every day of the series.
+    if (!daily && !days.length) {
       return null;
     }
 
@@ -3145,9 +3169,10 @@ export class RideService {
       const day = new Date(cursor);
       day.setDate(day.getDate() + offset);
 
-      // WEEKLY matches the weekday of the day, MONTHLY its day of the month.
-      // A day the month does not have (31 in February) has no pickup at all.
-      if (!days.includes(monthly ? day.getDate() : day.getDay())) {
+      // DAILY always runs, WEEKLY matches the weekday of the day, MONTHLY its
+      // day of the month. A day the month does not have (31 in February) has
+      // no pickup at all.
+      if (!daily && !days.includes(monthly ? day.getDate() : day.getDay())) {
         continue;
       }
 

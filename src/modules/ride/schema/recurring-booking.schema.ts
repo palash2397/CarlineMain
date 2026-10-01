@@ -33,7 +33,8 @@ export class RecurringBooking {
   @Prop({ type: Object, required: true })
   dropoff: RideLocation;
 
-  // How the series repeats. WEEKLY uses daysOfWeek, MONTHLY uses daysOfMonth.
+  // How the series repeats. DAILY runs every day, WEEKLY uses daysOfWeek,
+  // MONTHLY uses daysOfMonth.
   @Prop({
     type: String,
     enum: RecurrenceFrequency,
