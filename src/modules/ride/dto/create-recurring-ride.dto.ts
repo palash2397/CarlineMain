@@ -23,8 +23,8 @@ import { MAX_PASSENGERS } from 'src/constants';
 import { RideLocationDto } from './ride-location.dto';
 
 // A recurring booking repeats the same ride on the selected days and time
-// (weekly weekdays or monthly days of the month) until the passenger pauses
-// or cancels the series.
+// (daily, weekly weekdays or monthly days of the month) until the passenger
+// pauses or cancels the series.
 export class CreateRecurringRideDto {
   @ApiProperty({
     type: RideLocationDto,
@@ -65,7 +65,7 @@ export class CreateRecurringRideDto {
     enum: RecurrenceFrequency,
     default: RecurrenceFrequency.WEEKLY,
     description:
-      'WEEKLY repeats on daysOfWeek (every week), MONTHLY repeats on daysOfMonth (every month)',
+      'Repeat mode: DAILY = every day, WEEKLY = daysOfWeek (Mon - Fri is [1,2,3,4,5]), MONTHLY = daysOfMonth. These cover the app modes Daily, Mon - Fri, Weekly and Custom Days; Monthly keeps the day of startDate when daysOfMonth is not sent',
   })
   @IsOptional()
   @IsEnum(RecurrenceFrequency)
@@ -89,7 +89,7 @@ export class CreateRecurringRideDto {
     example: [5],
     type: [Number],
     description:
-      'MONTHLY only: days of the month, 1 - 31. One day is a fixed date (5 = the 5th of every month), several days are custom dates (5, 15, 25 = these days of every month)',
+      'MONTHLY only: days of the month, 1 - 31. One day is a fixed date (5 = the 5th of every month), several days are custom dates (5, 15, 25 = these days of every month). Optional: the day of startDate is used when it is not sent',
   })
   @IsOptional()
   @IsArray()
