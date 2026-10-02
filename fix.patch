@@ -1,0 +1,14 @@
+--- a/src/modules/ride/dto/create-recurring-ride.dto.ts
++++ b/src/modules/ride/dto/create-recurring-ride.dto.ts
+@@ -108,12 +108,11 @@ export class CreateRecurringRideDto {
+   pickupTime: string;
+ 
+ @ApiProperty({ (was @ApiPropertyOptional
+     example: '2026-10-01',
+     description:
+       'First day the series may run (pickup time is added by the backend)',
+   })
+ (removed @IsOptional())
+   @Type(() => Date)
+   @IsDate()
+ startDate: Date; (was startDate?: Date;)
