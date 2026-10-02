@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -18,8 +19,10 @@ import { Roles } from '../auth/roles/roles.decorator';
 
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';
+import { CreateDispatcherBookingDto } from './dto/create-dispatcher-booking.dto';
 import { CreateRecurringRideDto } from './dto/create-recurring-ride.dto';
 import { EstimateFareDto } from './dto/estimate-fare.dto';
+import { ModifyRideDto } from './dto/modify-ride.dto';
 import { MyRecurringRidesQueryDto } from './dto/my-recurring-rides-query.dto';
 import { MyRidesQueryDto } from './dto/my-rides-query.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
@@ -193,6 +196,63 @@ export class RideController {
       recurringId,
       dto,
     );
+  }
+
+  @Delete('ride/recurring/:id')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({ summary: 'Delete a recurring booking series' })
+  @ApiParam({ name: 'id', description: 'Recurring booking id' })
+  async deleteRecurringRide(
+    @Req() req: any,
+    @Param('id') recurringId: string,
+  ) {
+    return this.rideService.deleteRecurringRide(req.user, recurringId);
+  }
+
+  @Patch('ride/:id/modify')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(
+    ...PASSENGER_ROLES,
+    UserRole.COMPANY_ADMIN,
+    UserRole.DISPATCHER,
+    UserRole.MANAGER,
+    UserRole.DRIVER_MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Modify booking details (pickup, dropoff, vehicle type, schedule, notes, payment)',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async modifyRide(
+    @Req() req: any,
+    @Param('id') rideId: string,
+    @Body() dto: ModifyRideDto,
+  ) {
+    return this.rideService.modifyRide(req.user, rideId, dto);
+  }
+
+  @Post('ride/dispatcher-book')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.DISPATCHER,
+    UserRole.MANAGER,
+    UserRole.DRIVER_MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Dispatcher-created booking: Create a trip on behalf of a customer or guest with optional driver assignment',
+  })
+  async bookDispatcherRide(
+    @Req() req: any,
+    @Body() dto: CreateDispatcherBookingDto,
+  ) {
+    return this.rideService.bookDispatcherRide(req.user, dto);
   }
 
   @Get('ride/:id')
