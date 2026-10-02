@@ -305,6 +305,11 @@ export const Msg = {
   RECURRING_ALREADY_CANCELLED: 'This recurring booking is already cancelled',
   RECURRING_USE_SERIES:
     'Use the recurring booking API to book a repeating ride',
+  RECURRING_RIDE_DELETED: 'Recurring booking deleted successfully',
+  DISPATCHER_RIDE_BOOKED: 'Dispatcher booking created successfully',
+  RIDE_MODIFIED: 'Booking modified successfully',
+  RIDE_CANNOT_MODIFY:
+    'This ride can no longer be modified because it has already started or ended',
 
   // Driver Booking
   DRIVER_HOME_FETCHED: 'Driver home fetched successfully',

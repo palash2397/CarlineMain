@@ -15,6 +15,8 @@ import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 import { Customer, CustomerSchema } from '../customer/schema/customer.schema';
 import { MailModule } from '../mail/mail.module';
 
+import { RideModule } from '../ride/ride.module';
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -26,6 +28,7 @@ import { MailModule } from '../mail/mail.module';
       { name: Customer.name, schema: CustomerSchema },
     ]),
     MailModule,
+    RideModule,
   ],
   controllers: [
     CompanyUserController,

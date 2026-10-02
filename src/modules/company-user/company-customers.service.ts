@@ -12,10 +12,13 @@ import { Ride, RideDocument } from '../ride/schema/ride.schema';
 import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { Customer, CustomerDocument } from '../customer/schema/customer.schema';
 
+import { MailService } from '../mail/mail.service';
+
 import {
   GetCompanyCustomersQueryDto,
   CompanyCustomerStatusFilter,
 } from './dto/get-company-customers-query.dto';
+import { CreateCompanyCustomerDto } from './dto/create-company-customer.dto';
 
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
@@ -37,6 +40,7 @@ export class CompanyCustomersService {
     private readonly driverModel: Model<DriverDocument>,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
+    private readonly mailService: MailService,
   ) {}
 
   private formatDisplayDate(dateInput: any): string {
@@ -173,7 +177,8 @@ export class CompanyCustomersService {
   }
 
   // ==========================================
-  // 1. Get All Company Customers (Paginated & Filterable)
+  // ==========================================
+  // 1. Get All Company Customers (Original API - Untouched)
   // ==========================================
   async getCompanyCustomers(query: GetCompanyCustomersQueryDto, user: any) {
     try {
@@ -224,7 +229,6 @@ export class CompanyCustomersService {
             },
             lastTripAt: { $max: '$createdAt' },
             latestRideId: { $last: '$_id' },
-            driverIds: { $addToSet: '$driver' },
           },
         },
       ]);
@@ -234,38 +238,19 @@ export class CompanyCustomersService {
           200,
           {
             customers: [],
-            pagination: {
-              total: 0,
-              page,
-              limit,
-              totalPages: 0,
-            },
+            pagination: { total: 0, page, limit, totalPages: 0 },
             company: company
-              ? {
-                  id: company._id,
-                  name: company.displayName || company.legalName,
-                  code: company.companyId,
-                }
+              ? { id: company._id, name: company.displayName || company.legalName, code: company.companyId }
               : null,
-            counts: {
-              all: 0,
-              active: 0,
-              inactive: 0,
-            },
+            counts: { all: 0, active: 0, restricted: 0, inactive: 0 },
           },
           'Company customers fetched successfully',
         );
       }
 
       // 3. Fetch User Profiles for these Customer IDs
-      const rawUserIds = customerAggregations
-        .map((c) => c._id)
-        .filter(Boolean);
-
-      const objectIds = rawUserIds
-        .filter((id) => isValidObjectId(id))
-        .map((id) => new Types.ObjectId(id));
-
+      const rawUserIds = customerAggregations.map((c) => c._id).filter(Boolean);
+      const objectIds = rawUserIds.filter((id) => isValidObjectId(id)).map((id) => new Types.ObjectId(id));
       const stringIds = rawUserIds.map((id) => id.toString());
 
       const userQuery: any = {
@@ -282,7 +267,6 @@ export class CompanyCustomersService {
         userMap.set(u._id.toString(), u);
       });
 
-      // Also check Customer schema fallback for phone-based records
       const customerDocs = await this.customerModel
         .find({
           $or: [
@@ -298,11 +282,7 @@ export class CompanyCustomersService {
         if (c.mobileNumber) legacyCustomerMap.set(c.mobileNumber, c);
       });
 
-      // 4. Batch fetch Latest Rides to get route & driver summary
-      const latestRideIds = customerAggregations
-        .map((c) => c.latestRideId)
-        .filter(Boolean);
-
+      const latestRideIds = customerAggregations.map((c) => c.latestRideId).filter(Boolean);
       const latestRides = await this.rideModel
         .find({ _id: { $in: latestRideIds } })
         .select('pickup dropoff driver payableFare totalFare status createdAt')
@@ -313,15 +293,12 @@ export class CompanyCustomersService {
         latestRideMap.set(r._id.toString(), r);
       });
 
-      // 5. Build Combined Customer Data
       let combinedCustomers = customerAggregations.map((agg) => {
         const uId = agg._id?.toString();
         const userDoc = userMap.get(uId);
         const legacyDoc =
           legacyCustomerMap.get(uId) ||
-          (userDoc?.phoneNumber
-            ? legacyCustomerMap.get(userDoc.phoneNumber)
-            : null);
+          (userDoc?.phoneNumber ? legacyCustomerMap.get(userDoc.phoneNumber) : null);
 
         const fullName =
           userDoc?.firstName || userDoc?.lastName
@@ -331,17 +308,11 @@ export class CompanyCustomersService {
         const phone = userDoc?.phoneNumber || legacyDoc?.mobileNumber || '-';
         const email = userDoc?.email || legacyDoc?.email || '-';
         const avatar = userDoc?.avatar || null;
-        const isActive = userDoc
-          ? userDoc.isActive !== false && !(userDoc as any).isBlocked
-          : true;
-
-        const latestRide = agg.latestRideId
-          ? latestRideMap.get(agg.latestRideId.toString())
-          : null;
+        const isActive = userDoc ? userDoc.isActive !== false && !(userDoc as any).isBlocked : true;
+        const latestRide = agg.latestRideId ? latestRideMap.get(agg.latestRideId.toString()) : null;
 
         const lastTripDate = latestRide?.createdAt || agg.lastTripAt;
         const formattedLastTrip = this.formatDisplayDate(lastTripDate);
-
         const statusLabel = isActive ? 'Active' : 'Restricted';
 
         return {
@@ -382,7 +353,6 @@ export class CompanyCustomersService {
         };
       });
 
-      // 6. Apply Search Filter
       if (query.search && query.search.trim()) {
         const term = query.search.toLowerCase().trim();
         combinedCustomers = combinedCustomers.filter(
@@ -393,11 +363,7 @@ export class CompanyCustomersService {
         );
       }
 
-      // 7. Apply Status Filter
-      if (
-        query.status &&
-        query.status !== CompanyCustomerStatusFilter.ALL
-      ) {
+      if (query.status && query.status !== CompanyCustomerStatusFilter.ALL) {
         const filterStatus = String(query.status).toLowerCase();
         combinedCustomers = combinedCustomers.filter(
           (c) =>
@@ -406,23 +372,12 @@ export class CompanyCustomersService {
         );
       }
 
-      // 8. Sort by Most Recent Trip Date
       combinedCustomers.sort((a, b) => {
         const timeA = a.lastTripDate ? new Date(a.lastTripDate).getTime() : 0;
         const timeB = b.lastTripDate ? new Date(b.lastTripDate).getTime() : 0;
         return timeB - timeA;
       });
 
-      // 9. Status Counts for UI Tabs
-      const allCount = combinedCustomers.length;
-      const activeCount = combinedCustomers.filter(
-        (c) => c.status === 'Active',
-      ).length;
-      const restrictedCount = combinedCustomers.filter(
-        (c) => c.status === 'Restricted',
-      ).length;
-
-      // 10. Paginate
       const total = combinedCustomers.length;
       const paginatedCustomers = combinedCustomers.slice(skip, skip + limit);
       const totalPages = Math.ceil(total / limit) || 1;
@@ -431,30 +386,242 @@ export class CompanyCustomersService {
         200,
         {
           customers: paginatedCustomers,
-          pagination: {
-            total,
-            page,
-            limit,
-            totalPages,
-          },
+          pagination: { total, page, limit, totalPages },
           company: company
-            ? {
-                id: company._id,
-                name: company.displayName || company.legalName,
-                code: company.companyId,
-              }
+            ? { id: company._id, name: company.displayName || company.legalName, code: company.companyId }
             : null,
           counts: {
-            all: allCount,
-            active: activeCount,
-            restricted: restrictedCount,
-            inactive: restrictedCount,
+            all: combinedCustomers.length,
+            active: combinedCustomers.filter((c) => c.status === 'Active').length,
+            restricted: combinedCustomers.filter((c) => c.status === 'Restricted').length,
+            inactive: combinedCustomers.filter((c) => c.status === 'Restricted').length,
           },
         },
         'Company customers fetched successfully',
       );
     } catch (error: any) {
       console.error('Error while fetching company customers:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================
+  // 1b. NEW API: Get Customers Belonging Strictly to Same Company ID
+  // ==========================================
+  async getSameCompanyCustomers(query: GetCompanyCustomersQueryDto, user: any) {
+    try {
+      const page = Math.max(1, parseInt(query.page || '1', 10) || 1);
+      const limit = Math.max(1, parseInt(query.limit || '10', 10) || 10);
+      const skip = (page - 1) * limit;
+
+      const { company, companyIds, isGlobalAdmin } =
+        await this.resolveCompanyContext(query.companyId, user);
+
+      if (!isGlobalAdmin && companyIds.length === 0) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      const userFilter: any = {};
+      if (!isGlobalAdmin || query.companyId) {
+        if (companyIds.length > 0) {
+          userFilter.companyId = { $in: companyIds };
+        } else if (query.companyId) {
+          userFilter.companyId = query.companyId;
+        }
+      }
+
+      const companyUsers = await this.userModel
+        .find(userFilter)
+        .select('firstName lastName phoneNumber email avatar isActive companyId createdAt')
+        .lean();
+
+      if (!companyUsers || companyUsers.length === 0) {
+        return new ApiResponse(
+          200,
+          {
+            customers: [],
+            pagination: { total: 0, page, limit, totalPages: 0 },
+            company: company
+              ? { id: company._id, name: company.displayName || company.legalName, code: company.companyId }
+              : null,
+            counts: { all: 0, active: 0, restricted: 0, inactive: 0 },
+          },
+          'Company customers fetched successfully',
+        );
+      }
+
+      const userObjectIds = companyUsers
+        .map((u) => u._id)
+        .filter((id) => isValidObjectId(id))
+        .map((id) => new Types.ObjectId(id));
+      const userStringIds = companyUsers.map((u) => u._id.toString());
+
+      const rideMatch: any = {
+        user: { $in: [...userObjectIds, ...userStringIds] },
+      };
+      if (!isGlobalAdmin && companyIds.length > 0) {
+        rideMatch.companyId = { $in: companyIds };
+      }
+
+      const customerAggregations = await this.rideModel.aggregate([
+        { $match: rideMatch },
+        {
+          $group: {
+            _id: '$user',
+            totalTrips: { $sum: 1 },
+            completedTrips: {
+              $sum: { $cond: [{ $eq: ['$status', RideStatus.RIDE_COMPLETED] }, 1, 0] },
+            },
+            cancelledTrips: {
+              $sum: { $cond: [{ $eq: ['$status', RideStatus.RIDE_CANCELLED] }, 1, 0] },
+            },
+            totalSpent: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$status', RideStatus.RIDE_COMPLETED] },
+                  { $ifNull: ['$payableFare', { $ifNull: ['$totalFare', 0] }] },
+                  0,
+                ],
+              },
+            },
+            lastTripAt: { $max: '$createdAt' },
+            latestRideId: { $last: '$_id' },
+          },
+        },
+      ]);
+
+      const aggMap = new Map<string, any>();
+      (customerAggregations || []).forEach((agg) => {
+        if (agg._id) aggMap.set(agg._id.toString(), agg);
+      });
+
+      const latestRideIds = (customerAggregations || [])
+        .map((c) => c.latestRideId)
+        .filter(Boolean);
+
+      const latestRides = await this.rideModel
+        .find({ _id: { $in: latestRideIds } })
+        .select('pickup dropoff driver payableFare totalFare status createdAt')
+        .lean();
+
+      const latestRideMap = new Map<string, any>();
+      latestRides.forEach((r: any) => {
+        latestRideMap.set(r._id.toString(), r);
+      });
+
+      let combinedCustomers = companyUsers.map((userDoc: any) => {
+        const uId = userDoc._id.toString();
+        const agg = aggMap.get(uId);
+
+        const fullName =
+          userDoc.firstName || userDoc.lastName
+            ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim()
+            : 'Customer';
+
+        const phone = userDoc.phoneNumber || '-';
+        const email = userDoc.email || '-';
+        const avatar = userDoc.avatar || null;
+        const isActive = userDoc.isActive !== false && !(userDoc as any).isBlocked;
+
+        const latestRide = agg?.latestRideId ? latestRideMap.get(agg.latestRideId.toString()) : null;
+        const lastTripDate = latestRide?.createdAt || agg?.lastTripAt;
+        const formattedLastTrip = this.formatDisplayDate(lastTripDate);
+        const statusLabel = isActive ? 'Active' : 'Restricted';
+
+        return {
+          _id: uId,
+          customerId: uId,
+          customer: fullName,
+          name: fullName,
+          phone: phone,
+          phoneNumber: phone,
+          email: email,
+          avatar: avatar,
+          trips: agg?.totalTrips || 0,
+          totalTrips: agg?.totalTrips || 0,
+          completedTrips: agg?.completedTrips || 0,
+          cancelledTrips: agg?.cancelledTrips || 0,
+          totalSpent: Number((agg?.totalSpent || 0).toFixed(2)),
+          currency: '₹',
+          lastTrip: formattedLastTrip,
+          lastTripDate: lastTripDate || null,
+          lastTripDetails: latestRide
+            ? {
+                rideId: latestRide._id,
+                date: latestRide.createdAt,
+                status: latestRide.status,
+                pickup: latestRide.pickup?.address || 'Pickup Point',
+                dropoff: latestRide.dropoff?.address || 'Dropoff Point',
+                fare: latestRide.payableFare || latestRide.totalFare || 0,
+              }
+            : null,
+          status: statusLabel,
+          statusBadge: {
+            label: statusLabel,
+            color: isActive ? 'green' : 'red',
+            icon: isActive ? 'check-circle' : 'x-circle',
+          },
+          action: 'View More',
+          joinedAt: userDoc.createdAt || agg?.lastTripAt,
+        };
+      });
+
+      if (query.search && query.search.trim()) {
+        const term = query.search.toLowerCase().trim();
+        combinedCustomers = combinedCustomers.filter(
+          (c) =>
+            c.customer.toLowerCase().includes(term) ||
+            c.phoneNumber.toLowerCase().includes(term) ||
+            c.email.toLowerCase().includes(term),
+        );
+      }
+
+      if (query.status && query.status !== CompanyCustomerStatusFilter.ALL) {
+        const filterStatus = String(query.status).toLowerCase();
+        combinedCustomers = combinedCustomers.filter(
+          (c) =>
+            c.status.toLowerCase() === filterStatus ||
+            (filterStatus === 'inactive' && c.status === 'Restricted'),
+        );
+      }
+
+      combinedCustomers.sort((a, b) => {
+        const timeA = a.lastTripDate
+          ? new Date(a.lastTripDate).getTime()
+          : a.joinedAt
+          ? new Date(a.joinedAt).getTime()
+          : 0;
+        const timeB = b.lastTripDate
+          ? new Date(b.lastTripDate).getTime()
+          : b.joinedAt
+          ? new Date(b.joinedAt).getTime()
+          : 0;
+        return timeB - timeA;
+      });
+
+      const total = combinedCustomers.length;
+      const paginatedCustomers = combinedCustomers.slice(skip, skip + limit);
+      const totalPages = Math.ceil(total / limit) || 1;
+
+      return new ApiResponse(
+        200,
+        {
+          customers: paginatedCustomers,
+          pagination: { total, page, limit, totalPages },
+          company: company
+            ? { id: company._id, name: company.displayName || company.legalName, code: company.companyId }
+            : null,
+          counts: {
+            all: combinedCustomers.length,
+            active: combinedCustomers.filter((c) => c.status === 'Active').length,
+            restricted: combinedCustomers.filter((c) => c.status === 'Restricted').length,
+            inactive: combinedCustomers.filter((c) => c.status === 'Restricted').length,
+          },
+        },
+        'Same company customers fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error while fetching same company customers:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
   }
@@ -591,6 +758,121 @@ export class CompanyCustomersService {
       );
     } catch (error: any) {
       console.error('Error while fetching company customer details:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================
+  // 3. Create / Register New Company Customer
+  // ==========================================
+  async createCompanyCustomer(dto: CreateCompanyCustomerDto, user: any) {
+    try {
+      const { company } = await this.resolveCompanyContext(
+        dto.companyId,
+        user,
+      );
+
+      const targetCompanyId =
+        dto.companyId || (company ? company._id.toString() : user?.companyId);
+
+      const firstName =
+        dto.firstName || (dto.fullName ? dto.fullName.split(' ')[0] : 'Customer');
+      const lastName =
+        dto.lastName ||
+        (dto.fullName ? dto.fullName.split(' ').slice(1).join(' ') : '');
+
+      const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+
+      let userDoc = await this.userModel.findOne({
+        phoneNumber: dto.phoneNumber,
+      });
+
+      if (userDoc) {
+        if (firstName) userDoc.firstName = firstName;
+        if (lastName) userDoc.lastName = lastName;
+        if (dto.email) userDoc.email = dto.email;
+        if (targetCompanyId) userDoc.companyId = targetCompanyId;
+        if (!userDoc.password) userDoc.password = tempPassword;
+        await userDoc.save();
+      } else {
+        userDoc = await this.userModel.create({
+          firstName,
+          lastName,
+          phoneNumber: dto.phoneNumber,
+          email: dto.email || undefined,
+          password: tempPassword,
+          companyId: targetCompanyId || undefined,
+          role: UserRole.USER,
+          isVerified: true,
+          isActive: true,
+        });
+      }
+
+      const fullName = `${firstName} ${lastName}`.trim();
+      await this.customerModel.findOneAndUpdate(
+        { mobileNumber: dto.phoneNumber },
+        {
+          fullName,
+          email: dto.email || '',
+          mobileNumber: dto.phoneNumber,
+          createdBy: user?.id || user?._id || 'DISPATCHER',
+        },
+        { upsert: true, new: true },
+      );
+
+      // Send email with credentials to user if email is available
+      const targetEmail = dto.email || userDoc.email;
+      if (targetEmail) {
+        const companyName = company ? (company.displayName || company.legalName) : 'Carline Taxi';
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; background-color: #ffffff;">
+            <h2 style="color: #1a202c; font-size: 20px; font-weight: bold; margin-bottom: 16px;">Welcome to ${companyName}!</h2>
+            <p style="color: #4a5568; font-size: 14px; line-height: 1.5;">Hello ${firstName},</p>
+            <p style="color: #4a5568; font-size: 14px; line-height: 1.5;">Your account has been registered with <strong>${companyName}</strong>. You can use the credentials below to log in:</p>
+            
+            <div style="background-color: #f7fafc; border-left: 4px solid #3182ce; padding: 16px; margin: 20px 0; border-radius: 6px;">
+              <p style="margin: 4px 0; color: #2d3748; font-size: 14px;"><strong>Email:</strong> ${targetEmail}</p>
+              <p style="margin: 4px 0; color: #2d3748; font-size: 14px;"><strong>Phone:</strong> ${dto.phoneNumber}</p>
+              <p style="margin: 4px 0; color: #2d3748; font-size: 14px;"><strong>Password:</strong> <span style="font-family: monospace; background: #edf2f7; padding: 2px 6px; border-radius: 4px; color: #2b6cb0;">${tempPassword}</span></p>
+            </div>
+
+            <p style="color: #718096; font-size: 13px; margin-top: 24px;">Thank you for choosing ${companyName}.</p>
+          </div>
+        `;
+
+        try {
+          await this.mailService.sendEmail(
+            targetEmail,
+            `Welcome to ${companyName} - Your Account Credentials`,
+            `Hello ${firstName}, your account with ${companyName} has been created. Email: ${targetEmail}, Password: ${tempPassword}`,
+            emailHtml,
+          );
+        } catch (mailError) {
+          console.error('Failed to send customer account email:', mailError);
+        }
+      }
+
+      return new ApiResponse(
+        201,
+        {
+          customer: {
+            _id: userDoc._id,
+            id: userDoc._id,
+            name: fullName,
+            customer: fullName,
+            phone: userDoc.phoneNumber,
+            phoneNumber: userDoc.phoneNumber,
+            email: userDoc.email || '-',
+            companyId: userDoc.companyId || null,
+            trips: 0,
+            status: 'Active',
+            joinedAt: (userDoc as any).createdAt,
+          },
+        },
+        'Customer added successfully and credentials emailed',
+      );
+    } catch (error: any) {
+      console.error('Error while creating company customer:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
   }

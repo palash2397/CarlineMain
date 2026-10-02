@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiResponse as SwaggerApiResponse,
   ApiTags,
@@ -16,11 +17,17 @@ import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 import { UserRole, COMPANY_STAFF_ROLES } from 'src/common/enums/user/role.enum';
+import { RideService } from '../ride/ride.service';
+import { CreateDispatcherBookingDto } from '../ride/dto/create-dispatcher-booking.dto';
+import { ModifyRideDto } from '../ride/dto/modify-ride.dto';
 
 @ApiTags('Company Trips')
 @Controller('company/trips')
 export class CompanyTripsController {
-  constructor(private readonly companyTripsService: CompanyTripsService) {}
+  constructor(
+    private readonly companyTripsService: CompanyTripsService,
+    private readonly rideService: RideService,
+  ) {}
 
   @Get()
   @ApiBearerAuth('access-token')
@@ -71,6 +78,48 @@ export class CompanyTripsController {
     @Req() req: any,
   ) {
     return this.companyTripsService.getCompanyTrips(query, req.user);
+  }
+
+  @Post()
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Dispatcher-created booking: Create a trip on behalf of a passenger or guest customer',
+  })
+  async createCompanyTrip(
+    @Req() req: any,
+    @Body() dto: CreateDispatcherBookingDto,
+  ) {
+    return this.rideService.bookDispatcherRide(req.user, dto);
+  }
+
+  @Patch(':id/modify')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Modify trip details (pickup, dropoff, vehicle, schedule, driver, notes, payment)',
+  })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  async modifyCompanyTrip(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ModifyRideDto,
+  ) {
+    return this.rideService.modifyRide(req.user, id, dto);
   }
 
   @Get(':id')

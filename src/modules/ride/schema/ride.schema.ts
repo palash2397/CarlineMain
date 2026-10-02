@@ -135,6 +135,12 @@ export class Ride {
 
   @Prop({ type: Date, default: null })
   completedAt?: Date | null;
+
+  @Prop({ type: String, default: null, index: true })
+  dispatcherId?: string | null;
+
+  @Prop({ type: Boolean, default: false })
+  isDispatcherBooking?: boolean;
 }
 
 export const RideSchema = SchemaFactory.createForClass(Ride);

@@ -53,6 +53,8 @@ export const RIDE_EVENTS = {
   REQUEST: 'ride:request',
   TAKEN: 'ride:taken',
   PAYMENT: 'ride:payment',
+  ASSIGNED: 'ride:assigned',
+  UPDATED: 'ride:updated',
 };
 
 export const DRIVER_ROOM = 'drivers';

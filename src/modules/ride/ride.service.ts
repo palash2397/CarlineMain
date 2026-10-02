@@ -73,6 +73,9 @@ import { DriverStartRideDto } from './dto/driver-start-ride.dto';
 import { EstimateFareDto } from './dto/estimate-fare.dto';
 import { MyRecurringRidesQueryDto } from './dto/my-recurring-rides-query.dto';
 import { MyRidesQueryDto } from './dto/my-rides-query.dto';
+import { UserRole } from 'src/common/enums/user/role.enum';
+import { CreateDispatcherBookingDto } from './dto/create-dispatcher-booking.dto';
+import { ModifyRideDto } from './dto/modify-ride.dto';
 import { NearbyCabsDto } from './dto/nearby-cabs.dto';
 import { UpdateRecurringRideStatusDto } from './dto/update-recurring-ride-status.dto';
 import { UpdateRecurringRideDto } from './dto/update-recurring-ride.dto';
@@ -1004,6 +1007,443 @@ export class RideService {
     }
   }
 
+  async deleteRecurringRide(user: any, recurringId: string) {
+    try {
+      const series = await this.findRecurringRide(user, recurringId);
+
+      if (!series) {
+        return new ApiResponse(404, {}, Msg.RECURRING_RIDE_NOT_FOUND);
+      }
+
+      const pending = await this.rideModel.find({
+        recurringId: String(series._id),
+        status: { $in: [RideStatus.SEARCHING_DRIVER, RideStatus.SCHEDULED] },
+      });
+
+      for (const ride of pending) {
+        ride.status = RideStatus.RIDE_CANCELLED;
+        ride.cancelledBy = CancelledBy.USER;
+        ride.cancelReason = 'Recurring booking deleted';
+        ride.cancelledAt = new Date();
+        await ride.save();
+
+        this.socketService.emitToRide(
+          String(ride._id),
+          RIDE_EVENTS.CANCELLED,
+          {
+            rideId: String(ride._id),
+            status: ride.status,
+            reason: ride.cancelReason,
+            cancelledBy: ride.cancelledBy,
+            cancelledAt: ride.cancelledAt,
+          },
+        );
+      }
+
+      await this.recurringModel.deleteOne({ _id: series._id });
+
+      return new ApiResponse(200, {}, Msg.RECURRING_RIDE_DELETED);
+    } catch (error) {
+      console.error('Error while deleting recurring ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Dispatcher-created Bookings
+  // ==========================================================
+  async bookDispatcherRide(
+    dispatcherUser: any,
+    dto: CreateDispatcherBookingDto,
+  ) {
+    try {
+      // 1. Resolve Passenger User
+      let passengerId: string | null = null;
+      const targetUserId = dto.userId || dto.customerId;
+
+      if (targetUserId && Types.ObjectId.isValid(targetUserId)) {
+        const existing = await this.userModel.findById(targetUserId);
+        if (existing) {
+          passengerId = String(existing._id);
+        }
+      }
+
+      const phoneInput = (dto.passengerPhone || dto.guestPhone || '').trim();
+      if (!passengerId && phoneInput) {
+        let passenger = await this.userModel.findOne({ phoneNumber: phoneInput });
+        if (!passenger) {
+          const guestFullName = (dto.guestName || '').trim();
+          const nameParts = guestFullName.split(' ');
+          const firstName = dto.passengerFirstName || nameParts[0] || 'Guest';
+          const lastName =
+            dto.passengerLastName || nameParts.slice(1).join(' ') || 'Passenger';
+
+          passenger = await this.userModel.create({
+            firstName,
+            lastName,
+            phoneNumber: phoneInput,
+            email: dto.passengerEmail || undefined,
+            role: UserRole.PASSENGER,
+            isVerified: true,
+          });
+        }
+        passengerId = String(passenger._id);
+      }
+
+      if (!passengerId) {
+        passengerId = String(dispatcherUser.id || dispatcherUser._id);
+      }
+
+      // 2. Resolve Vehicle Type
+      let vehicleType: any = null;
+      const vTypeId = dto.vehicleTypeId || dto.vehicle || dto.vehicleTypeName;
+
+      if (vTypeId && Types.ObjectId.isValid(vTypeId)) {
+        vehicleType = await this.vehicleTypeModel.findById(vTypeId);
+      }
+
+      if (!vehicleType && vTypeId) {
+        vehicleType = await this.vehicleTypeModel.findOne({
+          name: new RegExp(String(vTypeId).trim(), 'i'),
+        });
+      }
+
+      if (!vehicleType) {
+        vehicleType = await this.vehicleTypeModel.findOne({ status: 'Active' });
+      }
+
+      if (!vehicleType) {
+        return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+      }
+
+      // 3. Resolve Pickup & Dropoff Locations
+      let pickupLocation: RideLocation;
+      if (typeof dto.pickup === 'object' && dto.pickup?.address && typeof dto.pickup?.latitude === 'number' && typeof dto.pickup?.longitude === 'number') {
+        pickupLocation = this.locationPayload(dto.pickup);
+      } else {
+        const addr = typeof dto.pickup === 'string' && dto.pickup.trim() ? dto.pickup : (dto.pickup?.address || 'Pickup Location');
+        const lat = (typeof dto.pickup === 'object' && typeof dto.pickup?.latitude === 'number') ? dto.pickup.latitude : 22.7241;
+        const lng = (typeof dto.pickup === 'object' && typeof dto.pickup?.longitude === 'number') ? dto.pickup.longitude : 75.8038;
+        pickupLocation = { address: addr, latitude: lat, longitude: lng };
+      }
+
+      let dropoffLocation: RideLocation;
+      const destInput = dto.dropoff || dto.dest;
+      if (typeof destInput === 'object' && destInput?.address && typeof destInput?.latitude === 'number' && typeof destInput?.longitude === 'number') {
+        dropoffLocation = this.locationPayload(destInput);
+      } else {
+        const addr = typeof destInput === 'string' && destInput.trim() ? destInput : (destInput?.address || 'Dropoff Location');
+        const lat = (typeof destInput === 'object' && typeof destInput?.latitude === 'number') ? destInput.latitude : 22.7196;
+        const lng = (typeof destInput === 'object' && typeof destInput?.longitude === 'number') ? destInput.longitude : 75.8577;
+        dropoffLocation = { address: addr, latitude: lat, longitude: lng };
+      }
+
+      // 4. Resolve Ride Type & Schedule
+      let rideType = dto.rideType || RideType.INSTANT;
+      let scheduledAt: Date | null = null;
+
+      if (dto.date && dto.time) {
+        let timeFormatted = String(dto.time).trim();
+        if (timeFormatted.length === 5) timeFormatted += ':00';
+        const sched = new Date(`${dto.date}T${timeFormatted}`);
+        const now = new Date();
+        if (!Number.isNaN(sched.getTime()) && sched.getTime() > (now.getTime() + 5 * 60 * 1000)) {
+          scheduledAt = sched;
+          rideType = RideType.SCHEDULED;
+        } else if (!Number.isNaN(sched.getTime())) {
+          scheduledAt = sched;
+          rideType = RideType.INSTANT;
+        }
+      } else if (dto.scheduledAt) {
+        const sched = new Date(dto.scheduledAt);
+        const now = new Date();
+        if (!Number.isNaN(sched.getTime()) && sched.getTime() > (now.getTime() + 5 * 60 * 1000)) {
+          scheduledAt = sched;
+          rideType = RideType.SCHEDULED;
+        } else if (!Number.isNaN(sched.getTime())) {
+          scheduledAt = sched;
+          rideType = RideType.INSTANT;
+        }
+      }
+
+      // 5. Calculate Route & Distance
+      const route = await this.resolveDistance(pickupLocation, dropoffLocation);
+      const distanceKm = route.distanceKm !== null ? route.distanceKm : 10;
+      const durationMinutes = route.durationMinutes || 15;
+
+      const promoCheck = await this.resolvePromo(dto.promoCode);
+      const pricing = await this.pricingModel.findOne({}).lean();
+
+      const fare = this.calculateFare(vehicleType, pricing, {
+        distanceKm,
+        durationMinutes,
+        promo: promoCheck.promo,
+      });
+
+      // 6. Payment Method Normalization
+      let paymentMethod = PaymentMethod.CASH;
+      const rawPay = String(dto.paymentMethod || '').toUpperCase();
+      if (rawPay.includes('CARD')) paymentMethod = PaymentMethod.CARD;
+      else if (rawPay.includes('WALLET') || rawPay.includes('UPI')) paymentMethod = PaymentMethod.WALLET;
+
+      // 7. Direct Driver Assignment if driverId provided
+      let targetCompanyId = dto.companyId || dispatcherUser?.companyId || null;
+      let assignedDriver: any = null;
+      let rideStatus =
+        rideType === RideType.SCHEDULED
+          ? RideStatus.SCHEDULED
+          : RideStatus.SEARCHING_DRIVER;
+      let driverAssignedAt: Date | null = null;
+
+      if (dto.driverId && Types.ObjectId.isValid(dto.driverId)) {
+        assignedDriver = await this.driverModel.findById(dto.driverId);
+        if (assignedDriver) {
+          rideStatus = RideStatus.DRIVER_ASSIGNED;
+          driverAssignedAt = new Date();
+        }
+      }
+
+      const passengerCount = Number(dto.passengerCount || dto.passengers || 1);
+      const notes = [dto.notes, dto.stops].filter(Boolean).join(' | ') || null;
+
+      const ride = await this.rideModel.create({
+        user: passengerId,
+        companyId: targetCompanyId,
+        dispatcherId: String(dispatcherUser.id || dispatcherUser._id),
+        isDispatcherBooking: true,
+        driver: assignedDriver ? String(assignedDriver._id) : null,
+        driverAssignedAt,
+        vehicleTypeId: String((vehicleType as any)._id),
+        vehicleTypeName: vehicleType.name,
+        status: rideStatus,
+        pickup: pickupLocation,
+        dropoff: dropoffLocation,
+        distanceKm: Number(distanceKm.toFixed(2)),
+        durationMinutes: Math.round(durationMinutes),
+        etaMinutes: Math.round(durationMinutes),
+        routeSource: route.routeSource || 'GOOGLE',
+        fare,
+        totalFare: fare.totalFare,
+        payableFare: fare.payableFare,
+        promoCode: promoCheck.promo ? promoCheck.promo.code : null,
+        discount: fare.discount,
+        rideType,
+        scheduledAt,
+        passengerCount,
+        paymentMethod,
+        paymentStatus: PaymentStatus.PENDING,
+        notes,
+        otp: generateOtp(),
+      });
+
+      if (promoCheck.promo) {
+        await this.promoModel.updateOne(
+          { _id: (promoCheck.promo as any)._id },
+          { $inc: { usedCount: 1 } },
+        );
+      }
+
+      const summary = this.rideSummary(ride, vehicleType);
+      const rideId = String(ride._id);
+
+      this.socketService.joinActorToRide(passengerId, rideId);
+      this.socketService.emitToRideAndActor(
+        passengerId,
+        rideId,
+        RIDE_EVENTS.CREATED,
+        summary,
+      );
+
+      if (assignedDriver) {
+        this.socketService.joinActorToRide(String(assignedDriver._id), rideId);
+        this.socketService.emitToRideAndActor(
+          String(assignedDriver._id),
+          rideId,
+          RIDE_EVENTS.ASSIGNED,
+          summary,
+        );
+      } else if (rideType !== RideType.SCHEDULED) {
+        this.notifyDrivers(summary);
+      }
+
+      return new ApiResponse(200, summary, Msg.DISPATCHER_RIDE_BOOKED);
+    } catch (error: any) {
+      console.error('Error while booking dispatcher ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Modify Booking (Active / Scheduled rides)
+  // ==========================================================
+  async modifyRide(user: any, rideId: string, dto: ModifyRideDto) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const ride = await this.rideModel.findById(rideId);
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const modifiableStatuses = [
+        RideStatus.SEARCHING_DRIVER,
+        RideStatus.SCHEDULED,
+        RideStatus.DRIVER_ASSIGNED,
+        RideStatus.DRIVER_ARRIVED,
+      ];
+
+      if (!modifiableStatuses.includes(ride.status)) {
+        return new ApiResponse(400, {}, Msg.RIDE_CANNOT_MODIFY);
+      }
+
+      const userRoles = Array.isArray(user?.roles)
+        ? user.roles
+        : [user?.roles || user?.role];
+      const isStaffOrAdmin = userRoles.some((r: string) =>
+        [
+          UserRole.SUPERADMIN,
+          UserRole.ADMIN,
+          UserRole.COMPANY_ADMIN,
+          UserRole.DISPATCHER,
+          UserRole.MANAGER,
+          UserRole.DRIVER_MANAGER,
+        ].includes(r as any),
+      );
+
+      if (!isStaffOrAdmin && String(ride.user) !== String(user.id)) {
+        return new ApiResponse(403, {}, Msg.FORBIDDEN);
+      }
+
+      let routeChanged = false;
+      let newPickup = ride.pickup;
+      let newDropoff = ride.dropoff;
+
+      if (dto.pickup) {
+        newPickup = this.locationPayload(dto.pickup);
+        routeChanged = true;
+      }
+
+      if (dto.dropoff) {
+        newDropoff = this.locationPayload(dto.dropoff);
+        routeChanged = true;
+      }
+
+      let vehicleType = await this.vehicleTypeModel.findById(
+        ride.vehicleTypeId,
+      );
+
+      if (dto.vehicleTypeId && dto.vehicleTypeId !== ride.vehicleTypeId) {
+        if (!Types.ObjectId.isValid(dto.vehicleTypeId)) {
+          return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+        }
+        const vType = await this.vehicleTypeModel.findById(dto.vehicleTypeId);
+        if (!vType || vType.status !== 'Active') {
+          return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+        }
+        vehicleType = vType;
+        ride.vehicleTypeId = String((vType as any)._id);
+        ride.vehicleTypeName = vType.name;
+        routeChanged = true;
+      }
+
+      if (routeChanged) {
+        if (!vehicleType) {
+          return new ApiResponse(404, {}, Msg.VEHICLE_TYPE_NOT_FOUND);
+        }
+
+        const route = await this.resolveDistance(newPickup, newDropoff);
+        if (route.distanceKm !== null) {
+          const pricing = await this.pricingModel.findOne({}).lean();
+          const distanceKm = route.distanceKm;
+          const durationMinutes = route.durationMinutes || 0;
+
+          const promoCheck = await this.resolvePromo(
+            ride.promoCode || undefined,
+          );
+          const fare = this.calculateFare(vehicleType, pricing, {
+            distanceKm,
+            durationMinutes,
+            promo: promoCheck.promo,
+          });
+
+          ride.pickup = newPickup;
+          ride.dropoff = newDropoff;
+          ride.distanceKm = Number(distanceKm.toFixed(2));
+          ride.durationMinutes = Math.round(durationMinutes);
+          ride.etaMinutes = Math.round(durationMinutes);
+          ride.routeSource = route.routeSource;
+          ride.fare = fare;
+          ride.totalFare = fare.totalFare;
+          ride.payableFare = fare.payableFare;
+          ride.discount = fare.discount;
+        }
+      }
+
+      if (dto.passengerCount !== undefined) {
+        ride.passengerCount = dto.passengerCount;
+      }
+
+      if (dto.paymentMethod) {
+        ride.paymentMethod = dto.paymentMethod;
+      }
+
+      if (dto.notes !== undefined) {
+        ride.notes = dto.notes;
+      }
+
+      if (dto.rideType) {
+        ride.rideType = dto.rideType;
+      }
+
+      if (dto.scheduledAt) {
+        const sched = new Date(dto.scheduledAt);
+        if (!Number.isNaN(sched.getTime())) {
+          ride.scheduledAt = sched;
+          if (
+            ride.status === RideStatus.SEARCHING_DRIVER &&
+            dto.rideType === RideType.SCHEDULED
+          ) {
+            ride.status = RideStatus.SCHEDULED;
+          }
+        }
+      }
+
+      if (dto.driverId !== undefined && isStaffOrAdmin) {
+        if (dto.driverId && Types.ObjectId.isValid(dto.driverId)) {
+          const newDriver = await this.driverModel.findById(dto.driverId);
+          if (newDriver) {
+            ride.driver = String(newDriver._id);
+            ride.status = RideStatus.DRIVER_ASSIGNED;
+            ride.driverAssignedAt = new Date();
+          }
+        } else if (dto.driverId === null || dto.driverId === '') {
+          ride.driver = null;
+          ride.status =
+            ride.rideType === RideType.SCHEDULED
+              ? RideStatus.SCHEDULED
+              : RideStatus.SEARCHING_DRIVER;
+        }
+      }
+
+      await ride.save();
+
+      const summary = this.rideSummary(ride, vehicleType);
+
+      this.socketService.emitToRide(
+        String(ride._id),
+        RIDE_EVENTS.UPDATED,
+        summary,
+      );
+
+      return new ApiResponse(200, summary, Msg.RIDE_MODIFIED);
+    } catch (error: any) {
+      console.error('Error while modifying ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
   // ==========================================================
   // Recurring bookings that are due get their ride created
   // ==========================================================
@@ -1809,11 +2249,26 @@ export class RideService {
         return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_NOT_SET);
       }
 
+      const rideQuery: any = {
+        status: RideStatus.SEARCHING_DRIVER,
+        vehicleTypeId: String(vehicleType._id),
+      };
+
+      if (driver.companyId) {
+        rideQuery.$or = [
+          { companyId: driver.companyId },
+          { companyId: null },
+          { companyId: { $exists: false } },
+        ];
+      } else {
+        rideQuery.$or = [
+          { companyId: null },
+          { companyId: { $exists: false } },
+        ];
+      }
+
       const rides = await this.rideModel
-        .find({
-          status: RideStatus.SEARCHING_DRIVER,
-          vehicleTypeId: String(vehicleType._id),
-        })
+        .find(rideQuery)
         .sort({ createdAt: -1 })
         .limit(DRIVER_REQUEST_LIMIT);
 
@@ -1871,6 +2326,15 @@ export class RideService {
       }
 
       const { driver } = gate;
+
+      if (
+        ride.companyId &&
+        driver.companyId &&
+        String(ride.companyId) !== String(driver.companyId)
+      ) {
+        return new ApiResponse(403, {}, 'Access denied for this company ride');
+      }
+
       const vehicleType = await this.vehicleTypeForDriver(driver);
 
       if (!vehicleType) {
@@ -1923,6 +2387,14 @@ export class RideService {
 
       if (ride.status !== RideStatus.SEARCHING_DRIVER) {
         return new ApiResponse(400, {}, Msg.RIDE_ALREADY_TAKEN);
+      }
+
+      if (
+        ride.companyId &&
+        driver.companyId &&
+        String(ride.companyId) !== String(driver.companyId)
+      ) {
+        return new ApiResponse(403, {}, 'Access denied for this company ride');
       }
 
       const vehicleType = await this.vehicleTypeForDriver(driver);
