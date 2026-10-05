@@ -9,6 +9,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CompanyTripsService } from './company-trips.service';
+import { CompanyCustomersService } from './company-customers.service';
 import {
   GetCompanyTripsQueryDto,
   CompanyTripStatusFilter,
@@ -27,6 +28,7 @@ export class CompanyTripsController {
   constructor(
     private readonly companyTripsService: CompanyTripsService,
     private readonly rideService: RideService,
+    private readonly companyCustomersService: CompanyCustomersService,
   ) {}
 
   @Get()
@@ -122,6 +124,28 @@ export class CompanyTripsController {
     return this.rideService.modifyRide(req.user, id, dto);
   }
 
+
+  @Get('live-map')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get live map drivers & active trips for dispatcher/admin' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false, enum: ['All', 'AVAILABLE', 'ON_TRIP', 'OFFLINE'] })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  @SwaggerApiResponse({ status: 200, description: 'Live map data fetched successfully' })
+  async getCompanyLiveMap(
+    @Query() query: any,
+    @Req() req: any,
+  ) {
+    return this.companyCustomersService.getCompanyLiveMap(query, req.user);
+  }
+
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
@@ -134,4 +158,5 @@ export class CompanyTripsController {
   async getCompanyTripById(@Param('id') id: string, @Req() req: any) {
     return this.companyTripsService.getCompanyTripById(id, req.user);
   }
+
 }
