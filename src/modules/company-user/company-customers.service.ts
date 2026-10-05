@@ -894,7 +894,7 @@ export class CompanyCustomersService {
 
       const driversList = await this.driverModel
         .find(driverFilter)
-        .select('_id userId companyId currentLatitude currentLongitude lastLocationAt isOnline status isAvailable vehicleTypeId vehicleTypeName onlineStatus dutyStatus')
+        .select('_id userId companyId fullName phoneNumber email phone mobileNumber name currentLatitude currentLongitude lastLocationAt isOnline status isAvailable vehicleTypeId vehicleTypeName onlineStatus dutyStatus')
         .lean();
 
       const userIds = driversList.map((d: any) => d.userId).filter(Boolean);
@@ -937,14 +937,17 @@ export class CompanyCustomersService {
           mappedStatus = 'AVAILABLE';
         }
 
-        const name = `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || 'Driver';
+        const userFullName = `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim();
+        const name = driverDoc.fullName || driverDoc.name || (userFullName !== '' ? userFullName : 'Driver');
+        const phoneNumber = driverDoc.phoneNumber || driverDoc.phone || driverDoc.mobileNumber || userDoc.phoneNumber || '';
+        const email = driverDoc.email || userDoc.email || '';
 
         return {
           id: driverDoc._id.toString(),
           userId: uId,
           name,
-          phoneNumber: userDoc.phoneNumber || '',
-          email: userDoc.email || '',
+          phoneNumber,
+          email,
           avatar: userDoc.avatar || null,
           vehicleTypeName: driverDoc.vehicleTypeName || 'Standard',
           status: mappedStatus,
