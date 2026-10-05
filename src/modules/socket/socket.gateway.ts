@@ -111,6 +111,11 @@ export class SocketGateway
     // console.log('User ID ---------->', user.id);
     // console.log('Joined room ---------->', room);
 
+    
+    if (user?.companyId) {
+      await client.join(`company:${user.companyId}`);
+    }
+
     console.log(`Socket connected: ${user.id}`);
   }
 
@@ -178,4 +183,16 @@ export class SocketGateway
 
     return this.rideService.updateDriverLocation(user.id, data);
   }
+
+  @SubscribeMessage('joinCompanyRoom')
+  async joinCompanyRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { companyId: string },
+  ) {
+    if (data?.companyId) {
+      await client.join(`company:${data.companyId}`);
+    }
+    return { success: true, message: 'Company room joined' };
+  }
+
 }

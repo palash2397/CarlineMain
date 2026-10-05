@@ -5,6 +5,11 @@ import { DRIVER_ROOM, driverRoomFor } from 'src/constants';
 
 @Injectable()
 export class SocketService {
+  emitToRoom(room: string, event: string, data: any) {
+    if (!this.server || !room) return;
+    this.server.to(room).emit(event, data);
+  }
+
   private server: Server;
 
   setServer(server: Server) {
