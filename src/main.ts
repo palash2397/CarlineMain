@@ -98,6 +98,7 @@ async function bootstrap() {
       }
     });
   });
+
   SwaggerModule.setup(`${Global.PREFIX}/docs`, app, document, {
     swaggerOptions: {
       persistAuthorization: true,
