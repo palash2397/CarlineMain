@@ -255,6 +255,16 @@ export class RideController {
     return this.rideService.bookDispatcherRide(req.user, dto);
   }
 
+
+  @Get('ride/:id/track')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES, UserRole.COMPANY_ADMIN, UserRole.DISPATCHER, UserRole.DRIVER)
+  @ApiOperation({ summary: 'Get real-time tracking data for a ride' })
+  @ApiParam({ name: 'id', description: 'Ride ID' })
+  async trackRide(@Req() req: any, @Param('id') rideId: string) {
+    return this.rideService.trackRide(req.user, rideId);
+  }
+
   @Get('ride/:id')
   @ApiTags(PASSENGER_TAG)
   @Roles(...PASSENGER_ROLES)
