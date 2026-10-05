@@ -876,4 +876,141 @@ export class CompanyCustomersService {
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
   }
+
+  // ==========================================
+  // NEW API: Get Live Map Drivers & Active Trips for Dispatcher / Company Admin / SuperAdmin
+  // ==========================================
+  async getCompanyLiveMap(query: any, user: any) {
+    try {
+      const { company, companyIds, isGlobalAdmin } = await this.resolveCompanyContext(
+        query?.companyId,
+        user,
+      );
+
+      const driverFilter: any = {};
+      if (!isGlobalAdmin && companyIds.length > 0) {
+        driverFilter.companyId = { $in: companyIds };
+      }
+
+      const driversList = await this.driverModel
+        .find(driverFilter)
+        .select('_id userId companyId fullName phoneNumber email phone mobileNumber name currentLatitude currentLongitude lastLocationAt isOnline status isAvailable vehicleTypeId vehicleTypeName onlineStatus dutyStatus')
+        .lean();
+
+      const userIds = driversList.map((d: any) => d.userId).filter(Boolean);
+      const users = await this.userModel
+        .find({ _id: { $in: userIds } })
+        .select('firstName lastName phoneNumber email avatar')
+        .lean();
+
+      const userMap = new Map<string, any>();
+      users.forEach((u: any) => userMap.set(u._id.toString(), u));
+
+      const rideFilter: any = {
+        status: { $in: ['SEARCHING_DRIVER', 'SCHEDULED', 'ACCEPTED', 'ARRIVED', 'ONGOING', 'PICKED_UP', 'STARTED'] }
+      };
+      if (!isGlobalAdmin && companyIds.length > 0) {
+        rideFilter.companyId = { $in: companyIds };
+      }
+
+      const activeRides = await this.rideModel
+        .find(rideFilter)
+        .select('_id status pickup dropoff driver user companyId payableFare totalFare etaMinutes createdAt')
+        .lean();
+
+      const activeDriverTripMap = new Map<string, any>();
+      activeRides.forEach((r: any) => {
+        if (r.driver) {
+          activeDriverTripMap.set(r.driver.toString(), r);
+        }
+      });
+
+      let formattedDrivers = driversList.map((driverDoc: any) => {
+        const uId = driverDoc.userId?.toString();
+        const userDoc = userMap.get(uId) || {};
+        const activeTrip = activeDriverTripMap.get(driverDoc._id.toString()) || activeDriverTripMap.get(uId);
+
+        let mappedStatus = 'OFFLINE';
+        if (activeTrip) {
+          mappedStatus = 'ON_TRIP';
+        } else if (driverDoc.isOnline || driverDoc.dutyStatus === 'ON_DUTY' || driverDoc.status === 'ACTIVE' || driverDoc.isAvailable) {
+          mappedStatus = 'AVAILABLE';
+        }
+
+        const userFullName = `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim();
+        const name = driverDoc.fullName || driverDoc.name || (userFullName !== '' ? userFullName : 'Driver');
+        const phoneNumber = driverDoc.phoneNumber || driverDoc.phone || driverDoc.mobileNumber || userDoc.phoneNumber || '';
+        const email = driverDoc.email || userDoc.email || '';
+
+        return {
+          id: driverDoc._id.toString(),
+          userId: uId,
+          name,
+          phoneNumber,
+          email,
+          avatar: userDoc.avatar || null,
+          vehicleTypeName: driverDoc.vehicleTypeName || 'Standard',
+          status: mappedStatus,
+          isOnline: !!driverDoc.isOnline,
+          latitude: driverDoc.currentLatitude || 22.7196,
+          longitude: driverDoc.currentLongitude || 75.8577,
+          lastLocationAt: driverDoc.lastLocationAt || null,
+          activeTrip: activeTrip ? {
+            rideId: activeTrip._id.toString(),
+            status: activeTrip.status,
+            pickup: activeTrip.pickup,
+            dropoff: activeTrip.dropoff
+          } : null
+        };
+      });
+
+      if (query?.status && query.status !== 'All') {
+        const statusTerm = query.status.toUpperCase();
+        formattedDrivers = formattedDrivers.filter((d: any) => d.status === statusTerm);
+      }
+
+      if (query?.search && query.search.trim()) {
+        const term = query.search.toLowerCase().trim();
+        formattedDrivers = formattedDrivers.filter(
+          (d: any) =>
+            d.name.toLowerCase().includes(term) ||
+            d.phoneNumber.toLowerCase().includes(term) ||
+            d.vehicleTypeName.toLowerCase().includes(term)
+        );
+      }
+
+      const formattedTrips = activeRides.map((ride: any) => ({
+        id: ride._id.toString(),
+        status: ride.status,
+        pickup: ride.pickup,
+        dropoff: ride.dropoff,
+        driverId: ride.driver ? ride.driver.toString() : null,
+        payableFare: ride.payableFare || 0,
+        createdAt: ride.createdAt
+      }));
+
+      return new ApiResponse(
+        200,
+        {
+          summary: {
+            totalDrivers: driversList.length,
+            onlineDrivers: formattedDrivers.filter((d: any) => d.status !== 'OFFLINE').length,
+            availableDrivers: formattedDrivers.filter((d: any) => d.status === 'AVAILABLE').length,
+            onTripDrivers: formattedDrivers.filter((d: any) => d.status === 'ON_TRIP').length,
+            offlineDrivers: formattedDrivers.filter((d: any) => d.status === 'OFFLINE').length,
+            activeTripsCount: activeRides.length
+          },
+          drivers: formattedDrivers,
+          activeTrips: formattedTrips,
+          company: company
+            ? { id: company._id, name: company.displayName || company.legalName, code: company.companyId }
+            : null
+        },
+        'Company live map data fetched successfully'
+      );
+    } catch (error: any) {
+      console.error('Error in getCompanyLiveMap:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
 }

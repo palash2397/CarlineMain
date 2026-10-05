@@ -123,6 +123,28 @@ export class CompanyCustomersController {
     return this.companyCustomersService.createCompanyCustomer(dto, req.user);
   }
 
+
+  @Get('live-map')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get live map drivers & active trips for dispatcher/admin' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false, enum: ['All', 'AVAILABLE', 'ON_TRIP', 'OFFLINE'] })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  @SwaggerApiResponse({ status: 200, description: 'Live map data fetched successfully' })
+  async getCompanyLiveMap(
+    @Query() query: any,
+    @Req() req: any,
+  ) {
+    return this.companyCustomersService.getCompanyLiveMap(query, req.user);
+  }
+
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
@@ -157,4 +179,5 @@ export class CompanyCustomersController {
   ) {
     return this.companyCustomersService.createCompanyCustomer(dto, req.user);
   }
+
 }
