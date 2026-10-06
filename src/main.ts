@@ -28,6 +28,9 @@ async function bootstrap() {
   app.use(morgan('dev'));
 
   // Serve uploaded files statically
+  // Serve _local-only/test-client at root (e.g. http://localhost:4016/driver-booking.html)
+  app.useStaticAssets(join('d:', 'prakash', 'ivr', '_local-only', 'test-client'));
+
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: `${Global.PREFIX}/uploads`,
   });

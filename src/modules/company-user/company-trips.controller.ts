@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -21,6 +21,7 @@ import { UserRole, COMPANY_STAFF_ROLES } from 'src/common/enums/user/role.enum';
 import { RideService } from '../ride/ride.service';
 import { CreateDispatcherBookingDto } from '../ride/dto/create-dispatcher-booking.dto';
 import { ModifyRideDto } from '../ride/dto/modify-ride.dto';
+import { AssignDriverDto, CancelTripDto } from './dto/assign-cancel-trip.dto';
 
 @ApiTags('Company Trips')
 @Controller('company/trips')
@@ -144,6 +145,201 @@ export class CompanyTripsController {
     @Req() req: any,
   ) {
     return this.companyCustomersService.getCompanyLiveMap(query, req.user);
+  }
+
+  @Get('active')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get active company driver trips (Auto-creates 1 active trip if none exist)' })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  @SwaggerApiResponse({ status: 200, description: 'Active company trips fetched successfully' })
+  async getCompanyActiveTrips(
+    @Query() query: GetCompanyTripsQueryDto,
+    @Req() req: any,
+  ) {
+    return this.companyTripsService.getCompanyActiveTrips(query, req.user);
+  }
+
+  @Patch(':id/auto-assign')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Auto assign driver to pending booking (PATCH)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Driver auto-assigned successfully' })
+  async autoAssignCompanyTripPatch(
+    @Req() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.companyTripsService.autoAssignDriver(id, req.user);
+  }
+
+  @Post(':id/auto-assign')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Auto assign driver to pending booking (POST)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Driver auto-assigned successfully' })
+  async autoAssignCompanyTripPost(
+    @Req() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.companyTripsService.autoAssignDriver(id, req.user);
+  }
+
+  @Patch(':id/assign-driver')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Manually assign driver to booking (PATCH)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Driver assigned successfully' })
+  async manualAssignCompanyTripPatch(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: AssignDriverDto,
+  ) {
+    return this.companyTripsService.manualAssignDriver(id, dto.driverId, req.user);
+  }
+
+  @Post(':id/assign-driver')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Manually assign driver to booking (POST)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Driver assigned successfully' })
+  async manualAssignCompanyTripPost(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: AssignDriverDto,
+  ) {
+    return this.companyTripsService.manualAssignDriver(id, dto.driverId, req.user);
+  }
+
+  @Patch(':id/cancel')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Cancel company booking (PATCH)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Trip cancelled successfully' })
+  async cancelCompanyTripPatch(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: CancelTripDto,
+  ) {
+    return this.companyTripsService.cancelCompanyTrip(id, dto.cancelReason, req.user);
+  }
+
+  @Post(':id/cancel')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Cancel company booking (POST)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Trip cancelled successfully' })
+  async cancelCompanyTripPost(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: CancelTripDto,
+  ) {
+    return this.companyTripsService.cancelCompanyTrip(id, dto?.cancelReason, req.user);
+  }
+
+  @Delete(':id/cancel')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Cancel company booking (DELETE)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Trip cancelled successfully' })
+  async cancelCompanyTripDelete(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: CancelTripDto,
+  ) {
+    return this.companyTripsService.cancelCompanyTrip(id, dto?.cancelReason, req.user);
+  }
+
+  @Delete(':id/delete')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Delete company booking (DELETE /delete)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Trip deleted successfully' })
+  async deleteCompanyTripPath(
+    @Req() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.companyTripsService.deleteCompanyTrip(id, req.user);
+  }
+
+  @Delete(':id')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Delete company booking (DELETE /:id)' })
+  @ApiParam({ name: 'id', description: 'Trip / Ride ID' })
+  @SwaggerApiResponse({ status: 200, description: 'Trip deleted successfully' })
+  async deleteCompanyTrip(
+    @Req() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.companyTripsService.deleteCompanyTrip(id, req.user);
   }
 
   @Get(':id')

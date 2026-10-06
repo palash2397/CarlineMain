@@ -41,7 +41,14 @@ export class SocketGateway
 
     server.use((socket: Socket, next) => {
       try {
-        const token = socket.handshake.auth?.token;
+        let token =
+          socket.handshake.auth?.token ||
+          socket.handshake.headers?.authorization ||
+          socket.handshake.query?.token;
+
+        if (typeof token === 'string' && token.startsWith('Bearer ')) {
+          token = token.slice(7).trim();
+        }
 
         if (!token) {
           return next(new Error('Token not found'));
