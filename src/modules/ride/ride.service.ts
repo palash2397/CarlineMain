@@ -2249,23 +2249,31 @@ export class RideService {
         return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_NOT_SET);
       }
 
-      const rideQuery: any = {
-        status: RideStatus.SEARCHING_DRIVER,
-        vehicleTypeId: String(vehicleType._id),
+      const statusCondition = {
+        $or: [
+          { status: RideStatus.SEARCHING_DRIVER },
+          { status: RideStatus.DRIVER_ASSIGNED, driver: driverId },
+        ],
       };
 
-      if (driver.companyId) {
-        rideQuery.$or = [
-          { companyId: driver.companyId },
-          { companyId: null },
-          { companyId: { $exists: false } },
-        ];
-      } else {
-        rideQuery.$or = [
-          { companyId: null },
-          { companyId: { $exists: false } },
-        ];
-      }
+      const companyCondition = driver.companyId
+        ? {
+            $or: [
+              { companyId: driver.companyId },
+              { companyId: null },
+              { companyId: { $exists: false } },
+            ],
+          }
+        : {
+            $or: [
+              { companyId: null },
+              { companyId: { $exists: false } },
+            ],
+          };
+
+      const rideQuery: any = {
+        $and: [statusCondition, companyCondition],
+      };
 
       const rides = await this.rideModel
         .find(rideQuery)
@@ -2280,6 +2288,7 @@ export class RideService {
         )
         .filter(
           (request: any) =>
+            String(request.driverId || request.driver || '') === String(driverId) ||
             request.distanceToPickupKm === null ||
             request.distanceToPickupKm <= DRIVER_SEARCH_RADIUS_KM,
         )
@@ -2403,16 +2412,20 @@ export class RideService {
         return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_NOT_SET);
       }
 
-      if (String(vehicleType._id) !== ride.vehicleTypeId) {
+      if (ride.vehicleTypeId && vehicleType && String(vehicleType._id) !== ride.vehicleTypeId && !ride.driver) {
         return new ApiResponse(400, {}, Msg.DRIVER_VEHICLE_TYPE_MISMATCH);
       }
 
-      // Atomic claim so two drivers can never take the same ride.
+      if (ride.driver && String(ride.driver) !== String(driverId)) {
+        return new ApiResponse(400, {}, 'Ride assigned to another driver');
+      }
+
+      // Atomic claim so only the target driver or open driver pool can accept.
       const claimed = await this.rideModel.findOneAndUpdate(
         {
           _id: ride._id,
           status: RideStatus.SEARCHING_DRIVER,
-          driver: null,
+          $or: [{ driver: null }, { driver: driverId }, { driver: String(driverId) }],
         },
         {
           $set: {
@@ -3367,6 +3380,8 @@ export class RideService {
     return {
       rideId: String(ride._id),
       status: ride.status,
+      driverId: ride.driver ? String(ride.driver) : null,
+      driver: ride.driver ? String(ride.driver) : null,
       rideType: ride.rideType,
       scheduledAt: ride.scheduledAt || null,
       recurringId: ride.recurringId || null,

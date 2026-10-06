@@ -907,7 +907,21 @@ export class CompanyCustomersService {
       users.forEach((u: any) => userMap.set(u._id.toString(), u));
 
       const rideFilter: any = {
-        status: { $in: ['SEARCHING_DRIVER', 'SCHEDULED', 'ACCEPTED', 'ARRIVED', 'ONGOING', 'PICKED_UP', 'STARTED'] }
+        status: {
+          $in: [
+            RideStatus.DRIVER_ASSIGNED,
+            RideStatus.DRIVER_ARRIVED,
+            RideStatus.RIDE_STARTED,
+            'DRIVER_ASSIGNED',
+            'DRIVER_ARRIVED',
+            'RIDE_STARTED',
+            'ACCEPTED',
+            'ARRIVED',
+            'ONGOING',
+            'PICKED_UP',
+            'STARTED'
+          ]
+        }
       };
       if (!isGlobalAdmin && companyIds.length > 0) {
         rideFilter.companyId = { $in: companyIds };
