@@ -20,7 +20,7 @@ export const ROAD_DISTANCE_FACTOR = 1.3;
 export const AVERAGE_SPEED_KMH = 25;
 export const DRIVER_SEARCH_RADIUS_KM = 5;
 export const KM_PER_MILE = 1.609344;
-export const DEFAULT_CURRENCY = 'INR';
+export const DEFAULT_CURRENCY = 'USD';
 export const MAX_PASSENGERS = 8;
 export const DRIVER_REQUEST_LIMIT = 20;
 
