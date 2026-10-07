@@ -23,7 +23,7 @@ import { CreateDispatcherBookingDto } from '../ride/dto/create-dispatcher-bookin
 import { ModifyRideDto } from '../ride/dto/modify-ride.dto';
 import { AssignDriverDto, CancelTripDto } from './dto/assign-cancel-trip.dto';
 
-@ApiTags('Company Trips')
+@ApiTags('Company Trips (by Prakash)')
 @Controller('company/trips')
 export class CompanyTripsController {
   constructor(

@@ -75,6 +75,14 @@ async function bootstrap() {
       'access-token',
     )
     .addTag(
+      'Company Trips (by Prakash)',
+      'Company trips management & dispatcher assignment APIs - owned by Prakash Mishra',
+    )
+    .addTag(
+      'Company Customers (by Prakash)',
+      'Company customers & live map APIs - owned by Prakash Mishra',
+    )
+    .addTag(
       'User Booking (by Prakash)',
       'User side ride booking APIs - owned by Prakash Mishra',
     )

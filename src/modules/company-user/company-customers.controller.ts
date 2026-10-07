@@ -20,7 +20,7 @@ import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 import { UserRole, COMPANY_STAFF_ROLES } from 'src/common/enums/user/role.enum';
 
-@ApiTags('Company Customers')
+@ApiTags('Company Customers (by Prakash)')
 @Controller('company/customers')
 export class CompanyCustomersController {
   constructor(

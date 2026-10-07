@@ -329,7 +329,7 @@ export class CompanyCustomersService {
           completedTrips: agg.completedTrips || 0,
           cancelledTrips: agg.cancelledTrips || 0,
           totalSpent: Number((agg.totalSpent || 0).toFixed(2)),
-          currency: '₹',
+          currency: '$',
           lastTrip: formattedLastTrip,
           lastTripDate: lastTripDate || null,
           lastTripDetails: latestRide
@@ -542,7 +542,7 @@ export class CompanyCustomersService {
           completedTrips: agg?.completedTrips || 0,
           cancelledTrips: agg?.cancelledTrips || 0,
           totalSpent: Number((agg?.totalSpent || 0).toFixed(2)),
-          currency: '₹',
+          currency: '$',
           lastTrip: formattedLastTrip,
           lastTripDate: lastTripDate || null,
           lastTripDetails: latestRide
@@ -699,8 +699,8 @@ export class CompanyCustomersService {
           durationMinutes: ride.durationMinutes || 0,
           fare: {
             amount: Number(fareAmount.toFixed(2)),
-            displayFare: `₹${Math.round(fareAmount)}`,
-            currency: '₹',
+            displayFare: `$${Math.round(fareAmount)}`,
+            currency: '$',
             paymentMethod: ride.paymentMethod || null,
             paymentStatus: ride.paymentStatus || 'PENDING',
           },
@@ -750,7 +750,7 @@ export class CompanyCustomersService {
             completedTrips,
             cancelledTrips,
             totalSpent: Number(totalSpent.toFixed(2)),
-            currency: '₹',
+            currency: '$',
           },
           trips: formattedTrips,
         },
