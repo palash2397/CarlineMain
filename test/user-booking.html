@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Carline - User Booking Test (Prakash)</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 14px/1.45 "Segoe UI", Arial, sans-serif; background: #0f1420; color: #e6ecff; }
+      header { padding: 14px 18px; background: #17203a; border-bottom: 1px solid #26314f; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      header h1 { font-size: 16px; margin: 0; }
+      .pill { padding: 3px 9px; border-radius: 20px; font-size: 12px; background: #23304f; border: 1px solid #33436b; }
+      .ok { background: #14351f; border-color: #2f6b42; color: #b8f5c9; }
+      .err { background: #3a1720; border-color: #6b2f3f; color: #ffc3cf; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
+      section { background: #151c2e; border: 1px solid #26314f; border-radius: 10px; padding: 12px 14px; }
+      section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #93a4cc; margin: 0 0 10px; }
+      label { display: block; font-size: 12px; color: #93a4cc; margin: 8px 0 3px; }
+      input, select, textarea { width: 100%; background: #0e1524; border: 1px solid #2b3760; color: #e6ecff; border-radius: 7px; padding: 7px 9px; font: inherit; }
+      textarea { min-height: 74px; font: 11px/1.4 Consolas, monospace; word-break: break-all; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+      .row > div { flex: 1 1 90px; }
+      button { background: #2d6cdf; border: 0; color: #fff; padding: 8px 12px; border-radius: 7px; cursor: pointer; font: inherit; }
+      button.ghost { background: #23304f; border: 1px solid #33436b; }
+      button.green { background: #1f7a45; }
+      button.red { background: #a5314a; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #26314f; }
+      tr.pick { cursor: pointer; }
+      tr.pick:hover { background: #1d2942; }
+      tr.sel { background: #1f3a63; }
+      #log { grid-column: 1 / -1; }
+      #logBox { height: 320px; overflow: auto; background: #0b1020; border: 1px solid #26314f; border-radius: 8px; padding: 8px; font: 12px/1.5 Consolas, monospace; }
+      .ev { color: #7ee2b8; }
+      .req { color: #9dc4ff; }
+      .res-ok { color: #b8f5c9; }
+      .res-err { color: #ffb3c1; }
+      .note { color: #8b9ac2; font-size: 12px; margin-top: 6px; }
+      .big { font-size: 18px; font-weight: 600; color: #ffd479; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Carline &mdash; User Booking Test</h1>
+      <span class="pill" id="whoami">token ?</span>
+      <span class="pill" id="socketState">socket: off</span>
+      <span class="pill" id="rideState">ride: -</span>
+      <span class="pill">Owner: Prakash Mishra</span>
+    </header>
+
+    <main>
+      <section>
+        <h2>1. Config &amp; Login token</h2>
+        <label>API base</label>
+        <input id="apiBase" value="https://node.aitechnotech.in/carlinee/api/v1" />
+        <label>Socket base</label>
+        <input id="socketBase" value="https://node.aitechnotech.in" />
+        <label>Socket path</label>
+        <input id="socketPath" value="/carlinee/viamo/socket.io" />
+        <div class="btns">
+          <button class="ghost" onclick="useTarget('local')">Use LOCAL (4016)</button>
+          <button class="ghost" onclick="useTarget('live')">Use LIVE (carlinee)</button>
+        </div>
+        <label>User token (passenger JWT, auto filled)</label>
+        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYWQ0MjA2ZTRhOTRlOGIxNTZlMTgwZCIsInJvbGVzIjoiVVNFUiIsImNvbXBhbnlJZCI6bnVsbCwiaWF0IjoxNzg5OTg4Njc0LCJleHAiOjE3OTI1ODA2NzR9.MXGIzFz8VQCcFEoQfZwuYWHwe4PCuyx7Re_qs95rNnU</textarea>
+        <div class="btns">
+          <button class="green" onclick="connectSocket()">Connect socket</button>
+          <button class="ghost" onclick="disconnectSocket()">Disconnect</button>
+          <button class="ghost" onclick="joinRideRoom()">joinRide (rideId)</button>
+          <button class="ghost" onclick="saveToken()">Save token</button>
+        </div>
+        <div class="note">Token 30 din valid hai. Naya chahiye to backend se: <b>jwt.sign({ id: user._id, roles: 'USER', companyId: null }, JWT_SECRET, { expiresIn: '30d' })</b></div>
+      </section>
+
+      <section>
+        <h2>2. Pickup &amp; Drop (frontend se lat/long)</h2>
+        <label>Pickup address</label>
+        <input id="pickupAddress" value="742 Evergreen Terrace, San Francisco, CA" />
+        <div class="row">
+          <div><label>Pickup latitude</label><input id="pickupLat" value="37.7749" /></div>
+          <div><label>Pickup longitude</label><input id="pickupLng" value="-122.4194" /></div>
+        </div>
+        <label>Dropoff address</label>
+        <input id="dropAddress" value="San Francisco International Airport, CA" />
+        <div class="row">
+          <div><label>Dropoff latitude</label><input id="dropLat" value="37.6213" /></div>
+          <div><label>Dropoff longitude</label><input id="dropLng" value="-122.3790" /></div>
+        </div>
+        <div class="btns">
+          <button onclick="estimateFare()">1. Estimate fare (vehicle list)</button>
+          <button class="ghost" onclick="vehicleTypes()">Vehicle types (master)</button>
+          <button class="ghost" onclick="promoCodes()">Promo codes</button>
+          <button class="ghost" onclick="nearbyCabs()">Nearby cabs</button>
+        </div>
+        <div class="note">Distance/duration/fare backend calculate karta hai (frontend sirf pickup + drop lat/long deta hai). Vehicle row pe click karke select karo.</div>
+      </section>
+
+      <section style="grid-column: 1 / -1">
+        <h2>3. Vehicle options (estimate response)</h2>
+        <table id="optionsTable">
+          <thead>
+            <tr><th>Vehicle</th><th>Seats</th><th>Trip</th><th>ETA</th><th>Fare</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note">Selected: <span class="big" id="selectedVehicle">koi vehicle select nahi hua</span></div>
+      </section>
+
+      <section>
+        <h2>4. Book ride</h2>
+        <div class="row">
+          <div><label>Ride type</label><select id="rideType" onchange="updateDispatchHint()"><option>INSTANT</option><option>SCHEDULED</option></select></div>
+          <div><label>Scheduled at (ISO)</label><input id="scheduledAt" value="2026-10-01T10:30:00.000Z" oninput="updateDispatchHint()" /></div>
+          <div><label>Passenger count</label><input id="passengerCount" value="2" /></div>
+          <div><label>Payment method</label><select id="paymentMethod"><option>CASH</option><option>CARD</option><option>WALLET</option></select></div>
+        </div>
+        <label>Scheduled presets (scheduledAt = now + X)</label>
+        <div class="btns">
+          <button class="ghost" onclick="scheduledPreset(5)">+5 min (due now)</button>
+          <button class="ghost" onclick="scheduledPreset(30)">+30 min</button>
+          <button class="ghost" onclick="scheduledPreset(120)">+2 hour</button>
+          <button class="ghost" onclick="scheduledPreset(1440)">+1 day</button>
+        </div>
+        <div class="note" id="dispatchHint">-</div>
+        <label>Driver notes</label>
+        <input id="notes" value="2 bags, wait at gate" />
+        <label>Promo code (sirf book me, estimate me nahi)</label>
+        <input id="promoCode" value="CARLINE10" />
+        <div class="btns">
+          <button class="green" onclick="bookRide()">2. Book ride</button>
+        </div>
+        <div class="note">promoCode estimate me bhejne pe 400 aata hai &ndash; wo yahi use hota hai.</div>
+        <div class="note"><b>RECURRING</b> is dropdown me nahi hai: <code>/ride/book</code> recurring type pe 400 deta hai. Repeating ride <b>section 7</b> (recurring booking) se banti hai, backend har pickup ki ride khud banata hai.</div>
+      </section>
+
+      <section>
+        <h2>5. My ride (socket + APIs)</h2>
+        <label>Ride id</label>
+        <input id="rideId" value="" />
+        <div class="note big" id="otp">OTP: -</div>
+        <label>Status filter (optional, for GET /ride/my)</label>
+        <select id="myRidesStatus">
+          <option value="">all</option>
+          <option>SCHEDULED</option>
+          <option>SEARCHING_DRIVER</option>
+          <option>DRIVER_ASSIGNED</option>
+          <option>DRIVER_ARRIVED</option>
+          <option>RIDE_STARTED</option>
+          <option>RIDE_COMPLETED</option>
+          <option>RIDE_CANCELLED</option>
+        </select>
+        <div class="btns">
+          <button class="ghost" onclick="myRides()">GET /ride/my</button>
+          <button class="ghost" onclick="activeRide()">GET /ride/active</button>
+          <button class="ghost" onclick="rideDetails()">GET /ride/:id</button>
+        </div>
+        <label>Cancel reason</label>
+        <input id="cancelReason" value="Plans changed" />
+        <div class="btns">
+          <button class="red" onclick="cancelRide()">PATCH /ride/cancel</button>
+        </div>
+        <div class="note">Socket events isi ride ke liye aate hain: ride:created, ride:driver, ride:status, ride:driverLocation, ride:completed, ride:payment, ride:cancelled</div>
+      </section>
+
+      <section style="grid-column: 1 / -1">
+        <h2>6. Scheduled rides (backend dispatches 15 min before pickup)</h2>
+        <div class="row">
+          <div><label>List filter</label><select id="schedFilter"><option value="SCHEDULED">SCHEDULED (waiting)</option><option value="">all rides</option></select></div>
+          <div><label>Auto refresh (seconds)</label><input id="schedAuto" value="30" /></div>
+        </div>
+        <div class="btns">
+          <button onclick="loadScheduled()">Load scheduled rides</button>
+          <button class="ghost" id="schedAutoBtn" onclick="toggleSchedAuto()">Start auto refresh</button>
+        </div>
+        <table id="schedTable">
+          <thead>
+            <tr><th>Ride</th><th>Status</th><th>Scheduled at</th><th>Dispatch in</th><th>Trip</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note">SCHEDULED = waiting, koi driver ko request nahi gayi. Pickup se 15 min pehle backend <b>ride-scheduler.service.ts</b> ise SEARCHING_DRIVER karke drivers ko bhejta hai (har minute check). Amber row = pickup time nikal gaya par ride abhi bhi SCHEDULED.</div>
+      </section>
+
+      <section style="grid-column: 1 / -1">
+        <h2>7. Recurring booking (series - app UI ke 5 repeat mode)</h2>
+        <label>REPEAT FREQUENCY</label>
+        <div class="btns" id="recFreqBtns">
+          <button class="ghost" data-freq="DAILY" onclick="recSetFreq('DAILY')">Daily</button>
+          <button class="ghost" data-freq="MONFRI" onclick="recSetFreq('MONFRI')">Mon - Fri</button>
+          <button class="ghost" data-freq="WEEKLY" onclick="recSetFreq('WEEKLY')">Weekly</button>
+          <button class="ghost" data-freq="MONTHLY" onclick="recSetFreq('MONTHLY')">Monthly</button>
+          <button class="ghost" data-freq="CUSTOM" onclick="recSetFreq('CUSTOM')">Custom Days</button>
+        </div>
+        <div id="recDayPicker">
+          <label>SELECT RECURRING DAYS</label>
+          <div class="btns" id="recDayChips">
+            <button class="ghost" data-day="1" onclick="recToggleDay(1)">Mo</button>
+            <button class="ghost" data-day="2" onclick="recToggleDay(2)">Tu</button>
+            <button class="ghost" data-day="3" onclick="recToggleDay(3)">We</button>
+            <button class="ghost" data-day="4" onclick="recToggleDay(4)">Th</button>
+            <button class="ghost" data-day="5" onclick="recToggleDay(5)">Fr</button>
+            <button class="ghost" data-day="6" onclick="recToggleDay(6)">Sa</button>
+            <button class="ghost" data-day="0" onclick="recToggleDay(0)">Su</button>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>Pickup time (HH:mm)</label><input id="recTime" value="09:30" oninput="recRender()" /></div>
+          <div><label>Start date</label><input id="recStart" type="date" oninput="recRender()" /></div>
+          <div><label>End date (optional)</label><input id="recEnd" type="date" /></div>
+          <div><label>Monthly days override (advanced, 1-31)</label><input id="recMonthDays" value="" placeholder="empty = day of start date" oninput="recRender()" /></div>
+        </div>
+        <div class="note" id="recDispatch">-</div>
+        <div class="btns">
+          <button class="ghost" onclick="recPresetSoon(10)">Pickup today +10 min</button>
+          <button class="ghost" onclick="recPresetSoon(2)">Pickup today +2 min</button>
+        </div>
+        <div class="row">
+          <div><label>Passenger count</label><input id="recPax" value="2" /></div>
+          <div><label>Payment method</label><select id="recPay"><option>CASH</option><option>CARD</option><option>WALLET</option></select></div>
+          <div><label>Driver notes</label><input id="recNotes" value="Office run - recurring" /></div>
+          <div><label>Promo code (optional)</label><input id="recPromo" value="" /></div>
+        </div>
+        <div class="btns">
+          <button class="green" onclick="createRecurring()">Create series (POST /ride/recurring)</button>
+          <button class="ghost" onclick="listRecurring()">GET /ride/recurring</button>
+        </div>
+        <label>Series id (create/detail/click se fill hota hai)</label>
+        <input id="recId" value="" />
+        <div class="btns">
+          <button class="ghost" onclick="recurringDetails()">GET /ride/recurring/:id</button>
+          <button class="ghost" onclick="editRecurring()">PATCH /ride/recurring/:id</button>
+          <button class="ghost" onclick="recStatus('PAUSED')">Pause</button>
+          <button class="ghost" onclick="recStatus('ACTIVE')">Resume</button>
+          <button class="red" onclick="recStatus('CANCELLED')">Cancel series</button>
+        </div>
+        <div class="note">Vehicle section 3 me select karo (estimate ke baad row pe click), pickup/dropoff section 2 se lenge. Series khud ride nahi hai: pickup se 1 ghante pehle backend ek normal ride banata hai (socket pe ride:created, rideType RECURRING) aur 15 min pehle drivers ko bhejta hai.</div>
+        <table id="recTable">
+          <thead>
+            <tr><th>Series</th><th>Status</th><th>Days</th><th>Time</th><th>Next pickup</th><th>Created</th><th>Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note" id="recUpcoming">Upcoming rides: GET /ride/recurring/:id dabao.</div>
+      </section>
+
+      <section id="log">
+        <h2>8. Log (API + Socket)</h2>
+        <div class="btns"><button class="ghost" onclick="document.getElementById('logBox').innerHTML=''">Clear log</button></div>
+        <div id="logBox"></div>
+      </section>
+    </main>
+
+    <script src="./socket.io.min.js"></script>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = { socket: null, rideId: null, vehicleTypeId: null, currency: 'USD', schedTimer: null, recMode: 'MONFRI', recDays: [1, 2] };
+
+      try {
+        const saved = localStorage.getItem('carline.userToken');
+        if (saved) $('token').value = saved;
+      } catch (e) {}
+
+      function saveToken() {
+        localStorage.setItem('carline.userToken', $('token').value.trim());
+        showWhoAmI();
+        log('ev', 'token saved');
+      }
+
+      function decodeToken() {
+        try {
+          const raw = $('token').value.trim().split('.')[1];
+          return JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/')));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function showWhoAmI() {
+        const p = decodeToken();
+        if (!p) return ($('whoami').textContent = 'token invalid');
+        const exp = new Date(p.exp * 1000).toLocaleString();
+        $('whoami').textContent = p.roles + ' | id ' + p.id.slice(-6) + ' | exp ' + exp;
+      }
+
+      function money(v) {
+        return (state.currency || 'USD') + ' ' + Number(v || 0).toFixed(2);
+      }
+
+      function log(kind, title, data) {
+        const box = $('logBox');
+        const time = new Date().toLocaleTimeString();
+        const cls = kind === 'ev' ? 'ev' : kind === 'req' ? 'req' : kind === 'err' ? 'res-err' : 'res-ok';
+        const body = data === undefined ? '' : '\n' + JSON.stringify(data, null, 2);
+        box.innerHTML += '<div class="' + cls + '">[' + time + '] ' + title + body + '</div>';
+        box.scrollTop = box.scrollHeight;
+      }
+
+      async function api(path, method = 'GET', body, silent) {
+        const url = $('apiBase').value.replace(/\/+$/, '') + path;
+        const started = performance.now();
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('token').value.trim() },
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          let data = null;
+          try { data = await res.json(); } catch (e) {}
+          const ms = Math.round(performance.now() - started);
+          if (!silent) log(data && data.success === false ? 'err' : 'res', method + ' ' + path + '  (' + res.status + ', ' + ms + 'ms)', data);
+          return data;
+        } catch (e) {
+          if (!silent) log('err', method + ' ' + path + ' FAILED', { error: String(e) });
+          return null;
+        }
+      }
+
+      function pickup() {
+        return { address: $('pickupAddress').value, latitude: Number($('pickupLat').value), longitude: Number($('pickupLng').value) };
+      }
+
+      function dropoff() {
+        return { address: $('dropAddress').value, latitude: Number($('dropLat').value), longitude: Number($('dropLng').value) };
+      }
+
+      function setRide(id, status) {
+        state.rideId = id;
+        $('rideId').value = id || '';
+        $('rideState').textContent = 'ride: ' + (status || '-');
+      }
+
+      function connectSocket() {
+        if (state.socket) state.socket.disconnect();
+        const token = $('token').value.trim();
+        state.socket = io($('socketBase').value.replace(/\/+$/, ''), {
+          path: $('socketPath').value,
+          auth: { token },
+          transports: ['websocket'],
+        });
+        state.socket.on('connect', () => {
+          $('socketState').textContent = 'socket: on (' + state.socket.id.slice(0, 6) + ')';
+          $('socketState').className = 'pill ok';
+          const me = decodeToken();
+          log('ev', 'socket connected -> room user:' + (me ? me.id : '?') + (state.rideId ? ' + ride:' + state.rideId : ''));
+        });
+        state.socket.on('disconnect', (r) => {
+          $('socketState').textContent = 'socket: off';
+          $('socketState').className = 'pill err';
+          log('ev', 'socket disconnected: ' + r);
+        });
+        state.socket.on('connect_error', (e) => {
+          $('socketState').textContent = 'socket: error';
+          $('socketState').className = 'pill err';
+          log('err', 'socket connect_error', { message: e.message });
+        });
+        state.socket.onAny((event, data) => {
+          log('ev', 'SOCKET -> ' + event, data);
+          if (data && data.status) {
+            $('rideState').textContent = 'ride: ' + data.status;
+            const why = explainStatus(data.status);
+            if (why) log('ev', why);
+          }
+          if (event === 'ride:created' && data && data.rideId) {
+            setRide(data.rideId, data.status);
+            if (data.rideType === 'RECURRING') {
+              if (data.recurringId) $('recId').value = data.recurringId;
+              log('ev', 'RECURRING ride ban gayi - pickup ' + (data.scheduledAt ? new Date(data.scheduledAt).toLocaleString() : '-') + ' | 15 min pehle drivers ko jayegi');
+            }
+          }
+          if (event === 'ride:driver' && data && data.driver) {
+            log('ev', 'driver assigned: ' + data.driver.fullName + ' | ' + data.driver.vehicleRegistrationNumber + ' | rating ' + data.driver.rating);
+          }
+        });
+      }
+
+      function disconnectSocket() {
+        if (state.socket) state.socket.disconnect();
+        state.socket = null;
+      }
+
+      function joinRideRoom() {
+        if (!state.socket) return log('err', 'pehle socket connect karo');
+        state.socket.emit('joinRide', { rideId: $('rideId').value.trim() }, (ack) => log('ev', 'joinRide ack', ack));
+      }
+
+      async function estimateFare() {
+        const res = await api('/ride/estimate-fare', 'POST', { pickup: pickup(), dropoff: dropoff() });
+        if (!res?.data) return;
+        state.currency = res.data.currency || 'USD';
+        const tbody = $('optionsTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        (Array.isArray(res.data.options) ? res.data.options : []).forEach((o) => {
+          const tr = document.createElement('tr');
+          tr.className = 'pick';
+          tr.innerHTML = '<td><b>' + o.name + '</b>' + (o.badge ? ' <span class="pill">' + o.badge + '</span>' : '') + '</td><td>' + o.seats +
+            '</td><td>' + o.distanceKm + ' km / ' + o.distanceMiles + ' mi</td><td>' + o.etaMinutes + ' min</td><td><b>' + money(o.payableFare) + '</b></td>';
+          tr.onclick = () => {
+            state.vehicleTypeId = o.vehicleTypeId;
+            $('selectedVehicle').textContent = o.vehicleTypeId + ' (' + o.name + ')';
+            Array.prototype.forEach.call(tbody.children, (c) => c.classList.remove('sel'));
+            tr.classList.add('sel');
+            log('ev', 'vehicle selected', { vehicleTypeId: o.vehicleTypeId, name: o.name, fare: o.payableFare, breakdown: o.fare });
+          };
+          tbody.appendChild(tr);
+        });
+        log('ev', 'route: ' + res.data.distanceKm + ' km, ' + res.data.durationMinutes + ' min, source ' + res.data.routeSource);
+      }
+
+      async function vehicleTypes() {
+        const res = await api('/ride/vehicle-types');
+        const tbody = $('optionsTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        (Array.isArray(res?.data) ? res.data : []).forEach((v) => {
+          tbody.innerHTML += '<tr><td>' + v.name + (v.badge ? ' <span class="pill">' + v.badge + '</span>' : '') +
+            '</td><td>' + v.seats + '</td><td>-</td><td>' + (v.etaText || '-') + '</td><td>' + money(v.basePrice) + ' base</td></tr>';
+        });
+      }
+
+      async function promoCodes() {
+        await api('/ride/promo-codes');
+      }
+
+      async function nearbyCabs() {
+        await api('/ride/nearby-cabs?lat=' + $('pickupLat').value + '&lng=' + $('pickupLng').value);
+      }
+
+      async function bookRide() {
+        if (!state.vehicleTypeId) return log('err', 'pehle estimate karke vehicle select karo');
+        const body = {
+          pickup: pickup(),
+          dropoff: dropoff(),
+          vehicleTypeId: state.vehicleTypeId,
+          passengerCount: Number($('passengerCount').value),
+          rideType: $('rideType').value,
+          paymentMethod: $('paymentMethod').value,
+          notes: $('notes').value,
+          promoCode: $('promoCode').value.trim() || undefined,
+        };
+        if (body.rideType === 'SCHEDULED' && $('scheduledAt').value) body.scheduledAt = $('scheduledAt').value;
+        const res = await api('/ride/book', 'POST', body);
+        if (res?.data) {
+          setRide(res.data.rideId, res.data.status);
+          $('otp').textContent = 'OTP: ' + (res.data.otp || '-');
+          log('ev', 'booked as ' + res.data.status + ' - ' + explainStatus(res.data.status) + (res.data.scheduledAt ? ' | scheduledAt ' + res.data.scheduledAt : ''));
+          if (state.socket) state.socket.emit('joinRide', { rideId: res.data.rideId });
+        }
+      }
+
+      async function activeRide() {
+        const res = await api('/ride/active');
+        if (res?.data) setRide(res.data.rideId, res.data.status);
+        else log('ev', 'koi active ride nahi hai');
+      }
+
+      async function rideDetails() {
+        const id = $('rideId').value.trim();
+        if (!id) return log('err', 'ride id daalo');
+        const res = await api('/ride/' + id);
+        if (res?.data) setRide(res.data.rideId, res.data.status);
+      }
+
+      async function myRides() {
+        const status = $('myRidesStatus').value;
+        await api('/ride/my?page=1&limit=5' + (status ? '&status=' + status : ''));
+      }
+
+      async function cancelRide() {
+        const id = $('rideId').value.trim();
+        if (!id) return log('err', 'ride id daalo');
+        const res = await api('/ride/cancel', 'PATCH', { rideId: id, reason: $('cancelReason').value });
+        if (res?.data) setRide(id, res.data.status);
+      }
+
+      function updateDispatchHint() {
+        const el = $('dispatchHint');
+        if ($('rideType').value !== 'SCHEDULED') {
+          el.textContent = 'INSTANT ride: book karte hi drivers ko request jaati hai (SEARCHING_DRIVER).';
+          return;
+        }
+        const raw = $('scheduledAt').value.trim();
+        const at = new Date(raw);
+        if (!raw || isNaN(at.getTime())) {
+          el.textContent = 'SCHEDULED ride: valid ISO scheduledAt daalo, example ' + new Date(Date.now() + 30 * 60000).toISOString();
+          return;
+        }
+        const dispatchAt = new Date(at.getTime() - 15 * 60000);
+        const mins = Math.round((dispatchAt.getTime() - Date.now()) / 60000);
+        el.textContent = 'SCHEDULED ride: ' + at.toISOString() + ' | backend dispatch window starts ' + dispatchAt.toISOString() +
+          (mins > 0 ? ' (in ' + mins + ' min)' : ' (already due, next scheduler run picks it up)');
+      }
+
+      function scheduledPreset(minutes) {
+        const at = new Date(Date.now() + minutes * 60000);
+        $('scheduledAt').value = at.toISOString();
+        if ($('rideType').value !== 'SCHEDULED') $('rideType').value = 'SCHEDULED';
+        updateDispatchHint();
+        log('ev', 'scheduledAt preset', { scheduledAt: at.toISOString(), dispatchFrom: new Date(at.getTime() - 15 * 60000).toISOString() });
+      }
+
+      function dispatchIn(scheduledAt) {
+        if (!scheduledAt) return '-';
+        const ms = new Date(scheduledAt).getTime() - 15 * 60000 - Date.now();
+        if (ms <= 0) return 'due now';
+        const mins = Math.round(ms / 60000);
+        if (mins < 60) return 'in ' + mins + ' min';
+        return 'in ' + Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+      }
+
+      function explainStatus(status) {
+        if (status === 'SCHEDULED') return 'SCHEDULED = waiting, koi driver ko request nahi gayi';
+        if (status === 'SEARCHING_DRIVER') return 'SEARCHING_DRIVER = drivers ko request bhej di gayi';
+        return '';
+      }
+
+      async function loadScheduled(silent) {
+        const status = $('schedFilter').value;
+        const query = '?page=1&limit=20' + (status ? '&status=' + status : '');
+        const res = await api('/ride/my' + query, 'GET', undefined, silent);
+        const tbody = $('schedTable').querySelector('tbody');
+        const items = res && res.data && Array.isArray(res.data.items) ? res.data.items : [];
+        tbody.innerHTML = '';
+        items.forEach((r) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + r.rideId.slice(-6) + '</td><td>' + r.status + '</td><td>' +
+            (r.scheduledAt ? new Date(r.scheduledAt).toLocaleString() : '-') + '</td><td>' + dispatchIn(r.scheduledAt) + '</td><td>' +
+            (r.distanceKm || 0) + ' km / ' + (r.durationMinutes || 0) + ' min</td><td></td>';
+          if (r.status === 'SCHEDULED' && r.scheduledAt && new Date(r.scheduledAt).getTime() <= Date.now()) tr.style.background = '#3a2f17';
+          const td = tr.lastElementChild;
+          const use = document.createElement('button');
+          use.className = 'ghost';
+          use.textContent = 'Use';
+          use.onclick = () => {
+            setRide(r.rideId, r.status);
+            $('otp').textContent = 'OTP: ' + (r.otp || '-');
+            if (state.socket) state.socket.emit('joinRide', { rideId: r.rideId });
+          };
+          const cancel = document.createElement('button');
+          cancel.className = 'red';
+          cancel.textContent = 'Cancel';
+          cancel.onclick = async () => {
+            await api('/ride/cancel', 'PATCH', { rideId: r.rideId, reason: 'Cancelled from scheduled list' });
+            loadScheduled(true);
+          };
+          td.appendChild(use);
+          td.appendChild(document.createTextNode(' '));
+          td.appendChild(cancel);
+          tbody.appendChild(tr);
+        });
+        if (!silent) log('ev', 'scheduled list: ' + items.length + ' ride(s), filter ' + (status || 'all'));
+        return items;
+      }
+
+      function toggleSchedAuto() {
+        const btn = $('schedAutoBtn');
+        if (state.schedTimer) {
+          clearInterval(state.schedTimer);
+          state.schedTimer = null;
+          btn.textContent = 'Start auto refresh';
+          btn.className = 'ghost';
+          log('ev', 'scheduled auto refresh stopped');
+          return;
+        }
+        const sec = Math.max(5, Number($('schedAuto').value) || 30);
+        state.schedTimer = setInterval(() => loadScheduled(true), sec * 1000);
+        btn.textContent = 'Stop auto refresh (' + sec + 's)';
+        btn.className = 'green';
+        log('ev', 'scheduled auto refresh every ' + sec + 's');
+        loadScheduled(true);
+      }
+
+      const REC_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      function recMode() {
+        return state.recMode || 'MONFRI';
+      }
+
+      function recFrequency() {
+        if (recMode() === 'DAILY') return 'DAILY';
+        if (recMode() === 'MONTHLY') return 'MONTHLY';
+        return 'WEEKLY';
+      }
+
+      function recDaysList() {
+        if (recMode() === 'MONFRI') return [1, 2, 3, 4, 5];
+        if (recMode() === 'DAILY' || recMode() === 'MONTHLY') return [];
+        return (state.recDays || []).slice().sort((a, b) => a - b);
+      }
+
+      function recMonthDaysList() {
+        return $('recMonthDays').value
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s !== '')
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= 31);
+      }
+
+      function recStartDay() {
+        const parts = ($('recStart').value || recLocalDate(new Date())).split('-');
+        return parts.length === 3 ? Number(parts[2]) : new Date().getDate();
+      }
+
+      function recPatternText() {
+        const mode = recMode();
+        if (mode === 'DAILY') return 'Daily (every day)';
+        if (mode === 'MONTHLY') {
+          const override = recMonthDaysList();
+          return override.length
+            ? 'Monthly custom day(s) ' + JSON.stringify(override)
+            : 'Monthly day from startDate (' + recStartDay() + ')';
+        }
+        return recDaysList().map((d) => REC_DAYS[d]).join(', ');
+      }
+
+      function recPatternValid() {
+        const mode = recMode();
+        if (mode === 'DAILY' || mode === 'MONTHLY') return true;
+        return recDaysList().length > 0;
+      }
+
+      function recSeriesPattern(s) {
+        const freq = s.frequency || 'WEEKLY';
+        if (freq === 'DAILY') return 'Daily (every day)';
+        if (freq === 'MONTHLY') {
+          const days = s.daysOfMonth || [];
+          return days.length ? 'Monthly: ' + days.join(', ') : 'Monthly (day from start date)';
+        }
+        return 'Weekly: ' + (s.daysOfWeek || []).map((d) => REC_DAYS[d]).join(' ');
+      }
+
+      function recTime12(value) {
+        const parts = (value || '').split(':');
+        if (parts.length !== 2) return value || '-';
+        let h = Number(parts[0]);
+        const suffix = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return String(h).padStart(2, '0') + ':' + parts[1] + ' ' + suffix;
+      }
+
+      function recDispatchText() {
+        const start = $('recStart').value ? new Date($('recStart').value + 'T00:00:00') : new Date();
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dateText = months[start.getMonth()] + ' ' + String(start.getDate()).padStart(2, '0') + ', ' + start.getFullYear();
+        const mode = recMode();
+        const pattern = mode === 'DAILY' ? 'DAILY' : mode === 'MONTHLY' ? 'MONTHLY' : recDaysList().map((d) => REC_DAYS[d].toUpperCase()).join(', ');
+        return 'Taxi will automatically dispatch ' + pattern + ' starting ' + dateText + ' at ' + recTime12($('recTime').value) + ' (repeats until cancelled).';
+      }
+
+      function recRender() {
+        const mode = recMode();
+        const picker = mode === 'WEEKLY' || mode === 'CUSTOM';
+        document.querySelectorAll('#recFreqBtns button').forEach((b) => {
+          const on = b.getAttribute('data-freq') === mode;
+          b.style.background = on ? '#2d6cdf' : '';
+          b.style.borderColor = on ? '#4f86ff' : '';
+        });
+        $('recDayPicker').style.display = picker ? '' : 'none';
+        document.querySelectorAll('#recDayChips button').forEach((b) => {
+          const on = recDaysList().indexOf(Number(b.getAttribute('data-day'))) !== -1;
+          b.style.background = on ? '#2d6cdf' : '';
+          b.style.borderColor = on ? '#4f86ff' : '';
+        });
+        $('recMonthDays').disabled = mode !== 'MONTHLY';
+        $('recDispatch').textContent = recDispatchText();
+      }
+
+      // Kept for the existing callers.
+      function recFrequencyChanged() {
+        recRender();
+      }
+
+      function recSetFreq(mode) {
+        state.recMode = mode;
+        if (mode === 'CUSTOM' && !(state.recDays || []).length) state.recDays = [1, 2];
+        recRender();
+        log('ev', 'recurring mode = ' + mode + ' -> ' + recFrequency() + ' | ' + recPatternText());
+      }
+
+      function recToggleDay(day) {
+        const days = new Set(state.recDays || []);
+        if (days.has(day)) days.delete(day);
+        else days.add(day);
+        state.recDays = Array.from(days);
+        recRender();
+      }
+
+      function recLocalDate(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      }
+
+      function recPresetSoon(minutes) {
+        const add = Number(minutes) || 10;
+        const at = new Date(Date.now() + add * 60000);
+        $('recTime').value = String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
+        $('recStart').value = recLocalDate(at);
+        $('recEnd').value = '';
+        recRender();
+        log('ev', 'recurring pickup = aaj ' + $('recTime').value + ' | ' + recPatternText() + ', startDate ' + $('recStart').value +
+          ' -> scheduler ke agle run me ride ban jayegi');
+      }
+
+      function recurringBody() {
+        const body = {
+          pickup: pickup(),
+          dropoff: dropoff(),
+          vehicleTypeId: state.vehicleTypeId,
+          frequency: recFrequency(),
+          pickupTime: $('recTime').value,
+          passengerCount: Number($('recPax').value) || 1,
+          paymentMethod: $('recPay').value,
+        };
+        if (recFrequency() === 'WEEKLY') body.daysOfWeek = recDaysList();
+        if (recFrequency() === 'MONTHLY' && recMonthDaysList().length) body.daysOfMonth = recMonthDaysList();
+        if ($('recStart').value) body.startDate = $('recStart').value;
+        if ($('recEnd').value) body.endDate = $('recEnd').value;
+        if ($('recNotes').value) body.notes = $('recNotes').value;
+        if ($('recPromo').value.trim()) body.promoCode = $('recPromo').value.trim();
+        return body;
+      }
+
+      function recAt(at) {
+        return at ? new Date(at).toLocaleString() + ' (' + REC_DAYS[new Date(at).getDay()] + ')' : '-';
+      }
+
+      async function createRecurring() {
+        if (!state.vehicleTypeId) return log('err', 'pehle estimate karke vehicle select karo');
+        if (!recPatternValid()) return log('err', 'kam se kam ek din select karo (Weekly / Custom Days me day chip)');
+        const res = await api('/ride/recurring', 'POST', recurringBody());
+        if (res?.data) {
+          $('recId').value = res.data.recurringId;
+          log('ev', 'series created | next pickup ' + recAt(res.data.nextOccurrenceAt) + ' | ' + recFrequency() + ' ' + recPatternText() + ' @ ' + res.data.pickupTime);
+          listRecurring(true);
+        }
+      }
+
+      async function listRecurring(silent) {
+        const res = await api('/ride/recurring?page=1&limit=20', 'GET', undefined, silent);
+        const tbody = $('recTable').querySelector('tbody');
+        const items = res && res.data && Array.isArray(res.data.items) ? res.data.items : [];
+        tbody.innerHTML = '';
+        items.forEach((s) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td>' + s.recurringId.slice(-6) + '</td><td>' + s.status + '</td><td>' +
+            recSeriesPattern(s) + '</td><td>' + s.pickupTime + '</td><td>' +
+            recAt(s.nextOccurrenceAt) + '</td><td>' + (s.ridesCreated || 0) + '</td><td></td>';
+          if (s.status === 'ACTIVE') tr.style.background = '#16281d';
+          if (s.status === 'CANCELLED') tr.style.background = '#2a1a20';
+          const td = tr.lastElementChild;
+          const pick = document.createElement('button');
+          pick.className = 'ghost';
+          pick.textContent = 'Detail';
+          pick.onclick = () => {
+            $('recId').value = s.recurringId;
+            recurringDetails(s.recurringId);
+          };
+          td.appendChild(pick);
+          tr.onclick = (e) => {
+            if (e.target.tagName !== 'BUTTON') $('recId').value = s.recurringId;
+          };
+          tbody.appendChild(tr);
+        });
+        if (!silent) log('ev', 'recurring list: ' + items.length + ' series');
+        return items;
+      }
+
+      async function recurringDetails(id) {
+        const seriesId = id || $('recId').value.trim();
+        if (!seriesId) return log('err', 'series id daalo');
+        $('recId').value = seriesId;
+        const res = await api('/ride/recurring/' + seriesId);
+        const rides = res && res.data && Array.isArray(res.data.upcomingRides) ? res.data.upcomingRides : [];
+        const box = $('recUpcoming');
+        box.innerHTML = 'Upcoming rides (' + rides.length + '): ';
+        if (!rides.length) box.innerHTML += '<b>koi nahi</b> (pickup 1 ghante se door hone pe scheduler banata hai)';
+        rides.forEach((r) => {
+          box.innerHTML += '<br>' + r.rideId + ' | <b>' + r.status + '</b> | pickup ' + recAt(r.scheduledAt) +
+            ' | ' + (r.distanceKm || 0) + ' km | ' + money(r.payableFare) + ' ';
+          const use = document.createElement('button');
+          use.className = 'ghost';
+          use.textContent = 'Use in section 5';
+          use.onclick = () => {
+            setRide(r.rideId, r.status);
+            $('otp').textContent = 'OTP: ' + (r.otp || '-');
+            if (state.socket) state.socket.emit('joinRide', { rideId: r.rideId });
+          };
+          box.appendChild(use);
+        });
+      }
+
+      async function editRecurring() {
+        const seriesId = $('recId').value.trim();
+        if (!seriesId) return log('err', 'series id daalo');
+        const body = recurringBody();
+        body.pickupTime = $('recTime').value;
+        body.endDate = $('recEnd').value || null;
+        const res = await api('/ride/recurring/' + seriesId, 'PATCH', body);
+        if (res?.data) log('ev', 'series updated | next pickup ' + recAt(res.data.nextOccurrenceAt));
+      }
+
+      async function recStatus(status) {
+        const seriesId = $('recId').value.trim();
+        if (!seriesId) return log('err', 'series id daalo');
+        const body = { status };
+        if (status === 'CANCELLED') body.reason = $('cancelReason').value || 'Cancelled from recurring panel';
+        const res = await api('/ride/recurring/' + seriesId + '/status', 'PATCH', body);
+        if (res?.data) {
+          log('ev', 'series ' + status + ' | next pickup ' + recAt(res.data.nextOccurrenceAt));
+          listRecurring(true);
+          if (status === 'CANCELLED') recurringDetails(seriesId);
+        }
+      }
+      function useTarget(target) {
+        const local = target === 'local';
+        $('apiBase').value = local ? 'http://localhost:4016/api/v1' : 'https://node.aitechnotech.in/carlinee/api/v1';
+        $('socketBase').value = local ? 'http://localhost:4016' : 'https://node.aitechnotech.in';
+        $('socketPath').value = local ? '/viamo/socket.io' : '/carlinee/viamo/socket.io';
+        log('ev', 'target set: ' + (local ? 'LOCAL' : 'LIVE'), { apiBase: $('apiBase').value, socketBase: $('socketBase').value, socketPath: $('socketPath').value });
+        if (state.socket) log('ev', 'socket already connected - Disconnect + Connect again to apply the new target');
+      }
+
+      updateDispatchHint();
+      showWhoAmI();
+      if (!$('recStart').value) $('recStart').value = recLocalDate(new Date());
+      recFrequencyChanged();
+    </script>
+  </body>
+</html>
