@@ -28,6 +28,11 @@ async function bootstrap() {
   app.use(morgan('dev'));
 
   // Serve uploaded files statically
+  // Serve test client HTML files from test folder
+  const testDir = join(process.cwd(), 'test');
+  app.useStaticAssets(testDir, { prefix: '/test' });
+  app.useStaticAssets(testDir);
+
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: `${Global.PREFIX}/uploads`,
   });
@@ -72,6 +77,14 @@ async function bootstrap() {
       'access-token',
     )
     .addTag(
+      'Company Trips (by Prakash)',
+      'Company trips management & dispatcher assignment APIs - owned by Prakash Mishra',
+    )
+    .addTag(
+      'Company Customers (by Prakash)',
+      'Company customers & live map APIs - owned by Prakash Mishra',
+    )
+    .addTag(
       'User Booking (by Prakash)',
       'User side ride booking APIs - owned by Prakash Mishra',
     )
@@ -98,6 +111,7 @@ async function bootstrap() {
       }
     });
   });
+
   SwaggerModule.setup(`${Global.PREFIX}/docs`, app, document, {
     swaggerOptions: {
       persistAuthorization: true,

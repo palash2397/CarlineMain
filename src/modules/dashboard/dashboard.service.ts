@@ -246,7 +246,7 @@ export class DashboardService {
           subtitle: "Today's operations for your company.",
         },
         timeframe: query.timeframe || DashboardTimeframe.TODAY,
-        currencySymbol: '₹',
+        currencySymbol: '$',
         cards: {
           tripsToday: {
             title: 'Trips today',
@@ -271,7 +271,7 @@ export class DashboardService {
           revenueToday: {
             title: 'Revenue today',
             value: Number(revenueToday.toFixed(2)),
-            displayValue: `₹${Math.round(revenueToday).toLocaleString()}`,
+            displayValue: `$${Math.round(revenueToday).toLocaleString()}`,
             percentageChange: `${revenueChange.isPositive ? '↗' : '↘'} ${Math.abs(revenueChange.percent)}%`,
             isPositive: revenueChange.isPositive,
             trendDirection: revenueChange.trendDirection,
@@ -296,7 +296,7 @@ export class DashboardService {
           pickup: r.pickup?.address || 'Pickup Point',
           dropoff: r.dropoff?.address || 'Dropoff Destination',
           fare: r.payableFare || r.totalFare || 0,
-          currency: '₹',
+          currency: '$',
           paymentMethod: r.paymentMethod,
           paymentStatus: r.paymentStatus,
           createdAt: r.createdAt,

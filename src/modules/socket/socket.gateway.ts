@@ -41,7 +41,14 @@ export class SocketGateway
 
     server.use((socket: Socket, next) => {
       try {
-        const token = socket.handshake.auth?.token;
+        let token =
+          socket.handshake.auth?.token ||
+          socket.handshake.headers?.authorization ||
+          socket.handshake.query?.token;
+
+        if (typeof token === 'string' && token.startsWith('Bearer ')) {
+          token = token.slice(7).trim();
+        }
 
         if (!token) {
           return next(new Error('Token not found'));
@@ -111,6 +118,11 @@ export class SocketGateway
     // console.log('User ID ---------->', user.id);
     // console.log('Joined room ---------->', room);
 
+    
+    if (user?.companyId) {
+      await client.join(`company:${user.companyId}`);
+    }
+
     console.log(`Socket connected: ${user.id}`);
   }
 
@@ -178,4 +190,16 @@ export class SocketGateway
 
     return this.rideService.updateDriverLocation(user.id, data);
   }
+
+  @SubscribeMessage('joinCompanyRoom')
+  async joinCompanyRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { companyId: string },
+  ) {
+    if (data?.companyId) {
+      await client.join(`company:${data.companyId}`);
+    }
+    return { success: true, message: 'Company room joined' };
+  }
+
 }
