@@ -12,11 +12,11 @@ import { Pricing } from '../pricing/schema/pricing.schema';
 import { User } from '../user/schema/user.schema';
 import { SocketService } from '../socket/socket.service';
 
-import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
-import { RideType } from 'src/common/enums/ride/ride-type.enum';
-import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
-import { UserRole } from 'src/common/enums/user/role.enum';
-import { Msg } from 'src/helpers/responseMsg';
+import { RideStatus } from '../../common/enums/ride/ride-status.enum';
+import { RideType } from '../../common/enums/ride/ride-type.enum';
+import { PaymentMethod } from '../../common/enums/ride/payment-method.enum';
+import { UserRole } from '../../common/enums/user/role.enum';
+import { Msg } from '../../helpers/responseMsg';
 
 describe('RideService New Features (Recurring Delete, Dispatcher Booking, Modify Ride)', () => {
   let service: RideService;
