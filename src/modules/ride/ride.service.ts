@@ -2174,6 +2174,12 @@ export class RideService {
         }
       }
 
+      if (typeof dto.latitude === 'number' && typeof dto.longitude === 'number') {
+        driver.currentLatitude = dto.latitude;
+        driver.currentLongitude = dto.longitude;
+        driver.lastLocationAt = new Date();
+      }
+
       driver.isOnline = dto.isOnline;
       await driver.save();
 
@@ -3849,4 +3855,59 @@ export class RideService {
 
     return `${date.getFullYear()}-${month}-${day}`;
   }
+
+  // ==========================================================
+  // Real-time Ride Tracking API (User & Driver App)
+  // ==========================================================
+  async trackRide(user: any, rideId: string) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride = await this.rideModel.findById(rideId).lean();
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      let driverData: any = null;
+      if (ride.driver && Types.ObjectId.isValid(ride.driver)) {
+        const driverDoc = await this.driverModel.findById(ride.driver).lean();
+        if (driverDoc) {
+          const driverUserId = (driverDoc as any).userId;
+          const driverUser = driverUserId ? await this.userModel.findById(driverUserId).lean() : null;
+          driverData = {
+            id: driverDoc._id.toString(),
+            name: driverDoc.fullName || `${driverUser?.firstName || ''} ${driverUser?.lastName || ''}`.trim() || 'Driver',
+            phoneNumber: driverDoc.phoneNumber || (driverDoc as any).mobileNumber || (driverDoc as any).phone || driverUser?.phoneNumber || '',
+            email: driverDoc.email || driverUser?.email || '',
+            currentLatitude: driverDoc.currentLatitude || 0,
+            currentLongitude: driverDoc.currentLongitude || 0,
+            vehicleTypeName: (driverDoc as any).vehicleTypeName || driverDoc.vehicleType || 'Standard',
+            lastLocationAt: driverDoc.lastLocationAt || null
+          };
+        }
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          rideId: ride._id.toString(),
+          status: ride.status,
+          pickup: ride.pickup,
+          dropoff: ride.dropoff,
+          driver: driverData,
+          etaMinutes: ride.etaMinutes || 0,
+          payableFare: ride.payableFare || 0,
+          totalFare: ride.totalFare || 0,
+          createdAt: (ride as any).createdAt
+        },
+        'Ride tracking data fetched successfully'
+      );
+    } catch (error: any) {
+      console.error('Error in trackRide:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
 }

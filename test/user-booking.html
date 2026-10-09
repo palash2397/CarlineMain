@@ -155,6 +155,7 @@
           <button class="ghost" onclick="myRides()">GET /ride/my</button>
           <button class="ghost" onclick="activeRide()">GET /ride/active</button>
           <button class="ghost" onclick="rideDetails()">GET /ride/:id</button>
+          <button type="button" style="background:#4f46e5;color:#fff;" onclick="window.open('./chat-test.html?rideId=' + encodeURIComponent($('rideId').value.trim()), '_blank')">💬 Open In-Ride Chat</button>
         </div>
         <label>Cancel reason</label>
         <input id="cancelReason" value="Plans changed" />

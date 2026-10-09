@@ -77,8 +77,8 @@ async function bootstrap() {
       'access-token',
     )
     .addTag(
-      'Company Trips (by Prakash)',
-      'Company trips management & dispatcher assignment APIs - owned by Prakash Mishra',
+      'Dispatcher (by Prakash)',
+      'All Dispatcher APIs: Dashboard metrics (Scheduled, Completed, Cancelled, Pending, Live Trips, Stats), Trip Management, Dispatcher Booking, Driver Assignment, and Live Map - owned by Prakash Mishra',
     )
     .addTag(
       'Company Customers (by Prakash)',

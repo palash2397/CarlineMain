@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Carline - In-Ride Live Chat Simulator (Rapido / Uber Style)</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: #0b0f19;
+        color: #e2e8f0;
+      }
+      header {
+        padding: 12px 20px;
+        background: #111827;
+        border-bottom: 1px solid #1f2937;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .badge {
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .badge-purple {
+        background: #4c1d95;
+        color: #ddd6fe;
+      }
+      .badge-blue {
+        background: #1e3a8a;
+        color: #93c5fd;
+      }
+      .badge-green {
+        background: #064e3b;
+        color: #6ee7b7;
+      }
+      .badge-yellow {
+        background: #78350f;
+        color: #fde68a;
+      }
+      .badge-red {
+        background: #7f1d1d;
+        color: #fca5a5;
+      }
+      .top-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      input, select, button {
+        font: inherit;
+        border-radius: 6px;
+      }
+      input, select {
+        background: #1f2937;
+        border: 1px solid #374151;
+        color: #f3f4f6;
+        padding: 6px 10px;
+        font-size: 13px;
+      }
+      button {
+        background: #2563eb;
+        border: none;
+        color: #fff;
+        padding: 7px 14px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background 0.15s;
+      }
+      button:hover {
+        background: #1d4ed8;
+      }
+      button.btn-green {
+        background: #059669;
+      }
+      button.btn-green:hover {
+        background: #047857;
+      }
+      button.btn-secondary {
+        background: #374151;
+      }
+      button.btn-secondary:hover {
+        background: #4b5563;
+      }
+      button.btn-orange {
+        background: #d97706;
+      }
+      button.btn-orange:hover {
+        background: #b45309;
+      }
+      .ride-status-bar {
+        background: #131d2e;
+        border-bottom: 1px solid #1f2937;
+        padding: 8px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: #94a3b8;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .ride-info-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        padding: 16px;
+        height: calc(100vh - 105px);
+      }
+      @media (max-width: 900px) {
+        .container {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+      }
+      .chat-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        height: 100%;
+      }
+      .chat-header {
+        padding: 12px 16px;
+        background: #182234;
+        border-bottom: 1px solid #1f2937;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .chat-header h2 {
+        font-size: 15px;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 20px;
+        background: #374151;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ef4444;
+      }
+      .dot.online {
+        background: #10b981;
+      }
+      .auth-bar {
+        padding: 8px 16px;
+        background: #131d2e;
+        border-bottom: 1px solid #1f2937;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .auth-input-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .auth-input-row input {
+        flex: 1;
+        font-size: 11px;
+        font-family: monospace;
+      }
+      .token-hint {
+        font-size: 10px;
+        color: #64748b;
+        display: flex;
+        justify-content: space-between;
+      }
+      .chat-messages {
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: #0c121d;
+      }
+      .msg-group {
+        display: flex;
+        flex-direction: column;
+        max-width: 78%;
+      }
+      .msg-group.outgoing {
+        align-self: flex-end;
+      }
+      .msg-group.incoming {
+        align-self: flex-start;
+      }
+      .bubble {
+        padding: 9px 13px;
+        border-radius: 14px;
+        font-size: 13px;
+        line-height: 1.4;
+        word-break: break-word;
+      }
+      .outgoing .bubble {
+        background: #2563eb;
+        color: #fff;
+        border-bottom-right-radius: 2px;
+      }
+      .passenger-side .outgoing .bubble {
+        background: #6366f1;
+      }
+      .driver-side .outgoing .bubble {
+        background: #059669;
+      }
+      .incoming .bubble {
+        background: #1f2937;
+        color: #e5e7eb;
+        border-bottom-left-radius: 2px;
+        border: 1px solid #374151;
+      }
+      .msg-meta {
+        font-size: 10px;
+        color: #94a3b8;
+        margin-top: 3px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .outgoing .msg-meta {
+        justify-content: flex-end;
+      }
+      .typing-indicator {
+        font-size: 11px;
+        color: #94a3b8;
+        font-style: italic;
+        padding: 0 16px 6px;
+        min-height: 20px;
+      }
+      .quick-chips {
+        padding: 6px 12px;
+        background: #131d2e;
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        border-top: 1px solid #1f2937;
+      }
+      .chip {
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: #1f2937;
+        border: 1px solid #374151;
+        color: #cbd5e1;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .chip:hover {
+        background: #374151;
+        color: #fff;
+      }
+      .chat-input-bar {
+        padding: 10px 14px;
+        background: #182234;
+        border-top: 1px solid #1f2937;
+        display: flex;
+        gap: 8px;
+      }
+      .chat-input-bar input {
+        flex: 1;
+      }
+      .empty-state {
+        margin: auto;
+        text-align: center;
+        color: #64748b;
+        font-size: 13px;
+      }
+      .error-toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #ef4444;
+        color: white;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        display: none;
+        z-index: 9999;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>
+        <span>💬 In-Ride Live Chat Simulator</span>
+        <span class="badge badge-purple">Rapido / Uber Style</span>
+      </h1>
+      <div class="top-controls">
+        <label style="font-size: 12px; color: #94a3b8;">API & Socket Host:</label>
+        <select id="serverSelect" onchange="switchServer()">
+          <option value="local">Local Development (localhost:4016)</option>
+          <option value="live">Live Production (node.aitechnotech.in)</option>
+        </select>
+        <label style="font-size: 12px; color: #94a3b8;">Ride ID:</label>
+        <input id="sharedRideId" placeholder="Enter Ride ID to link both sides" style="width: 220px;" />
+        <button class="btn-secondary" onclick="syncRideId()">Set Ride ID</button>
+        <button class="btn-orange" onclick="connectBoth()">⚡ Connect Both</button>
+      </div>
+    </header>
+
+    <!-- RIDE STATUS BAR -->
+    <div class="ride-status-bar">
+      <div class="ride-info-pill">
+        <span>Ride Status:</span>
+        <span id="rideStatusBadge" class="badge badge-yellow">Checking...</span>
+      </div>
+      <div class="ride-info-pill">
+        <span>Passenger:</span>
+        <span id="ridePassengerInfo" style="color: #cbd5e1;">6aad4206e4a94e8b156e180d</span>
+      </div>
+      <div class="ride-info-pill">
+        <span>Assigned Driver:</span>
+        <span id="rideDriverInfo" style="color: #cbd5e1;">6abf746a840d26c7a850d82b</span>
+      </div>
+      <div id="driverWarning" style="color: #f87171; display: none;">
+        ⚠️ Driver is not assigned yet!
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- PASSENGER SIDE -->
+      <div class="chat-card passenger-side">
+        <div class="chat-header">
+          <h2>
+            <span>👤 Passenger App (Customer)</span>
+          </h2>
+          <div class="status-pill">
+            <span id="userDot" class="dot"></span>
+            <span id="userStatusText">Disconnected</span>
+          </div>
+        </div>
+
+        <div class="auth-bar">
+          <div class="auth-input-row">
+            <input
+              id="userToken"
+              value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYWQ0MjA2ZTRhOTRlOGIxNTZlMTgwZCIsInJvbGVzIjoiVVNFUiIsImNvbXBhbnlJZCI6bnVsbCwiaWF0IjoxNzg5OTg4Njc0LCJleHAiOjE3OTI1ODA2NzR9.MXGIzFz8VQCcFEoQfZwuYWHwe4PCuyx7Re_qs95rNnU"
+              placeholder="Paste Passenger JWT Token here..."
+            />
+            <button onclick="connectPassenger()">Connect</button>
+            <button class="btn-secondary" onclick="loadPassengerHistory()">History</button>
+          </div>
+          <div class="token-hint">
+            <span>Customer ID: <b>6aad4206e4a94e8b156e180d</b> (Role: USER)</span>
+            <span style="color: #818cf8;">Pre-filled from passenger test</span>
+          </div>
+        </div>
+
+        <div id="userMessages" class="chat-messages">
+          <div class="empty-state">Connect with Passenger token and Ride ID to start live chat.</div>
+        </div>
+
+        <div id="userTyping" class="typing-indicator"></div>
+
+        <div class="quick-chips">
+          <span class="chip" onclick="quickSendUser('Bhaiya, main gate par khada hu')">Gate par hu</span>
+          <span class="chip" onclick="quickSendUser('Kitna time lagega aane me?')">Kitna time lagega?</span>
+          <span class="chip" onclick="quickSendUser('Near the metro pillar 45')">Near metro pillar</span>
+          <span class="chip" onclick="quickSendUser('Okay thank you!')">Thank you</span>
+        </div>
+
+        <div class="chat-input-bar">
+          <input
+            id="userInput"
+            placeholder="Type a message to Driver..."
+            onkeydown="handleUserKey(event)"
+            oninput="handleUserTyping()"
+          />
+          <button onclick="sendUserMessage()">Send</button>
+        </div>
+      </div>
+
+      <!-- DRIVER SIDE -->
+      <div class="chat-card driver-side">
+        <div class="chat-header">
+          <h2>
+            <span>🚖 Driver App (Captain)</span>
+          </h2>
+          <div class="status-pill">
+            <span id="driverDot" class="dot"></span>
+            <span id="driverStatusText">Disconnected</span>
+          </div>
+        </div>
+
+        <div class="auth-bar">
+          <div class="auth-input-row">
+            <input
+              id="driverToken"
+              value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYmY3NDZhODQwZDI2YzdhODUwZDgyYiIsInJvbGVzIjoiRFJJVkVSIiwiZW1haWwiOiJjb21wYW55LmRyaXZlci5hYmNAeW9wbWFpbC5jb20iLCJjb21wYW55SWQiOiI2YWE5MDRhODE1ZjJhZmNjODQyZWU4NTgiLCJpYXQiOjE3OTEyNjM4OTYsImV4cCI6MTc5Mzg1NTg5Nn0.amOQw0QmRcJHrerBlJLaYOuyZ2_jGPoPdOpjrdJgxvo"
+              placeholder="Paste Driver JWT Token here..."
+            />
+            <button class="btn-green" onclick="connectDriver()">Connect</button>
+            <button class="btn-secondary" onclick="loadDriverHistory()">History</button>
+          </div>
+          <div class="token-hint">
+            <span>Captain ID: <b>6abf746a840d26c7a850d82b</b> (Role: DRIVER)</span>
+            <span style="color: #34d399;">Pre-filled from driver test</span>
+          </div>
+        </div>
+
+        <div id="driverMessages" class="chat-messages">
+          <div class="empty-state">Connect with Driver token and Ride ID to start live chat.</div>
+        </div>
+
+        <div id="driverTyping" class="typing-indicator"></div>
+
+        <div class="quick-chips">
+          <span class="chip" onclick="quickSendDriver('I have reached your pickup location')">Reached pickup</span>
+          <span class="chip" onclick="quickSendDriver('2 mins away, just caught in traffic')">2 mins away</span>
+          <span class="chip" onclick="quickSendDriver('Please share your OTP')">Share OTP</span>
+          <span class="chip" onclick="quickSendDriver('Understood, coming right now')">Coming</span>
+        </div>
+
+        <div class="chat-input-bar">
+          <input
+            id="driverInput"
+            placeholder="Type a message to Customer..."
+            onkeydown="handleDriverKey(event)"
+            oninput="handleDriverTyping()"
+          />
+          <button class="btn-green" onclick="sendDriverMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="error-toast"></div>
+
+    <!-- SOCKET.IO CLIENT SCRIPT -->
+    <script src="./socket.io.min.js"></script>
+
+    <script>
+      let userSocket = null;
+      let driverSocket = null;
+      let userTypingTimer = null;
+      let driverTypingTimer = null;
+
+      function showToast(msg, isError = true) {
+        const el = document.getElementById('toast');
+        el.innerText = msg;
+        el.style.background = isError ? '#ef4444' : '#10b981';
+        el.style.display = 'block';
+        clearTimeout(el.timer);
+        el.timer = setTimeout(() => {
+          el.style.display = 'none';
+        }, 4000);
+      }
+
+      function getBaseUrls() {
+        const isLive = document.getElementById('serverSelect').value === 'live';
+        return {
+          apiBase: isLive ? 'https://node.aitechnotech.in/carlinee/api/v1' : 'http://localhost:4016/api/v1',
+          socketHost: isLive ? 'https://node.aitechnotech.in' : 'http://localhost:4016',
+          socketPath: isLive ? '/carlinee/viamo/socket.io' : '/viamo/socket.io',
+        };
+      }
+
+      function switchServer() {
+        if (userSocket) { userSocket.disconnect(); }
+        if (driverSocket) { driverSocket.disconnect(); }
+        showToast('Server switched. Please reconnect passenger and driver.', false);
+      }
+
+      function syncRideId() {
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (!rideId) return alert('Please enter a valid Ride ID');
+        if (userSocket && userSocket.connected) {
+          userSocket.emit('joinRide', { rideId });
+        }
+        if (driverSocket && driverSocket.connected) {
+          driverSocket.emit('joinRide', { rideId });
+        }
+        fetchRideDetails(rideId);
+        showToast('Ride ID synced: ' + rideId, false);
+      }
+
+      function connectBoth() {
+        syncRideId();
+        connectPassenger();
+        connectDriver();
+      }
+
+      function fetchRideDetails(rideId) {
+        if (!rideId) return;
+        const { apiBase } = getBaseUrls();
+        const token = document.getElementById('userToken').value.trim() || document.getElementById('driverToken').value.trim();
+        fetch(`${apiBase}/ride/${rideId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        })
+          .then(r => r.json())
+          .then(res => {
+            const ride = res.data?.ride || res.data;
+            if (ride) {
+              const statusEl = document.getElementById('rideStatusBadge');
+              statusEl.innerText = ride.status || 'UNKNOWN';
+              statusEl.className = 'badge ' + (
+                ride.status === 'DRIVER_ASSIGNED' || ride.status === 'ACCEPTED' ? 'badge-green' :
+                ride.status === 'SEARCHING_DRIVER' ? 'badge-yellow' :
+                ride.status === 'RIDE_COMPLETED' ? 'badge-blue' : 'badge-purple'
+              );
+
+              document.getElementById('ridePassengerInfo').innerText =
+                (ride.passenger?.fullName || ride.user || 'Unknown');
+
+              const driverInfo = ride.driver?.fullName || ride.driver || 'None';
+              document.getElementById('rideDriverInfo').innerText = driverInfo;
+
+              const warningEl = document.getElementById('driverWarning');
+              if (!ride.driver) {
+                warningEl.style.display = 'inline-block';
+              } else {
+                warningEl.style.display = 'none';
+              }
+            }
+          })
+          .catch(() => {});
+      }
+
+      // -------------------------------------------------------------
+      // PASSENGER CONNECTION & CHAT
+      // -------------------------------------------------------------
+      function connectPassenger() {
+        const token = document.getElementById('userToken').value.trim();
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (!token) return alert('Please paste Passenger JWT token');
+
+        const { socketHost, socketPath } = getBaseUrls();
+        if (userSocket) userSocket.disconnect();
+
+        document.getElementById('userStatusText').innerText = 'Connecting...';
+
+        userSocket = io(socketHost, {
+          path: socketPath,
+          transports: ['websocket', 'polling'],
+          auth: { token },
+        });
+
+        userSocket.on('connect', () => {
+          document.getElementById('userDot').classList.add('online');
+          document.getElementById('userStatusText').innerText = 'Connected';
+          if (rideId) userSocket.emit('joinRide', { rideId });
+          loadPassengerHistory();
+        });
+
+        userSocket.on('disconnect', () => {
+          document.getElementById('userDot').classList.remove('online');
+          document.getElementById('userStatusText').innerText = 'Disconnected';
+        });
+
+        userSocket.on('connect_error', (err) => {
+          console.error('User socket error:', err);
+          document.getElementById('userStatusText').innerText = 'Auth Error';
+          showToast('Passenger Auth Error: ' + err.message);
+        });
+
+        // Listen for new messages
+        userSocket.on('chat:message', (msg) => {
+          appendUserMessage(msg);
+        });
+        userSocket.on('newMessage', (msg) => {
+          appendUserMessage(msg);
+        });
+
+        // Listen for typing indicator
+        userSocket.on('chat:typing', (data) => {
+          const typingEl = document.getElementById('userTyping');
+          if (data.isTyping && data.senderRole !== 'PASSENGER' && data.senderRole !== 'USER') {
+            typingEl.innerText = 'Captain is typing...';
+            clearTimeout(userTypingTimer);
+            userTypingTimer = setTimeout(() => { typingEl.innerText = ''; }, 2500);
+          } else {
+            typingEl.innerText = '';
+          }
+        });
+      }
+
+      function sendUserMessage() {
+        const input = document.getElementById('userInput');
+        const message = input.value.trim();
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (!message) return;
+        if (!rideId) return alert('Please enter or set a Ride ID first');
+
+        if (userSocket && userSocket.connected) {
+          userSocket.emit('chat:send', { rideId, message }, (ack) => {
+            if (ack && (ack.statusCode >= 400 || ack.success === false)) {
+              showToast('Passenger Error: ' + (ack.message || 'Send failed'));
+            } else if (ack && ack.data) {
+              appendUserMessage(ack.data);
+            }
+          });
+          input.value = '';
+        } else {
+          // Fallback to REST API
+          sendViaApi(document.getElementById('userToken').value.trim(), rideId, message, (data) => {
+            input.value = '';
+            if (data) appendUserMessage(data);
+          });
+        }
+      }
+
+      function quickSendUser(text) {
+        document.getElementById('userInput').value = text;
+        sendUserMessage();
+      }
+
+      function handleUserKey(e) {
+        if (e.key === 'Enter') sendUserMessage();
+      }
+
+      function handleUserTyping() {
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (userSocket && userSocket.connected && rideId) {
+          userSocket.emit('chat:typing', { rideId, isTyping: true });
+        }
+      }
+
+      function loadPassengerHistory() {
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        const token = document.getElementById('userToken').value.trim();
+        if (!rideId || !token) return;
+
+        const { apiBase } = getBaseUrls();
+        fetch(`${apiBase}/chat/${rideId}/messages?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => res.json())
+          .then((res) => {
+            if (res.data && res.data.messages) {
+              const container = document.getElementById('userMessages');
+              container.innerHTML = '';
+              if (res.data.messages.length === 0) {
+                container.innerHTML = '<div class="empty-state">No messages yet. Send a message below!</div>';
+              } else {
+                res.data.messages.forEach(appendUserMessage);
+              }
+            } else if (res.statusCode >= 400 || res.success === false) {
+              showToast('History failed: ' + res.message);
+            }
+          })
+          .catch((err) => console.error(err));
+      }
+
+      function appendUserMessage(msg) {
+        const container = document.getElementById('userMessages');
+        // Clear empty state if present
+        const empty = container.querySelector('.empty-state');
+        if (empty) empty.remove();
+
+        if (document.getElementById('user-msg-' + msg._id)) return;
+
+        const isOutgoing = msg.senderRole === 'PASSENGER' || msg.senderRole === 'USER';
+        const group = document.createElement('div');
+        group.id = 'user-msg-' + msg._id;
+        group.className = 'msg-group ' + (isOutgoing ? 'outgoing' : 'incoming');
+
+        const time = new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const sender = isOutgoing ? 'You' : (msg.senderName || 'Captain');
+
+        group.innerHTML = `
+          <div class="bubble">${escapeHtml(msg.message)}</div>
+          <div class="msg-meta">
+            <span>${sender} • ${time}</span>
+          </div>
+        `;
+        container.appendChild(group);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      // -------------------------------------------------------------
+      // DRIVER CONNECTION & CHAT
+      // -------------------------------------------------------------
+      function connectDriver() {
+        const token = document.getElementById('driverToken').value.trim();
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (!token) return alert('Please paste Driver JWT token');
+
+        const { socketHost, socketPath } = getBaseUrls();
+        if (driverSocket) driverSocket.disconnect();
+
+        document.getElementById('driverStatusText').innerText = 'Connecting...';
+
+        driverSocket = io(socketHost, {
+          path: socketPath,
+          transports: ['websocket', 'polling'],
+          auth: { token },
+        });
+
+        driverSocket.on('connect', () => {
+          document.getElementById('driverDot').classList.add('online');
+          document.getElementById('driverStatusText').innerText = 'Connected';
+          if (rideId) driverSocket.emit('joinRide', { rideId });
+          loadDriverHistory();
+        });
+
+        driverSocket.on('disconnect', () => {
+          document.getElementById('driverDot').classList.remove('online');
+          document.getElementById('driverStatusText').innerText = 'Disconnected';
+        });
+
+        driverSocket.on('connect_error', (err) => {
+          console.error('Driver socket error:', err);
+          document.getElementById('driverStatusText').innerText = 'Auth Error';
+          showToast('Driver Auth Error: ' + err.message);
+        });
+
+        // Listen for new messages
+        driverSocket.on('chat:message', (msg) => {
+          appendDriverMessage(msg);
+        });
+        driverSocket.on('newMessage', (msg) => {
+          appendDriverMessage(msg);
+        });
+
+        // Listen for typing indicator
+        driverSocket.on('chat:typing', (data) => {
+          const typingEl = document.getElementById('driverTyping');
+          if (data.isTyping && data.senderRole !== 'DRIVER') {
+            typingEl.innerText = 'Passenger is typing...';
+            clearTimeout(driverTypingTimer);
+            driverTypingTimer = setTimeout(() => { typingEl.innerText = ''; }, 2500);
+          } else {
+            typingEl.innerText = '';
+          }
+        });
+      }
+
+      function sendDriverMessage() {
+        const input = document.getElementById('driverInput');
+        const message = input.value.trim();
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (!message) return;
+        if (!rideId) return alert('Please enter or set a Ride ID first');
+
+        if (driverSocket && driverSocket.connected) {
+          driverSocket.emit('chat:send', { rideId, message }, (ack) => {
+            if (ack && (ack.statusCode >= 400 || ack.success === false)) {
+              showToast('Driver Error: ' + (ack.message || 'Send failed'));
+            } else if (ack && ack.data) {
+              appendDriverMessage(ack.data);
+            }
+          });
+          input.value = '';
+        } else {
+          sendViaApi(document.getElementById('driverToken').value.trim(), rideId, message, (data) => {
+            input.value = '';
+            if (data) appendDriverMessage(data);
+          });
+        }
+      }
+
+      function quickSendDriver(text) {
+        document.getElementById('driverInput').value = text;
+        sendDriverMessage();
+      }
+
+      function handleDriverKey(e) {
+        if (e.key === 'Enter') sendDriverMessage();
+      }
+
+      function handleDriverTyping() {
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        if (driverSocket && driverSocket.connected && rideId) {
+          driverSocket.emit('chat:typing', { rideId, isTyping: true });
+        }
+      }
+
+      function loadDriverHistory() {
+        const rideId = document.getElementById('sharedRideId').value.trim();
+        const token = document.getElementById('driverToken').value.trim();
+        if (!rideId || !token) return;
+
+        const { apiBase } = getBaseUrls();
+        fetch(`${apiBase}/chat/${rideId}/messages?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => res.json())
+          .then((res) => {
+            if (res.data && res.data.messages) {
+              const container = document.getElementById('driverMessages');
+              container.innerHTML = '';
+              if (res.data.messages.length === 0) {
+                container.innerHTML = '<div class="empty-state">No messages yet. Send a message below!</div>';
+              } else {
+                res.data.messages.forEach(appendDriverMessage);
+              }
+            } else if (res.statusCode >= 400 || res.success === false) {
+              showToast('Driver history failed: ' + res.message);
+            }
+          })
+          .catch((err) => console.error(err));
+      }
+
+      function appendDriverMessage(msg) {
+        const container = document.getElementById('driverMessages');
+        const empty = container.querySelector('.empty-state');
+        if (empty) empty.remove();
+
+        if (document.getElementById('driver-msg-' + msg._id)) return;
+
+        const isOutgoing = msg.senderRole === 'DRIVER';
+        const group = document.createElement('div');
+        group.id = 'driver-msg-' + msg._id;
+        group.className = 'msg-group ' + (isOutgoing ? 'outgoing' : 'incoming');
+
+        const time = new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const sender = isOutgoing ? 'You' : (msg.senderName || 'Customer');
+
+        group.innerHTML = `
+          <div class="bubble">${escapeHtml(msg.message)}</div>
+          <div class="msg-meta">
+            <span>${sender} • ${time}</span>
+          </div>
+        `;
+        container.appendChild(group);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function sendViaApi(token, rideId, message, callback) {
+        const { apiBase } = getBaseUrls();
+        fetch(`${apiBase}/chat/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rideId, message }),
+        })
+          .then((res) => res.json())
+          .then((res) => {
+            if (res.statusCode >= 400 || res.success === false) {
+              showToast('API Error: ' + (res.message || 'Send failed'));
+            } else {
+              if (callback) callback(res.data);
+            }
+          })
+          .catch((err) => showToast('Send failed: ' + err.message));
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      // Auto initialize if rideId in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramRideId = urlParams.get('rideId') || '6ac79c01cd23398f65ffef63';
+      if (paramRideId) {
+        document.getElementById('sharedRideId').value = paramRideId;
+        fetchRideDetails(paramRideId);
+        // Connect both automatically on page load
+        setTimeout(connectBoth, 300);
+      }
+    </script>
+  </body>
+</html>

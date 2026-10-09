@@ -4,6 +4,7 @@ import { CompanyUserController } from './company-user.controller';
 import { CompanyUserService } from './company-user.service';
 import { CompanyTripsController } from './company-trips.controller';
 import { CompanyTripsService } from './company-trips.service';
+import { DispatcherTripsController } from './dispatcher-trips.controller';
 import { CompanyCustomersController } from './company-customers.controller';
 import { CompanyCustomersService } from './company-customers.service';
 
@@ -33,6 +34,7 @@ import { RideModule } from '../ride/ride.module';
   controllers: [
     CompanyUserController,
     CompanyTripsController,
+    DispatcherTripsController,
     CompanyCustomersController,
   ],
   providers: [

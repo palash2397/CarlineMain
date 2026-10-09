@@ -1,7 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { HydratedDocument } from 'mongoose';
-import { User } from 'src/modules/user/schema/user.schema';
-// import { MessageType } from 'src/common/enums/chat/messageType';
 
 export type ChatMessageDocument = HydratedDocument<ChatMessage>;
 
@@ -9,40 +7,74 @@ export type ChatMessageDocument = HydratedDocument<ChatMessage>;
   timestamps: true,
 })
 export class ChatMessage {
-  // @Prop({
-  //   type: mongoose.Schema.Types.ObjectId,
-  //   ref: Ride.name,
-  //   required: true,
-  // })
-  // ride: mongoose.Types.ObjectId;
-
   @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: User.name,
+    type: String,
     required: true,
+    index: true,
   })
-  sender: mongoose.Types.ObjectId;
+  rideId: string;
 
   @Prop({
-    type: mongoose.Schema.Types.ObjectId,
-    ref: User.name,
+    type: String,
+    index: true,
+  })
+  ride: string;
+
+  @Prop({
+    type: String,
     required: true,
+    index: true,
   })
-  receiver: mongoose.Types.ObjectId;
+  senderId: string;
 
   @Prop({
+    type: String,
+    index: true,
+  })
+  sender: string;
+
+  @Prop({
+    type: String,
+    default: null,
+    index: true,
+  })
+  receiverId?: string | null;
+
+  @Prop({
+    type: String,
+    default: null,
+  })
+  receiver?: string | null;
+
+  @Prop({
+    type: String,
+    enum: ['DRIVER', 'PASSENGER', 'USER'],
+    default: 'USER',
+  })
+  senderRole: string;
+
+  @Prop({
+    type: String,
+    default: '',
+    trim: true,
+  })
+  senderName: string;
+
+  @Prop({
+    type: String,
+    default: null,
+  })
+  senderAvatar?: string | null;
+
+  @Prop({
+    type: String,
     required: true,
     trim: true,
   })
   message: string;
 
-  // @Prop({
-  //   enum: MessageType,
-  //   default: MessageType.TEXT,
-  // })
-  // messageType: MessageType;
-
   @Prop({
+    type: Boolean,
     default: false,
   })
   isRead: boolean;

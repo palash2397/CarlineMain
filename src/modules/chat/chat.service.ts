@@ -1,197 +1,281 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Socket, Server } from 'socket.io';
-
-import { RideStatus } from 'src/common/enums/ride/ride-enum';
-
-import { User, UserDocument } from 'src/modules/user/schema/user.schema';
-import { ChatMessage, ChatMessageDocument } from './schema/chat-message.schema';
-
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
+import { SocketService } from '../socket/socket.service';
+import { User, UserDocument } from '../user/schema/user.schema';
+import { Driver, DriverDocument } from '../driver/schema/driver.schema';
+import { Ride, RideDocument } from '../ride/schema/ride.schema';
+import { ChatMessage, ChatMessageDocument } from './schema/chat-message.schema';
+import { SendMessageDto } from './dto/send-message.dto';
 
 @Injectable()
 export class ChatService {
   constructor(
+    @InjectModel(ChatMessage.name)
+    private readonly chatMessageModel: Model<ChatMessageDocument>,
+
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
 
-    @InjectModel(ChatMessage.name)
-    private readonly chatMessageModel: Model<ChatMessageDocument>,
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
+
+    @InjectModel(Ride.name)
+    private readonly rideModel: Model<RideDocument>,
+
+    private readonly socketService: SocketService,
   ) {}
 
-  // async joinRideChat(client: Socket, dto: JoinChatDto) {
-  //   try {
-  //     const userId = client.data.user.id;
+  /**
+   * Helper to verify if user is passenger or assigned driver for the ride
+   */
+  private async getRideAndVerifyAccess(userId: string, rideId: string) {
+    const ride = await this.rideModel.findById(rideId);
+    if (!ride) {
+      return { error: new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND) };
+    }
 
-  //     const ride = await this.rideModel.findById(dto.rideId).populate('driver');
+    const isPassenger = String(ride.user) === String(userId);
+    const isDriver = ride.driver && String(ride.driver) === String(userId);
 
-  //     if (!ride) {
-  //       return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
-  //     }
+    if (!isPassenger && !isDriver) {
+      const message = !ride.driver
+        ? 'Driver is not assigned to this ride yet. Please accept or assign a driver first.'
+        : 'You are not authorized to access chat for this ride';
+      return {
+        error: new ApiResponse(403, {}, message),
+      };
+    }
 
-  //     if (!ride.driver) {
-  //       return new ApiResponse(400, {}, Msg.DRIVER_NOT_ASSIGNED);
-  //     }
+    return {
+      ride,
+      isPassenger,
+      isDriver,
+      senderRole: isPassenger ? 'PASSENGER' : 'DRIVER',
+      receiverId: isPassenger ? (ride.driver ? String(ride.driver) : null) : String(ride.user),
+    };
+  }
 
-  //     const isPassenger = ride.user.toString() === userId;
-  //     const isDriver =
-  //       ride.driver && (ride.driver as any).user.toString() === userId;
+  /**
+   * Send a chat message (via REST or Socket)
+   */
+  async sendMessage(userId: string, roles: any, dto: SendMessageDto) {
+    try {
+      if (!dto.message || !dto.message.trim()) {
+        return new ApiResponse(400, {}, 'Message content cannot be empty');
+      }
 
-  //     console.log(`isDriver --->`, isDriver);
-  //     console.log(`isPassenger --->`, isPassenger);
-  //     if (!isPassenger && !isDriver) {
-  //       return new ApiResponse(401, {}, Msg.UNAUTHORIZED);
-  //     }
+      const access = await this.getRideAndVerifyAccess(userId, dto.rideId);
+      if (access.error) {
+        return access.error;
+      }
 
-  //     const allowedStatuses = [
-  //       RideStatus.DRIVER_FOUND,
-  //       RideStatus.DRIVER_ARRIVED,
-  //       RideStatus.ONGOING,
-  //       RideStatus.PAYMENT_PENDING,
-  //     ];
+      const { ride, isPassenger, senderRole, receiverId } = access;
 
-  //     if (!allowedStatuses.includes(ride.status)) {
-  //       return new ApiResponse(400, {}, Msg.CHAT_IS_NOT_AVAILABLE);
-  //     }
+      // Resolve sender name and avatar
+      let senderName = senderRole === 'DRIVER' ? 'Driver' : 'Passenger';
+      let senderAvatar: string | null = null;
 
-  //     const roomName = `ride:${ride._id}`;
+      if (isPassenger) {
+        const user = await this.userModel.findById(userId).lean();
+        if (user) {
+          senderName =
+            (user as any).fullName ||
+            `${(user as any).firstName || ''} ${(user as any).lastName || ''}`.trim() ||
+            (user as any).phoneNumber ||
+            'Passenger';
+          senderAvatar = (user as any).avatar || null;
+        }
+      } else {
+        const driver = await this.driverModel.findById(userId).lean();
+        if (driver) {
+          senderName =
+            (driver as any).fullName ||
+            `${(driver as any).firstName || ''} ${(driver as any).lastName || ''}`.trim() ||
+            'Driver';
+          senderAvatar = (driver as any).profilePicture || (driver as any).avatar || null;
+        }
+      }
 
-  //     client.join(roomName);
+      // Save message in DB
+      const messageDoc = await this.chatMessageModel.create({
+        rideId: String(ride._id),
+        ride: String(ride._id),
+        senderId: String(userId),
+        sender: String(userId),
+        receiverId: receiverId ? String(receiverId) : null,
+        receiver: receiverId ? String(receiverId) : null,
+        senderRole,
+        senderName,
+        senderAvatar,
+        message: dto.message.trim(),
+        isRead: false,
+      });
 
-  //     console.log(`${userId} joined ${roomName}`);
+      const messagePayload = {
+        _id: String(messageDoc._id),
+        rideId: String(ride._id),
+        senderId: String(userId),
+        receiverId: receiverId ? String(receiverId) : null,
+        senderRole,
+        senderName,
+        senderAvatar,
+        message: messageDoc.message,
+        isRead: false,
+        createdAt: (messageDoc as any).createdAt,
+      };
 
-  //     return new ApiResponse(200, {}, Msg.CHAT_JOINED);
-  //   } catch (error) {
-  //     console.log('Error in joinRideChat:', error);
-  //     return new ApiResponse(500, {}, Msg.SERVER_ERROR);
-  //   }
-  // }
+      // Broadcast to ride room
+      this.socketService.emitToRide(String(ride._id), 'chat:message', messagePayload);
+      this.socketService.emitToRide(String(ride._id), 'newMessage', messagePayload);
 
-  // async sendMessage(client: Socket, dto: SendMessageDto, server: Server) {
-  //   try {
-  //     const userId = client.data.user.id;
-  //     const ride = await this.rideModel.findById(dto.rideId).populate('driver');
+      // Emit to sender's user room
+      this.socketService.emitToUser(String(userId), 'chat:message', messagePayload);
+      this.socketService.emitToUser(String(userId), 'newMessage', messagePayload);
 
-  //     if (!ride) {
-  //       return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
-  //     }
+      if (receiverId) {
+        this.socketService.emitToUser(String(receiverId), 'chat:message', messagePayload);
+        this.socketService.emitToUser(String(receiverId), 'newMessage', messagePayload);
+      }
 
-  //     const isPassenger = ride.user.toString() === userId;
-  //     const isDriver =
-  //       ride.driver && (ride.driver as any).user.toString() === userId;
+      return new ApiResponse(200, messagePayload, 'Message sent successfully');
+    } catch (error) {
+      console.error('Error in ChatService.sendMessage:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
 
-  //     if (!isPassenger && !isDriver) {
-  //       return new ApiResponse(401, {}, Msg.UNAUTHORIZED);
-  //     }
+  /**
+   * Get message history for a ride
+   */
+  async getMessages(
+    userId: string,
+    rideId: string,
+    page: number = 1,
+    limit: number = 50,
+  ) {
+    try {
+      const access = await this.getRideAndVerifyAccess(userId, rideId);
+      if (access.error) {
+        return access.error;
+      }
 
-  //     const receiverId = isPassenger
-  //       ? (ride.driver as any).user.toString()
-  //       : ride.user.toString();
+      const parsedPage = Math.max(1, Number(page) || 1);
+      const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 50));
 
-  //     const message = await this.chatMessageModel.create({
-  //       ride: ride._id,
-  //       sender: userId,
-  //       receiver: receiverId,
-  //       message: dto.message,
-  //       messageType: dto.messageType,
-  //     });
+      const totalMessages = await this.chatMessageModel.countDocuments({
+        $or: [{ rideId }, { ride: rideId }],
+      });
 
-  //     let chatMessage = (await this.chatMessageModel
-  //       .findById(message._id)
-  //       .populate('sender', 'firstName lastName avatar')
-  //       .lean()) as any;
+      const messages = await this.chatMessageModel
+        .find({
+          $or: [{ rideId }, { ride: rideId }],
+        })
+        .sort({ createdAt: -1 })
+        .skip((parsedPage - 1) * parsedLimit)
+        .limit(parsedLimit)
+        .lean();
 
-  //     if (chatMessage?.sender) {
-  //       const sender = chatMessage.sender as any;
-  //       if (sender.avatar && !sender.avatar.startsWith('http')) {
-  //         const baseUrl = process.env.BASE_URL;
-  //         sender.avatar = `${baseUrl}/api/v1/uploads/profile/${sender.avatar}`;
-  //       } else if (!sender.avatar) {
-  //         sender.avatar = process.env.DEFAULT_IMAGE;
-  //       }
-  //     }
+      // Reverse so messages are chronological (oldest -> newest)
+      const chronological = messages.reverse().map((msg: any) => ({
+        _id: String(msg._id),
+        rideId: msg.rideId || msg.ride,
+        senderId: msg.senderId || msg.sender,
+        receiverId: msg.receiverId || msg.receiver,
+        senderRole: msg.senderRole || 'USER',
+        senderName: msg.senderName || '',
+        senderAvatar: msg.senderAvatar || null,
+        message: msg.message,
+        isRead: Boolean(msg.isRead),
+        createdAt: msg.createdAt,
+      }));
 
-  //     server.to(`ride:${ride._id}`).emit('newMessage', chatMessage);
+      // Automatically mark incoming messages as read
+      await this.chatMessageModel.updateMany(
+        {
+          rideId,
+          receiverId: String(userId),
+          isRead: false,
+        },
+        { $set: { isRead: true } },
+      );
 
-  //     return new ApiResponse(200, chatMessage, Msg.MESSAGE_SENT);
-  //   } catch (error) {
-  //     console.log('Error in sendMessage:', error);
-  //     return new ApiResponse(500, {}, Msg.SERVER_ERROR);
-  //   }
-  // }
+      return new ApiResponse(
+        200,
+        {
+          rideId,
+          messages: chronological,
+          pagination: {
+            totalMessages,
+            totalPages: Math.ceil(totalMessages / parsedLimit),
+            currentPage: parsedPage,
+            limit: parsedLimit,
+          },
+        },
+        'Chat history fetched successfully',
+      );
+    } catch (error) {
+      console.error('Error in ChatService.getMessages:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
 
-  // async getMessages(
-  //   userId: string,
-  //   rideId: string,
-  //   page: number = 1,
-  //   limit: number = 10,
-  // ) {
-  //   try {
-  //     const ride = await this.rideModel.findById(rideId).populate('driver');
+  /**
+   * Mark all unread messages for this ride as read
+   */
+  async markAsRead(userId: string, rideId: string) {
+    try {
+      const access = await this.getRideAndVerifyAccess(userId, rideId);
+      if (access.error) {
+        return access.error;
+      }
 
-  //     if (!ride) {
-  //       return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
-  //     }
+      await this.chatMessageModel.updateMany(
+        {
+          rideId,
+          receiverId: String(userId),
+          isRead: false,
+        },
+        { $set: { isRead: true } },
+      );
 
-  //     const isPassenger = ride.user.toString() === userId;
-  //     const isDriver =
-  //       ride.driver && (ride.driver as any).user.toString() === userId;
+      this.socketService.emitToRide(rideId, 'chat:read', {
+        rideId,
+        readBy: userId,
+        readAt: new Date(),
+      });
 
-  //     if (!isPassenger && !isDriver) {
-  //       return new ApiResponse(401, {}, Msg.UNAUTHORIZED);
-  //     }
+      return new ApiResponse(200, { rideId, readBy: userId }, 'Messages marked as read');
+    } catch (error) {
+      console.error('Error in ChatService.markAsRead:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
 
-  //     const totalMessages = await this.chatMessageModel.countDocuments({
-  //       ride: rideId,
-  //     });
-  //     const totalPages = Math.ceil(totalMessages / limit);
+  /**
+   * Send typing indicator to ride room
+   */
+  async sendTypingIndicator(
+    userId: string,
+    roles: any,
+    data: { rideId: string; isTyping: boolean },
+  ) {
+    try {
+      if (!data?.rideId) return;
 
-  //     let messages = (await this.chatMessageModel
-  //       .find({
-  //         ride: rideId,
-  //       })
-  //       .populate('sender', 'firstName lastName avatar')
-  //       .sort({
-  //         createdAt: -1,
-  //       })
-  //       .skip((page - 1) * limit)
-  //       .limit(limit)
-  //       .lean()) as any[];
+      const access = await this.getRideAndVerifyAccess(userId, data.rideId);
+      if (access.error) return;
 
-  //     // Reverse messages so they display chronologically in the UI (oldest at top, newest at bottom)
-  //     messages = messages.reverse();
-
-  //     const baseUrl = process.env.BASE_URL;
-  //     messages = messages.map((msg) => {
-  //       if (msg.sender) {
-  //         if (msg.sender.avatar && !msg.sender.avatar.startsWith('http')) {
-  //           msg.sender.avatar = `${baseUrl}/api/v1/uploads/profile/${msg.sender.avatar}`;
-  //         } else if (!msg.sender.avatar) {
-  //           msg.sender.avatar = process.env.DEFAULT_IMAGE;
-  //         }
-  //       }
-  //       return msg;
-  //     });
-
-  //     return new ApiResponse(
-  //       200,
-  //       {
-  //         messages,
-  //         pagination: {
-  //           totalMessages,
-  //           totalPages,
-  //           currentPage: Number(page),
-  //           limit: Number(limit),
-  //         },
-  //       },
-  //       Msg.CHAT_FETCHED,
-  //     );
-  //   } catch (error) {
-  //     console.log(error);
-
-  //     return new ApiResponse(500, {}, Msg.SERVER_ERROR);
-  //   }
-  // }
+      this.socketService.emitToRide(data.rideId, 'chat:typing', {
+        rideId: data.rideId,
+        senderId: userId,
+        senderRole: access.senderRole,
+        isTyping: Boolean(data.isTyping),
+      });
+    } catch (error) {
+      console.error('Error in sendTypingIndicator:', error);
+    }
+  }
 }
