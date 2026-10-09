@@ -141,6 +141,18 @@ export class Ride {
 
   @Prop({ type: Boolean, default: false })
   isDispatcherBooking?: boolean;
+
+  // The driver currently being offered this ride in the 30-second window
+  @Prop({ type: String, default: null, index: true })
+  candidateDriverId?: string | null;
+
+  // Drivers who previously timed out or declined this ride request
+  @Prop({ type: [String], default: [] })
+  attemptedDriverIds?: string[];
+
+  // When the current driver's 30-second acceptance window expires
+  @Prop({ type: Date, default: null })
+  requestExpiresAt?: Date | null;
 }
 
 export const RideSchema = SchemaFactory.createForClass(Ride);

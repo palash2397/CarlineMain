@@ -351,6 +351,17 @@ export class RideController {
     return this.rideService.accept(req.user.id, dto);
   }
 
+  @Post('driver-ride/reject')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Decline / Reject a ride request (immediately transfers to next driver)',
+  })
+  async reject(@Req() req: any, @Body() dto: DriverRideIdDto) {
+    return this.rideService.reject(req.user.id, dto);
+  }
+
   @Patch('driver-ride/arrived')
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
