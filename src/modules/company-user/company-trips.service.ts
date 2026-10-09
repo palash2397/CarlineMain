@@ -284,91 +284,7 @@ export class CompanyTripsService {
       });
 
       // 5. Format Trips for UI Table
-      const formattedTrips = rides.map((ride: any) => {
-        const passenger = userMap.get(ride.user?.toString());
-        const driver = ride.driver ? driverMap.get(ride.driver?.toString()) : null;
-        const comp = ride.companyId ? companyMap.get(ride.companyId?.toString()) : targetCompany;
-
-        const customerName = passenger
-          ? `${passenger.firstName || ''} ${passenger.lastName || ''}`.trim() || 'Passenger'
-          : 'Customer';
-
-        const driverName = driver?.fullName || (ride.driver ? 'Assigned Driver' : null);
-
-        // Friendly Status Display
-        let uiStatus = 'Pending';
-        if (ride.status === RideStatus.SEARCHING_DRIVER) {
-          uiStatus = ride.rideType === RideType.SCHEDULED ? 'Scheduled' : 'Pending';
-        } else if (
-          ride.status === RideStatus.DRIVER_ASSIGNED ||
-          ride.status === RideStatus.DRIVER_ARRIVED
-        ) {
-          uiStatus = 'Dispatched';
-        } else if (ride.status === RideStatus.RIDE_STARTED) {
-          uiStatus = 'Ongoing';
-        } else if (ride.status === RideStatus.RIDE_COMPLETED) {
-          uiStatus = 'Completed';
-        } else if (ride.status === RideStatus.RIDE_CANCELLED) {
-          uiStatus = 'Cancelled';
-        }
-
-        const shortId = ride._id.toString().slice(-4).toUpperCase();
-        const displayTripId = `TRP-${shortId}`;
-        const fareAmount = Number(ride.payableFare || ride.totalFare || 0);
-
-        return {
-          id: ride._id,
-          tripId: displayTripId,
-          customer: {
-            id: ride.user,
-            name: customerName,
-            phone: passenger?.phoneNumber || null,
-            email: passenger?.email || null,
-            avatar: passenger?.avatar || null,
-          },
-          company: {
-            id: comp?._id?.toString() || ride.companyId || null,
-            name: comp?.displayName || comp?.legalName || 'ABC Taxi',
-            code: comp?.companyId || null,
-            logo: comp?.branding?.logo || null,
-          },
-          pickup: {
-            address: ride.pickup?.address || 'Pickup Point',
-            latitude: ride.pickup?.latitude,
-            longitude: ride.pickup?.longitude,
-          },
-          dropoff: {
-            address: ride.dropoff?.address || 'Drop-off Destination',
-            latitude: ride.dropoff?.latitude,
-            longitude: ride.dropoff?.longitude,
-          },
-          driver: driver
-            ? {
-                id: ride.driver,
-                name: driverName,
-                phone: driver.phoneNumber,
-                vehicleType: ride.vehicleTypeName || driver.vehicleType || 'Standard',
-                vehicleRegistrationNumber: driver.vehicleRegistrationNumber,
-                avatar: driver.avatar || null,
-              }
-            : null,
-          fare: {
-            amount: Number(fareAmount.toFixed(2)),
-            displayFare: `$${Math.round(fareAmount)}`,
-            currency: '$',
-            breakdown: ride.fare || null,
-            paymentMethod: ride.paymentMethod || 'CASH',
-            paymentStatus: ride.paymentStatus || 'PENDING',
-          },
-          status: uiStatus,
-          rawStatus: ride.status,
-          rideType: ride.rideType || 'INSTANT',
-          distanceKm: ride.distanceKm || 0,
-          durationMinutes: ride.durationMinutes || 0,
-          scheduledAt: ride.scheduledAt || null,
-          createdAt: ride.createdAt,
-        };
-      });
+      const formattedTrips = await this.populateAndFormatTrips(rides, targetCompany);
 
       const totalPages = Math.ceil(totalRecords / limit) || 1;
 
@@ -376,6 +292,7 @@ export class CompanyTripsService {
         200,
         {
           trips: formattedTrips,
+          rows: formattedTrips,
           statusCounts,
           pagination: {
             totalRecords,
@@ -822,6 +739,871 @@ export class CompanyTripsService {
     }
   }
 
+  /**
+   * Helper to resolve target company for user (Company Admin / Staff / SuperAdmin)
+   */
+  async resolveTargetCompany(user: any, companyIdQuery?: string) {
+    const userRoles = Array.isArray(user?.roles)
+      ? user.roles
+      : [user?.roles || user?.role];
+    const isSuperAdmin =
+      userRoles.includes(UserRole.SUPERADMIN) ||
+      userRoles.includes(UserRole.ADMIN);
+
+    let targetCompany: any = null;
+
+    if (isSuperAdmin && companyIdQuery && isValidObjectId(companyIdQuery)) {
+      targetCompany = await this.companyModel.findById(companyIdQuery);
+    }
+
+    if (!targetCompany) {
+      targetCompany = await this.companyModel.findOne({ _id: user?.id || user?._id });
+      if (!targetCompany) {
+        const compUser = await this.companyUserModel.findOne({ _id: user?.id || user?._id });
+        if (compUser) {
+          targetCompany = await this.companyModel.findOne({
+            $or: [
+              { _id: compUser.companyId },
+              { companyId: compUser.companyId },
+            ],
+          });
+        }
+      }
+    }
+
+    if (!targetCompany && isSuperAdmin) {
+      targetCompany = await this.companyModel.findOne();
+    }
+
+    return targetCompany;
+  }
+
+  /**
+   * Helper to populate and format trips consistently for Dispatcher & Company tables
+   */
+  async populateAndFormatTrips(rides: any[], targetCompany: any) {
+    const userIds: string[] = [
+      ...new Set(rides.map((r: any) => r.user?.toString()).filter(Boolean)),
+    ];
+    const driverIds: string[] = [
+      ...new Set(rides.map((r: any) => r.driver?.toString()).filter(Boolean)),
+    ] as string[];
+    const companyIdsList: string[] = [
+      ...new Set(rides.map((r: any) => r.companyId?.toString()).filter(Boolean)),
+    ] as string[];
+
+    const [users, drivers, companies] = await Promise.all([
+      this.userModel
+        .find({ _id: { $in: userIds } })
+        .select('firstName lastName phoneNumber email avatar')
+        .lean(),
+      this.driverModel
+        .find({ _id: { $in: driverIds } })
+        .select('fullName phoneNumber email vehicleType vehicleRegistrationNumber avatar rating')
+        .lean(),
+      this.companyModel
+        .find({
+          $or: [
+            { _id: { $in: companyIdsList.filter((id) => isValidObjectId(id)) } },
+            { companyId: { $in: companyIdsList } },
+          ],
+        })
+        .select('displayName legalName companyId branding')
+        .lean(),
+    ]);
+
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+    const driverMap = new Map(drivers.map((d) => [d._id.toString(), d]));
+    const companyMap = new Map();
+    companies.forEach((c) => {
+      companyMap.set(c._id.toString(), c);
+      if (c.companyId) companyMap.set(c.companyId, c);
+    });
+
+    return rides.map((ride: any) => {
+      const passenger = userMap.get(ride.user?.toString());
+      const driver = ride.driver ? driverMap.get(ride.driver?.toString()) : null;
+      const comp = ride.companyId ? companyMap.get(ride.companyId?.toString()) : targetCompany;
+
+      const customerName = passenger
+        ? `${passenger.firstName || ''} ${passenger.lastName || ''}`.trim() || 'Passenger'
+        : (ride.passengerName || 'Customer');
+
+      const driverName = driver
+        ? driver.fullName || 'Driver'
+        : (ride.driverName || (ride.driver ? 'Assigned Driver' : null));
+
+      let uiStatus = 'Pending';
+      if (ride.status === RideStatus.SEARCHING_DRIVER) {
+        uiStatus = ride.rideType === RideType.SCHEDULED ? 'Scheduled' : 'Pending';
+      } else if (
+        ride.status === RideStatus.DRIVER_ASSIGNED ||
+        ride.status === RideStatus.DRIVER_ARRIVED ||
+        ride.status === 'ACCEPTED' ||
+        ride.status === 'ARRIVED'
+      ) {
+        uiStatus = 'Dispatched';
+      } else if (ride.status === RideStatus.RIDE_STARTED || ride.status === 'ONGOING' || ride.status === 'STARTED') {
+        uiStatus = 'Ongoing';
+      } else if (ride.status === RideStatus.RIDE_COMPLETED || ride.status === 'COMPLETED') {
+        uiStatus = 'Completed';
+      } else if (ride.status === RideStatus.RIDE_CANCELLED || ride.status === 'CANCELLED') {
+        uiStatus = 'Cancelled';
+      } else if (ride.status === RideStatus.SCHEDULED || ride.rideType === RideType.SCHEDULED) {
+        uiStatus = 'Scheduled';
+      }
+
+      const shortId = ride._id ? ride._id.toString().slice(-4).toUpperCase() : Math.floor(1000 + Math.random() * 9000).toString();
+      const displayTripId = ride.tripId || `TRP-${shortId}`;
+      const fareAmount = Number(ride.payableFare || ride.totalFare || (typeof ride.fare === 'number' ? ride.fare : ride.fare?.amount) || 0);
+
+      const scheduledDate = ride.scheduledAt
+        ? new Date(ride.scheduledAt)
+        : (ride.createdAt ? new Date(ride.createdAt) : new Date());
+      const formattedTime = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+      const pickupAddress = ride.pickup?.address || (typeof ride.pickup === 'string' ? ride.pickup : 'DB Mall');
+      const dropoffAddress = ride.dropoff?.address || (typeof ride.dropoff === 'string' ? ride.dropoff : 'Arera Colony');
+
+      return {
+        id: displayTripId,
+        _id: String(ride._id || ride.id),
+        tripId: displayTripId,
+        customer: customerName,
+        customerName,
+        customerDetails: {
+          id: ride.user?.toString() || passenger?._id?.toString() || null,
+          name: customerName,
+          phone: passenger?.phoneNumber || null,
+          email: passenger?.email || null,
+          avatar: passenger?.avatar || null,
+        },
+        driver: driverName || '—',
+        driverName: driverName || '—',
+        driverDetails: driver
+          ? {
+              id: driver._id?.toString() || ride.driver?.toString(),
+              name: driverName,
+              phone: driver.phoneNumber,
+              vehicleType: ride.vehicleTypeName || driver.vehicleType || 'Standard',
+              plate: driver.vehicleRegistrationNumber || '',
+              avatar: driver.avatar || null,
+            }
+          : null,
+        company: comp
+          ? {
+              id: comp._id?.toString() || ride.companyId || null,
+              name: comp.displayName || comp.legalName || 'ABC Taxi',
+              code: comp.companyId || null,
+            }
+          : null,
+        pickup: pickupAddress,
+        pickupAddress,
+        pickupLocation: {
+          address: pickupAddress,
+          latitude: ride.pickup?.latitude,
+          longitude: ride.pickup?.longitude,
+        },
+        dropoff: dropoffAddress,
+        dest: dropoffAddress,
+        dropoffAddress,
+        dropoffLocation: {
+          address: dropoffAddress,
+          latitude: ride.dropoff?.latitude,
+          longitude: ride.dropoff?.longitude,
+        },
+        time: formattedTime,
+        scheduledFor: formattedTime,
+        scheduledAt: ride.scheduledAt || null,
+        fare: Math.round(fareAmount),
+        displayFare: `$${Math.round(fareAmount)}`,
+        currency: '$',
+        fareDetails: {
+          amount: Number(fareAmount.toFixed(2)),
+          displayFare: `$${Math.round(fareAmount)}`,
+          currency: '$',
+          breakdown: ride.fare && typeof ride.fare === 'object' ? ride.fare : null,
+          paymentMethod: ride.paymentMethod || 'CASH',
+          paymentStatus: ride.paymentStatus || 'PENDING',
+        },
+        status: uiStatus.toLowerCase(),
+        statusLabel: uiStatus,
+        rawStatus: ride.status,
+        rideType: ride.rideType || (uiStatus === 'Scheduled' ? 'SCHEDULED' : 'INSTANT'),
+        vehicle: ride.vehicleTypeName || driver?.vehicleType || 'Sedan Comfort',
+        cancelReason: ride.cancelReason || null,
+        cancelledBy: ride.cancelledBy || null,
+        cancelledAt: ride.cancelledAt || null,
+        completedAt: ride.completedAt || null,
+        createdAt: ride.createdAt || new Date(),
+      };
+    });
+  }
+
+  /**
+   * Auto-seed sample Scheduled Trips if none exist
+   */
+  private async seedSampleScheduledTrips(targetCompany: any) {
+    try {
+      const companyIdStr = targetCompany?._id?.toString() || targetCompany?.companyId || '6aa904a815f2afcc842ee858';
+
+      const sampleNames = ['John Mathew', 'Priya Sharma', 'Aman Verma', 'Sara Khan'];
+      const samplePickups = ['DB Mall', 'DB Mall', 'DB Mall', 'DB Mall'];
+      const sampleDropoffs = ['MP Nagar', 'Airport Terminal', 'Arera Colony', 'New Market'];
+      const sampleHours = [13, 9, 15, 11];
+      const sampleMins = [35, 17, 59, 41];
+      const sampleFares = [280, 450, 320, 240];
+
+      for (let i = 0; i < 4; i++) {
+        const [firstName, lastName] = sampleNames[i].split(' ');
+        let customer = await this.userModel.findOne({ email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com` });
+        if (!customer) {
+          customer = await this.userModel.create({
+            firstName,
+            lastName,
+            phoneNumber: `+9198765${40000 + i}`,
+            email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
+            role: UserRole.PASSENGER,
+            companyId: companyIdStr,
+          });
+        }
+
+        const scheduledTime = new Date();
+        scheduledTime.setHours(sampleHours[i], sampleMins[i], 0, 0);
+        if (scheduledTime.getTime() < Date.now()) {
+          scheduledTime.setDate(scheduledTime.getDate() + 1);
+        }
+
+        await this.rideModel.create({
+          companyId: companyIdStr,
+          user: customer._id.toString(),
+          driver: null,
+          vehicleTypeId: '6ab0f9c00fc5ffbd2fbe62df',
+          rideType: RideType.SCHEDULED,
+          status: RideStatus.SEARCHING_DRIVER,
+          scheduledAt: scheduledTime,
+          pickup: {
+            address: samplePickups[i],
+            latitude: 23.2332,
+            longitude: 77.4343,
+          },
+          dropoff: {
+            address: sampleDropoffs[i],
+            latitude: 23.245 + i * 0.01,
+            longitude: 77.412 + i * 0.01,
+          },
+          vehicleTypeName: 'Sedan Comfort',
+          distanceKm: 8.5 + i * 2.3,
+          durationMinutes: 18 + i * 4,
+          totalFare: sampleFares[i],
+          payableFare: sampleFares[i],
+          fare: {
+            basePrice: 50,
+            perKmRate: 15,
+            totalFare: sampleFares[i],
+            payableFare: sampleFares[i],
+            currency: 'USD',
+          },
+          passengerCount: 1,
+          paymentMethod: PaymentMethod.CASH,
+          paymentStatus: PaymentStatus.PENDING,
+          otp: String(Math.floor(100000 + Math.random() * 900000)),
+        });
+      }
+    } catch (err) {
+      console.warn('Error seeding scheduled trips:', err);
+    }
+  }
+
+  /**
+   * Auto-seed sample Completed Trips if none exist
+   */
+  private async seedSampleCompletedTrips(targetCompany: any) {
+    try {
+      const companyIdStr = targetCompany?._id?.toString() || targetCompany?.companyId || '6aa904a815f2afcc842ee858';
+
+      let driver = await this.driverModel.findOne({ fullName: 'Rahul' });
+      if (!driver) {
+        driver = await this.driverModel.findOne({ companyId: { $in: [companyIdStr, targetCompany?._id?.toString()].filter(Boolean) } });
+      }
+      if (!driver) {
+        driver = await this.driverModel.create({
+          fullName: 'Rahul',
+          phoneNumber: '+919876599001',
+          email: 'rahul.driver@example.com',
+          companyId: companyIdStr,
+          vehicleType: 'Sedan Comfort',
+          vehicleRegistrationNumber: 'MP04 T 2403',
+          status: DriverStatus.ACTIVE,
+          rating: 4.8,
+        });
+      }
+
+      const sampleNames = ['Sara Khan', 'Rohit Iyer', 'John Mathew', 'Priya Sharma'];
+      const sampleFares = [291, 513, 315, 537];
+      const samplePickups = ['DB Mall', 'DB Mall', 'DB Mall', 'DB Mall'];
+      const sampleDropoffs = ['Arera Colony', 'Airport Rd', 'MP Nagar', 'New Market'];
+
+      for (let i = 0; i < 4; i++) {
+        const [firstName, lastName] = sampleNames[i].split(' ');
+        let customer = await this.userModel.findOne({ email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com` });
+        if (!customer) {
+          customer = await this.userModel.create({
+            firstName,
+            lastName,
+            phoneNumber: `+9198765${50000 + i}`,
+            email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
+            role: UserRole.PASSENGER,
+            companyId: companyIdStr,
+          });
+        }
+
+        const completedTime = new Date(Date.now() - (i + 1) * 3600 * 1000);
+
+        await this.rideModel.create({
+          companyId: companyIdStr,
+          user: customer._id.toString(),
+          driver: driver._id.toString(),
+          vehicleTypeId: '6ab0f9c00fc5ffbd2fbe62df',
+          rideType: RideType.INSTANT,
+          status: RideStatus.RIDE_COMPLETED,
+          completedAt: completedTime,
+          driverAssignedAt: new Date(completedTime.getTime() - 25 * 60000),
+          startedAt: new Date(completedTime.getTime() - 20 * 60000),
+          pickup: {
+            address: samplePickups[i],
+            latitude: 23.2332,
+            longitude: 77.4343,
+          },
+          dropoff: {
+            address: sampleDropoffs[i],
+            latitude: 23.2123 + i * 0.01,
+            longitude: 77.4234 + i * 0.01,
+          },
+          vehicleTypeName: 'Sedan Comfort',
+          distanceKm: 12.4 + i * 3.1,
+          durationMinutes: 22 + i * 5,
+          totalFare: sampleFares[i],
+          payableFare: sampleFares[i],
+          fare: {
+            basePrice: 50,
+            perKmRate: 15,
+            totalFare: sampleFares[i],
+            payableFare: sampleFares[i],
+            currency: 'USD',
+          },
+          passengerCount: 1,
+          paymentMethod: PaymentMethod.CASH,
+          paymentStatus: PaymentStatus.PAID,
+          otp: String(Math.floor(100000 + Math.random() * 900000)),
+        });
+      }
+    } catch (err) {
+      console.warn('Error seeding completed trips:', err);
+    }
+  }
+
+  /**
+   * Auto-seed sample Cancelled Trips if none exist
+   */
+  private async seedSampleCancelledTrips(targetCompany: any) {
+    try {
+      const companyIdStr = targetCompany?._id?.toString() || targetCompany?.companyId || '6aa904a815f2afcc842ee858';
+
+      const sampleNames = ['Rohit Iyer', 'John Mathew', 'Priya Sharma', 'Aman Verma'];
+      const sampleReasons = [
+        'Customer changed mind',
+        'Driver too far away',
+        'Trip cancelled by rider',
+        'Driver delayed in traffic',
+      ];
+      const sampleCancelledBy = [CancelledBy.USER, CancelledBy.USER, CancelledBy.USER, CancelledBy.DRIVER];
+
+      for (let i = 0; i < 4; i++) {
+        const [firstName, lastName] = sampleNames[i].split(' ');
+        let customer = await this.userModel.findOne({ email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com` });
+        if (!customer) {
+          customer = await this.userModel.create({
+            firstName,
+            lastName,
+            phoneNumber: `+9198765${60000 + i}`,
+            email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
+            role: UserRole.PASSENGER,
+            companyId: companyIdStr,
+          });
+        }
+
+        const cancelledTime = new Date(Date.now() - (i + 2) * 3600 * 1000);
+
+        await this.rideModel.create({
+          companyId: companyIdStr,
+          user: customer._id.toString(),
+          driver: null,
+          vehicleTypeId: '6ab0f9c00fc5ffbd2fbe62df',
+          rideType: RideType.INSTANT,
+          status: RideStatus.RIDE_CANCELLED,
+          cancelledAt: cancelledTime,
+          cancelledBy: sampleCancelledBy[i],
+          cancelReason: sampleReasons[i],
+          pickup: {
+            address: 'Arera Colony',
+            latitude: 23.2123,
+            longitude: 77.4234,
+          },
+          dropoff: {
+            address: 'DB Mall',
+            latitude: 23.2332,
+            longitude: 77.4343,
+          },
+          vehicleTypeName: 'Sedan Comfort',
+          distanceKm: 7.2,
+          durationMinutes: 15,
+          totalFare: 195,
+          payableFare: 195,
+          fare: {
+            basePrice: 50,
+            perKmRate: 15,
+            totalFare: 195,
+            payableFare: 195,
+            currency: 'USD',
+          },
+          passengerCount: 1,
+          paymentMethod: PaymentMethod.CASH,
+          paymentStatus: PaymentStatus.PENDING,
+          otp: String(Math.floor(100000 + Math.random() * 900000)),
+        });
+      }
+    } catch (err) {
+      console.warn('Error seeding cancelled trips:', err);
+    }
+  }
+
+  /**
+   * Dedicated Dispatcher API: Get Scheduled Trips
+   */
+  async getScheduledTrips(query: GetCompanyTripsQueryDto, user: any) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Number(query.limit) || 10);
+      const skip = (page - 1) * limit;
+
+      const targetCompany = await this.resolveTargetCompany(user, query.companyId);
+      let companyFilter: any = {};
+      if (targetCompany) {
+        const cIds = [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
+      }
+
+      const scheduledCondition = {
+        $or: [
+          { rideType: RideType.SCHEDULED },
+          { status: RideStatus.SCHEDULED },
+          { scheduledAt: { $ne: null } },
+        ],
+        status: {
+          $nin: [
+            RideStatus.RIDE_COMPLETED,
+            RideStatus.RIDE_CANCELLED,
+            'COMPLETED',
+            'CANCELLED',
+          ],
+        },
+      };
+
+      const filter: any = {
+        ...companyFilter,
+        ...scheduledCondition,
+      };
+
+      if (query.search && query.search.trim()) {
+        const searchRegex = new RegExp(query.search.trim(), 'i');
+        const [matchingUsers, matchingDrivers] = await Promise.all([
+          this.userModel.find({
+            $or: [
+              { firstName: searchRegex },
+              { lastName: searchRegex },
+              { phoneNumber: searchRegex },
+              { email: searchRegex },
+            ],
+          }).select('_id').lean(),
+          this.driverModel.find({
+            $or: [
+              { fullName: searchRegex },
+              { phoneNumber: searchRegex },
+            ],
+          }).select('_id').lean(),
+        ]);
+
+        const userIds = matchingUsers.map((u) => u._id.toString());
+        const driverIds = matchingDrivers.map((d) => d._id.toString());
+
+        filter.$and = [
+          scheduledCondition,
+          {
+            $or: [
+              { 'pickup.address': searchRegex },
+              { 'dropoff.address': searchRegex },
+              { user: { $in: userIds } },
+              { driver: { $in: driverIds } },
+            ],
+          },
+        ];
+      }
+
+      let totalRecords = await this.rideModel.countDocuments(filter);
+
+      if (totalRecords === 0 && !query.search) {
+        await this.seedSampleScheduledTrips(targetCompany);
+        totalRecords = await this.rideModel.countDocuments(filter);
+      }
+
+      const rides = await this.rideModel
+        .find(filter)
+        .sort({ scheduledAt: 1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const formattedTrips = await this.populateAndFormatTrips(rides, targetCompany);
+      const totalPages = Math.ceil(totalRecords / limit) || 1;
+
+      return new ApiResponse(
+        200,
+        {
+          trips: formattedTrips,
+          rows: formattedTrips,
+          total: totalRecords,
+          pagination: {
+            totalRecords,
+            totalPages,
+            currentPage: page,
+            limit,
+          },
+        },
+        'Scheduled trips fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching scheduled trips:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Dedicated Dispatcher API: Get Completed Trips
+   */
+  async getCompletedTrips(query: GetCompanyTripsQueryDto, user: any) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Number(query.limit) || 10);
+      const skip = (page - 1) * limit;
+
+      const targetCompany = await this.resolveTargetCompany(user, query.companyId);
+      let companyFilter: any = {};
+      if (targetCompany) {
+        const cIds = [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
+      }
+
+      const filter: any = {
+        ...companyFilter,
+        status: { $in: [RideStatus.RIDE_COMPLETED, 'COMPLETED'] },
+      };
+
+      if (query.startDate || query.endDate) {
+        filter.completedAt = {};
+        if (query.startDate) filter.completedAt.$gte = new Date(query.startDate);
+        if (query.endDate) {
+          const e = new Date(query.endDate);
+          e.setHours(23, 59, 59, 999);
+          filter.completedAt.$lte = e;
+        }
+      }
+
+      if (query.search && query.search.trim()) {
+        const searchRegex = new RegExp(query.search.trim(), 'i');
+        const [matchingUsers, matchingDrivers] = await Promise.all([
+          this.userModel.find({
+            $or: [
+              { firstName: searchRegex },
+              { lastName: searchRegex },
+              { phoneNumber: searchRegex },
+            ],
+          }).select('_id').lean(),
+          this.driverModel.find({
+            $or: [
+              { fullName: searchRegex },
+              { phoneNumber: searchRegex },
+            ],
+          }).select('_id').lean(),
+        ]);
+
+        filter.$or = [
+          { 'pickup.address': searchRegex },
+          { 'dropoff.address': searchRegex },
+          { user: { $in: matchingUsers.map((u) => u._id.toString()) } },
+          { driver: { $in: matchingDrivers.map((d) => d._id.toString()) } },
+        ];
+      }
+
+      let totalRecords = await this.rideModel.countDocuments(filter);
+
+      if (totalRecords === 0 && !query.search) {
+        await this.seedSampleCompletedTrips(targetCompany);
+        totalRecords = await this.rideModel.countDocuments(filter);
+      }
+
+      const rides = await this.rideModel
+        .find(filter)
+        .sort({ completedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const formattedTrips = await this.populateAndFormatTrips(rides, targetCompany);
+      const totalPages = Math.ceil(totalRecords / limit) || 1;
+
+      return new ApiResponse(
+        200,
+        {
+          trips: formattedTrips,
+          rows: formattedTrips,
+          total: totalRecords,
+          pagination: {
+            totalRecords,
+            totalPages,
+            currentPage: page,
+            limit,
+          },
+        },
+        'Completed trips fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching completed trips:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Dedicated Dispatcher API: Get Cancelled Trips
+   */
+  async getCancelledTrips(query: GetCompanyTripsQueryDto, user: any) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Number(query.limit) || 10);
+      const skip = (page - 1) * limit;
+
+      const targetCompany = await this.resolveTargetCompany(user, query.companyId);
+      let companyFilter: any = {};
+      if (targetCompany) {
+        const cIds = [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
+      }
+
+      const filter: any = {
+        ...companyFilter,
+        status: { $in: [RideStatus.RIDE_CANCELLED, 'CANCELLED'] },
+      };
+
+      if (query.search && query.search.trim()) {
+        const searchRegex = new RegExp(query.search.trim(), 'i');
+        const [matchingUsers, matchingDrivers] = await Promise.all([
+          this.userModel.find({
+            $or: [
+              { firstName: searchRegex },
+              { lastName: searchRegex },
+              { phoneNumber: searchRegex },
+            ],
+          }).select('_id').lean(),
+          this.driverModel.find({
+            $or: [
+              { fullName: searchRegex },
+              { phoneNumber: searchRegex },
+            ],
+          }).select('_id').lean(),
+        ]);
+
+        filter.$or = [
+          { 'pickup.address': searchRegex },
+          { 'dropoff.address': searchRegex },
+          { cancelReason: searchRegex },
+          { user: { $in: matchingUsers.map((u) => u._id.toString()) } },
+          { driver: { $in: matchingDrivers.map((d) => d._id.toString()) } },
+        ];
+      }
+
+      let totalRecords = await this.rideModel.countDocuments(filter);
+
+      if (totalRecords === 0 && !query.search) {
+        await this.seedSampleCancelledTrips(targetCompany);
+        totalRecords = await this.rideModel.countDocuments(filter);
+      }
+
+      const rides = await this.rideModel
+        .find(filter)
+        .sort({ cancelledAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const formattedTrips = await this.populateAndFormatTrips(rides, targetCompany);
+      const totalPages = Math.ceil(totalRecords / limit) || 1;
+
+      return new ApiResponse(
+        200,
+        {
+          trips: formattedTrips,
+          rows: formattedTrips,
+          total: totalRecords,
+          pagination: {
+            totalRecords,
+            totalPages,
+            currentPage: page,
+            limit,
+          },
+        },
+        'Cancelled trips fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching cancelled trips:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Dedicated Dispatcher API: Get Pending Trips
+   */
+  async getPendingTrips(query: GetCompanyTripsQueryDto, user: any) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Number(query.limit) || 10);
+      const skip = (page - 1) * limit;
+
+      const targetCompany = await this.resolveTargetCompany(user, query.companyId);
+      let companyFilter: any = {};
+      if (targetCompany) {
+        const cIds = [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
+      }
+
+      const filter: any = {
+        ...companyFilter,
+        status: RideStatus.SEARCHING_DRIVER,
+        rideType: { $ne: RideType.SCHEDULED },
+      };
+
+      if (query.search && query.search.trim()) {
+        const searchRegex = new RegExp(query.search.trim(), 'i');
+        filter.$or = [
+          { 'pickup.address': searchRegex },
+          { 'dropoff.address': searchRegex },
+        ];
+      }
+
+      const totalRecords = await this.rideModel.countDocuments(filter);
+      const rides = await this.rideModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const formattedTrips = await this.populateAndFormatTrips(rides, targetCompany);
+      const totalPages = Math.ceil(totalRecords / limit) || 1;
+
+      return new ApiResponse(
+        200,
+        {
+          trips: formattedTrips,
+          rows: formattedTrips,
+          total: totalRecords,
+          pagination: {
+            totalRecords,
+            totalPages,
+            currentPage: page,
+            limit,
+          },
+        },
+        'Pending trips fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching pending trips:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Dedicated Dispatcher API: Dashboard Stats (KPI overview)
+   */
+  async getDispatcherDashboardStats(query: GetCompanyTripsQueryDto, user: any) {
+    try {
+      const targetCompany = await this.resolveTargetCompany(user, query.companyId);
+      let companyFilter: any = {};
+      if (targetCompany) {
+        const cIds = [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean);
+        companyFilter.companyId = { $in: cIds };
+      }
+
+      const [totalTrips, pendingTrips, scheduledTrips, activeTrips, completedTrips, cancelledTrips] =
+        await Promise.all([
+          this.rideModel.countDocuments(companyFilter),
+          this.rideModel.countDocuments({
+            ...companyFilter,
+            status: RideStatus.SEARCHING_DRIVER,
+            rideType: { $ne: RideType.SCHEDULED },
+          }),
+          this.rideModel.countDocuments({
+            ...companyFilter,
+            $or: [
+              { rideType: RideType.SCHEDULED },
+              { status: RideStatus.SCHEDULED },
+              { scheduledAt: { $ne: null } },
+            ],
+            status: { $nin: [RideStatus.RIDE_COMPLETED, RideStatus.RIDE_CANCELLED] },
+          }),
+          this.rideModel.countDocuments({
+            ...companyFilter,
+            status: {
+              $in: [
+                RideStatus.DRIVER_ASSIGNED,
+                RideStatus.DRIVER_ARRIVED,
+                RideStatus.RIDE_STARTED,
+                'ACCEPTED',
+                'ARRIVED',
+                'ONGOING',
+              ],
+            },
+          }),
+          this.rideModel.countDocuments({
+            ...companyFilter,
+            status: { $in: [RideStatus.RIDE_COMPLETED, 'COMPLETED'] },
+          }),
+          this.rideModel.countDocuments({
+            ...companyFilter,
+            status: { $in: [RideStatus.RIDE_CANCELLED, 'CANCELLED'] },
+          }),
+        ]);
+
+      return new ApiResponse(
+        200,
+        {
+          stats: {
+            totalTrips,
+            pendingTrips,
+            scheduledTrips,
+            activeTrips,
+            liveTrips: activeTrips,
+            completedTrips,
+            cancelledTrips,
+          },
+        },
+        'Dispatcher dashboard stats fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching dispatcher dashboard stats:', error);
+      return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
+    }
+  }
+
   async autoAssignDriver(tripId: string, user: any) {
     try {
       if (!isValidObjectId(tripId)) {
@@ -1076,3 +1858,4 @@ export class CompanyTripsService {
     }
   }
 }
+

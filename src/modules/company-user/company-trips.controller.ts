@@ -23,7 +23,7 @@ import { CreateDispatcherBookingDto } from '../ride/dto/create-dispatcher-bookin
 import { ModifyRideDto } from '../ride/dto/modify-ride.dto';
 import { AssignDriverDto, CancelTripDto } from './dto/assign-cancel-trip.dto';
 
-@ApiTags('Company Trips (by Prakash)')
+@ApiTags('Dispatcher (by Prakash)')
 @Controller('company/trips')
 export class CompanyTripsController {
   constructor(
@@ -340,6 +340,149 @@ export class CompanyTripsController {
     @Param('id') id: string,
   ) {
     return this.companyTripsService.deleteCompanyTrip(id, req.user);
+  }
+
+  @Get('scheduled')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get scheduled trips for dispatcher/admin' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  async getScheduledTrips(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getScheduledTrips(query, req.user);
+  }
+
+  @Get('scheduled-trips')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get scheduled trips (alias route /scheduled-trips)' })
+  async getScheduledTripsAlias(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getScheduledTrips(query, req.user);
+  }
+
+  @Get('completed')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get completed trips finished today for dispatcher/admin' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  async getCompletedTrips(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getCompletedTrips(query, req.user);
+  }
+
+  @Get('completed-trips')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get completed trips (alias route /completed-trips)' })
+  async getCompletedTripsAlias(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getCompletedTrips(query, req.user);
+  }
+
+  @Get('cancelled')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get cancelled trips for dispatcher/admin' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  async getCancelledTrips(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getCancelledTrips(query, req.user);
+  }
+
+  @Get('cancelled-trips')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get cancelled trips (alias route /cancelled-trips)' })
+  async getCancelledTripsAlias(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getCancelledTrips(query, req.user);
+  }
+
+  @Get('pending')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get pending / unassigned trips for dispatcher' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  async getPendingTrips(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getPendingTrips(query, req.user);
+  }
+
+  @Get('pending-trips')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get pending trips (alias route /pending-trips)' })
+  async getPendingTripsAlias(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getPendingTrips(query, req.user);
+  }
+
+  @Get('stats')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({ summary: 'Get dispatcher dashboard summary stats' })
+  @ApiQuery({ name: 'companyId', required: false, type: String })
+  async getDispatcherStats(@Query() query: any, @Req() req: any) {
+    return this.companyTripsService.getDispatcherDashboardStats(query, req.user);
   }
 
   @Get(':id')

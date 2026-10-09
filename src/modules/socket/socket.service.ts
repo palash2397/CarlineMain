@@ -52,7 +52,7 @@ export class SocketService {
 
     const room = vehicleTypeId ? driverRoomFor(vehicleTypeId) : DRIVER_ROOM;
 
-    this.server.to(room).emit(event, data);
+    this.server.to(room).to(DRIVER_ROOM).emit(event, data);
   }
 
   driverPoolRooms(vehicleTypeId?: any) {

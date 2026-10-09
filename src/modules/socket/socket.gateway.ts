@@ -15,6 +15,7 @@ import { Server, Socket } from 'socket.io';
 
 import { SocketService } from './socket.service';
 import { RideService } from '../ride/ride.service';
+import { ChatService } from '../chat/chat.service';
 import { DriverLocationDto } from '../ride/dto/driver-location.dto';
 
 @WebSocketGateway({
@@ -34,6 +35,8 @@ export class SocketGateway
     private readonly socketService: SocketService,
     @Inject(forwardRef(() => RideService))
     private readonly rideService: RideService,
+    @Inject(forwardRef(() => ChatService))
+    private readonly chatService: ChatService,
   ) {}
 
   afterInit(server: Server) {
@@ -202,4 +205,62 @@ export class SocketGateway
     return { success: true, message: 'Company room joined' };
   }
 
+  // ==========================================================
+  // In-Ride Chat Socket Listeners (Rapido style)
+  // ==========================================================
+  @SubscribeMessage('chat:send')
+  async handleChatSend(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string; message: string },
+  ) {
+    const user = client.data.user;
+    if (!user?.id) {
+      return { success: false, statusCode: 401, message: 'Unauthorized' };
+    }
+    if (data?.rideId) {
+      await client.join(`ride:${data.rideId}`);
+    }
+    return this.chatService.sendMessage(user.id, user.roles, {
+      rideId: data?.rideId,
+      message: data?.message,
+    });
+  }
+
+  @SubscribeMessage('sendMessage')
+  async handleSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string; message: string },
+  ) {
+    const user = client.data.user;
+    if (!user?.id) {
+      return { success: false, statusCode: 401, message: 'Unauthorized' };
+    }
+    if (data?.rideId) {
+      await client.join(`ride:${data.rideId}`);
+    }
+    return this.chatService.sendMessage(user.id, user.roles, {
+      rideId: data?.rideId,
+      message: data?.message,
+    });
+  }
+
+  @SubscribeMessage('chat:typing')
+  async handleChatTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string; isTyping: boolean },
+  ) {
+    const user = client.data.user;
+    if (!user?.id || !data?.rideId) return;
+    return this.chatService.sendTypingIndicator(user.id, user.roles, data);
+  }
+
+  @SubscribeMessage('chat:read')
+  async handleChatRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string },
+  ) {
+    const user = client.data.user;
+    if (!user?.id || !data?.rideId) return;
+    return this.chatService.markAsRead(user.id, data.rideId);
+  }
 }

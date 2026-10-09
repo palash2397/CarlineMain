@@ -235,7 +235,7 @@ export class RideController {
   }
 
   @Post('ride/dispatcher-book')
-  @ApiTags(PASSENGER_TAG)
+  @ApiTags('Dispatcher (by Prakash)')
   @Roles(
     UserRole.COMPANY_ADMIN,
     UserRole.DISPATCHER,

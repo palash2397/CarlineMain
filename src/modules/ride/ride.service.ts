@@ -2174,6 +2174,12 @@ export class RideService {
         }
       }
 
+      if (typeof dto.latitude === 'number' && typeof dto.longitude === 'number') {
+        driver.currentLatitude = dto.latitude;
+        driver.currentLongitude = dto.longitude;
+        driver.lastLocationAt = new Date();
+      }
+
       driver.isOnline = dto.isOnline;
       await driver.save();
 

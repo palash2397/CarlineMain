@@ -111,6 +111,7 @@
           <button id="btnArrived" onclick="arrived()">PATCH arrived (reached pickup)</button>
           <button id="btnStart" class="green" onclick="startTrip()">POST start (OTP)</button>
           <button id="btnComplete" class="green" onclick="completeTrip()">POST complete (end trip)</button>
+          <button type="button" style="background:#4f46e5;color:#fff;" onclick="window.open('./chat-test.html?rideId=' + encodeURIComponent($('rideId').value.trim()), '_blank')">💬 Open In-Ride Chat</button>
         </div>
         <div class="note" id="nextStep">Next step: -</div>
         <div class="row">
@@ -319,8 +320,17 @@
       }
 
       async function setDuty(isOnline) {
-        const res = await api('/driver-ride/duty', 'PATCH', { isOnline });
+        const body = {
+          isOnline,
+          latitude: Number($('lat').value),
+          longitude: Number($('lng').value),
+        };
+        const res = await api('/driver-ride/duty', 'PATCH', body);
         if (res?.data) setDutyBadge(res.data.duty?.isOnline, res.data.duty?.status);
+        if (isOnline) {
+          sendSocketLocation();
+          loadRequests();
+        }
       }
 
       async function home() {
