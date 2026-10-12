@@ -889,6 +889,8 @@
         loadChatHistory();
       }
 
+      const renderedMessageIds = new Set();
+
       async function loadChatHistory() {
         const rideId = document.getElementById('rideIdInput').value.trim();
         const token = document.getElementById('tokenInput').value.trim();
@@ -905,6 +907,7 @@
           if (json.data && Array.isArray(json.data.messages)) {
             const container = document.getElementById('messagesContainer');
             container.innerHTML = '';
+            renderedMessageIds.clear();
             if (json.data.messages.length === 0) {
               container.innerHTML = '<div class="empty-chat"><span>💬</span><span>No messages in this ride yet. Start the conversation!</span></div>';
             } else {
@@ -918,6 +921,11 @@
       }
 
       function handleIncomingMessage(msg) {
+        if (!msg) return;
+        const msgId = msg._id || `${msg.rideId}_${msg.message}_${msg.createdAt}`;
+        if (renderedMessageIds.has(msgId)) {
+          return;
+        }
         logEvent('socket:chat:message received', msg);
         renderMessage(msg);
         const container = document.getElementById('messagesContainer');
@@ -926,6 +934,12 @@
       }
 
       function renderMessage(msg) {
+        if (!msg) return;
+        const msgId = msg._id || `${msg.rideId}_${msg.message}_${msg.createdAt}`;
+        if (msgId) {
+          renderedMessageIds.add(msgId);
+        }
+
         const container = document.getElementById('messagesContainer');
         if (container.querySelector('.empty-chat')) {
           container.innerHTML = '';
