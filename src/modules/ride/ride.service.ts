@@ -27,6 +27,7 @@ import { RideType } from 'src/common/enums/ride/ride-type.enum';
 import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { Pricing, PricingDocument } from '../pricing/schema/pricing.schema';
 import { SocketService } from '../socket/socket.service';
+import { NotificationService } from '../notification/notification.service';
 import { User, UserDocument } from '../user/schema/user.schema';
 import {
   VehicleType,
@@ -141,6 +142,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly socketService: SocketService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async onModuleInit() {
@@ -435,6 +437,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         await this.dispatchRide(rideId);
       }
 
+      this.notificationService
+        .sendToUser(
+          user.id,
+          {
+            title: 'Booking Confirmed',
+            body: 'Your ride booking is confirmed! Searching for nearby drivers...',
+            data: { rideId, type: 'RIDE_CREATED' },
+            type: 'RIDE_CREATED',
+          },
+          'USER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(200, summary, Msg.RIDE_BOOKED);
     } catch (error) {
       console.error('Error while booking ride:', error);
@@ -585,6 +600,18 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           { _id: ride.driver },
           { $set: { status: DriverStatus.ACTIVE } },
         );
+        this.notificationService
+          .sendToUser(
+            String(ride.driver),
+            {
+              title: 'Ride Cancelled',
+              body: `Passenger has cancelled the ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+              data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
       } else if (prevCandidate) {
         this.socketService.emitToUser(
           String(prevCandidate),
@@ -2405,6 +2432,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           payload,
         );
 
+        this.notificationService
+          .sendToUser(
+            candidateDriverId,
+            {
+              title: 'New Ride Request',
+              body: `New ride request nearby. Pickup: ${ride.pickup?.address || 'Pickup'}. Fare: $${ride.payableFare || ride.totalFare}`,
+              data: { rideId: String(ride._id), type: 'RIDE_REQUEST' },
+              type: 'RIDE_REQUEST',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+
         // Notify passenger / ride room about current search attempt and countdown
         this.emitRideEvent(ride, RIDE_EVENTS.STATUS, {
           ...this.statusPayload(ride),
@@ -2480,6 +2520,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           cancelPayload,
         );
         this.emitRideEvent(ride, RIDE_EVENTS.STATUS, this.statusPayload(ride));
+
+        this.notificationService
+          .sendToUser(
+            String(ride.user),
+            {
+              title: 'Ride Cancelled',
+              body: cancelReason,
+              data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'USER',
+          )
+          .catch(() => {});
       }
     } catch (error) {
       console.error('Error in dispatchRide cascade:', error);
@@ -3003,6 +3056,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         claimed.vehicleTypeId,
       );
 
+      this.notificationService
+        .sendToUser(
+          String(claimed.user),
+          {
+            title: 'Driver Assigned',
+            body: `${driver.fullName || 'Your driver'} has accepted your ride request and is on the way.`,
+            data: { rideId: String(claimed._id), driverId, type: 'DRIVER_ASSIGNED' },
+            type: 'DRIVER_ASSIGNED',
+          },
+          'USER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(200, payload, Msg.RIDE_ACCEPTED);
     } catch (error) {
       console.error('Error while accepting ride:', error);
@@ -3115,6 +3181,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         this.statusPayload(ride, driverId),
       );
 
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Driver Arrived',
+            body: `Your driver has arrived at the pickup location. Share OTP ${ride.otp || ''} to start your ride.`,
+            data: { rideId: String(ride._id), otp: String(ride.otp || ''), type: 'DRIVER_ARRIVED' },
+            type: 'DRIVER_ARRIVED',
+          },
+          'USER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(
         200,
         await this.ridePayload(ride),
@@ -3225,6 +3304,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         this.statusPayload(ride, driverId),
       );
 
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Trip Started',
+            body: `Your trip to ${ride.dropoff?.address || 'your destination'} has started. Have a safe journey!`,
+            data: { rideId: String(ride._id), type: 'TRIP_STARTED' },
+            type: 'TRIP_STARTED',
+          },
+          'USER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(
         200,
         await this.ridePayload(ride),
@@ -3288,6 +3380,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         RIDE_EVENTS.STATUS,
         this.statusPayload(ride, driverId),
       );
+
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Destination Reached',
+            body: 'You have arrived at your destination.',
+            data: { rideId: String(ride._id), type: 'DESTINATION_REACHED' },
+            type: 'DESTINATION_REACHED',
+          },
+          'USER',
+        )
+        .catch(() => {});
 
       return new ApiResponse(
         200,
@@ -3375,6 +3480,23 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         this.statusPayload(ride, driverId),
       );
       this.socketService.leaveRideRoom(String(ride._id));
+
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Trip Completed',
+            body: `Trip completed! Total fare is $${ride.payableFare || ride.totalFare}. Thank you for riding with Carline.`,
+            data: {
+              rideId: String(ride._id),
+              payableFare: String(ride.payableFare || ride.totalFare),
+              type: 'TRIP_COMPLETED',
+            },
+            type: 'TRIP_COMPLETED',
+          },
+          'USER',
+        )
+        .catch(() => {});
 
       return new ApiResponse(200, payload, Msg.RIDE_COMPLETED);
     } catch (error) {
@@ -3487,6 +3609,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         this.statusPayload(ride, driverId),
       );
       this.socketService.leaveRideRoom(String(ride._id));
+
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Ride Cancelled',
+            body: `Your driver cancelled the ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+            data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+            type: 'RIDE_CANCELLED',
+          },
+          'USER',
+        )
+        .catch(() => {});
 
       return new ApiResponse(200, payload, Msg.RIDE_CANCELLED);
     } catch (error) {

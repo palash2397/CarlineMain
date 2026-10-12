@@ -108,6 +108,10 @@ async function bootstrap() {
       'Rating (by Prakash)',
       'Customer rating and reviews APIs (Passenger rates Driver after trip completion) - owned by Prakash Mishra',
     )
+    .addTag(
+      'Notifications (by Prakash)',
+      'Firebase Cloud Messaging push notifications, FCM device tokens, and In-App notification center APIs - owned by Prakash Mishra',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
