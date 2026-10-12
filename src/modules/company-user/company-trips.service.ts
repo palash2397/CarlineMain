@@ -17,6 +17,7 @@ import {
 } from './dto/get-company-trips-query.dto';
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
+import { generateOtp } from 'src/helpers/index';
 import { UserRole } from 'src/common/enums/user/role.enum';
 import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
 import { RideType } from 'src/common/enums/ride/ride-type.enum';
@@ -1007,7 +1008,7 @@ export class CompanyTripsService {
           passengerCount: 1,
           paymentMethod: PaymentMethod.CASH,
           paymentStatus: PaymentStatus.PENDING,
-          otp: String(Math.floor(100000 + Math.random() * 900000)),
+          otp: generateOtp(),
         });
       }
     } catch (err) {
@@ -1095,7 +1096,7 @@ export class CompanyTripsService {
           passengerCount: 1,
           paymentMethod: PaymentMethod.CASH,
           paymentStatus: PaymentStatus.PAID,
-          otp: String(Math.floor(100000 + Math.random() * 900000)),
+          otp: generateOtp(),
         });
       }
     } catch (err) {
@@ -1170,7 +1171,7 @@ export class CompanyTripsService {
           passengerCount: 1,
           paymentMethod: PaymentMethod.CASH,
           paymentStatus: PaymentStatus.PENDING,
-          otp: String(Math.floor(100000 + Math.random() * 900000)),
+          otp: generateOtp(),
         });
       }
     } catch (err) {
