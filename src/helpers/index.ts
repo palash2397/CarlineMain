@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export const generateOtp = (): string => {
-  return randomInt(100000, 999999).toString();
+  return randomInt(1000, 10000).toString();
 };
 
 export const getExpirationTime = () => {
