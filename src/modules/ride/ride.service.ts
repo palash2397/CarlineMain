@@ -432,7 +432,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         summary,
       );
       if (rideType !== RideType.SCHEDULED) {
-        this.dispatchRide(rideId);
+        await this.dispatchRide(rideId);
       }
 
       return new ApiResponse(200, summary, Msg.RIDE_BOOKED);
@@ -1374,7 +1374,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           summary,
         );
       } else if (rideType !== RideType.SCHEDULED) {
-        this.dispatchRide(rideId);
+        await this.dispatchRide(rideId);
       }
 
       return new ApiResponse(200, summary, Msg.DISPATCHER_RIDE_BOOKED);
@@ -2771,12 +2771,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         $or: [
           {
             status: RideStatus.SEARCHING_DRIVER,
+            candidateDriverId: driverId,
             $or: [
-              { candidateDriverId: driverId },
-              { candidateDriverId: null },
-              { candidateDriverId: { $exists: false } },
+              { requestExpiresAt: { $gt: new Date() } },
+              { requestExpiresAt: null },
+              { requestExpiresAt: { $exists: false } },
             ],
-            attemptedDriverIds: { $ne: driverId },
           },
           { status: RideStatus.DRIVER_ASSIGNED, driver: driverId },
         ],
@@ -2847,7 +2847,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (
-        ride.candidateDriverId &&
+        !ride.candidateDriverId ||
         String(ride.candidateDriverId) !== String(driverId)
       ) {
         return new ApiResponse(
@@ -2928,7 +2928,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (
-        ride.candidateDriverId &&
+        !ride.candidateDriverId ||
         String(ride.candidateDriverId) !== String(driverId)
       ) {
         return new ApiResponse(
@@ -2938,16 +2938,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      // Atomic claim so only the target candidate driver or open pool can accept.
+      // Atomic claim so only the target candidate driver can accept.
       const claimed = await this.rideModel.findOneAndUpdate(
         {
           _id: ride._id,
           status: RideStatus.SEARCHING_DRIVER,
-          $or: [
-            { candidateDriverId: driverId },
-            { candidateDriverId: null },
-            { candidateDriverId: { $exists: false } },
-          ],
+          candidateDriverId: driverId,
         },
         {
           $set: {
