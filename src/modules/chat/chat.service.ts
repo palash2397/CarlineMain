@@ -127,17 +127,18 @@ export class ChatService {
         createdAt: (messageDoc as any).createdAt,
       };
 
-      // Broadcast to ride room
-      this.socketService.emitToRide(String(ride._id), 'chat:message', messagePayload);
-      this.socketService.emitToRide(String(ride._id), 'newMessage', messagePayload);
-
-      // Emit to sender's user room
-      this.socketService.emitToUser(String(userId), 'chat:message', messagePayload);
-      this.socketService.emitToUser(String(userId), 'newMessage', messagePayload);
-
-      if (receiverId) {
-        this.socketService.emitToUser(String(receiverId), 'chat:message', messagePayload);
-        this.socketService.emitToUser(String(receiverId), 'newMessage', messagePayload);
+      // Broadcast to ride room and participant user rooms in a single unioned emit
+      // Socket.IO .to(roomA).to(roomB).emit(...) ensures any socket in multiple rooms receives it only ONCE.
+      const server = this.socketService.getServer();
+      if (server) {
+        let broadcast = server.to(`ride:${ride._id}`).to(`user:${userId}`);
+        if (receiverId) {
+          broadcast = broadcast.to(`user:${receiverId}`);
+        }
+        broadcast.emit('chat:message', messagePayload);
+        broadcast.emit('newMessage', messagePayload);
+      } else {
+        this.socketService.emitToRide(String(ride._id), 'chat:message', messagePayload);
       }
 
       return new ApiResponse(200, messagePayload, 'Message sent successfully');

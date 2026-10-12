@@ -3098,6 +3098,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
       ride.status = RideStatus.DRIVER_ARRIVED;
 
+      if (!ride.otp || String(ride.otp).length !== 4) {
+        ride.otp = generateOtp();
+      }
+
       this.addTimelineEvent(
         ride,
         'DRIVER_ARRIVED',
@@ -4405,6 +4409,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     return {
       rideId: String(ride._id),
       status: ride.status,
+      otp: ride.otp || null,
       driverId: ride.driver ? String(ride.driver) : null,
       driver: ride.driver ? String(ride.driver) : null,
       rideType: ride.rideType,
@@ -4538,6 +4543,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     return {
       rideId: String(ride._id),
       status: ride.status,
+      otp: ride.otp || null,
       etaMinutes: ride.etaMinutes ?? null,
       driverId: driverId || (ride.driver ? String(ride.driver) : null),
       destinationReached: Boolean(ride.destinationReached),

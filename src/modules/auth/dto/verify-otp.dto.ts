@@ -10,7 +10,7 @@ export class VerifyOtpDto {
   email: string;
 
   @ApiProperty({
-    example: '999999',
+    example: '1234',
   })
   @IsString()
   @IsNotEmpty()
