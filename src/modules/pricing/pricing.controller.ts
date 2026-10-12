@@ -103,6 +103,7 @@ export class PricingController {
   // Tab 3: Waiting Charges (Company Admin & Driver Manager)
   // ==========================================
   @Get('/waiting-charges')
+  @ApiTags('Driver Manager (by Prakash)', 'Pricing Engine')
   @Roles(
     UserRole.COMPANY_ADMIN,
     UserRole.DRIVER_MANAGER,
@@ -123,6 +124,7 @@ export class PricingController {
   }
 
   @Post('/waiting-charges')
+  @ApiTags('Driver Manager (by Prakash)', 'Pricing Engine')
   @Roles(
     UserRole.COMPANY_ADMIN,
     UserRole.DRIVER_MANAGER,
@@ -142,6 +144,7 @@ export class PricingController {
   }
 
   @Put('/waiting-charges')
+  @ApiTags('Driver Manager (by Prakash)', 'Pricing Engine')
   @Roles(
     UserRole.COMPANY_ADMIN,
     UserRole.DRIVER_MANAGER,

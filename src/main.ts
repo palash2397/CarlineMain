@@ -81,6 +81,10 @@ async function bootstrap() {
       'All Dispatcher APIs: Dashboard metrics (Scheduled, Completed, Cancelled, Pending, Live Trips, Stats), Trip Management, Dispatcher Booking, Driver Assignment, and Live Map - owned by Prakash Mishra',
     )
     .addTag(
+      'Driver Manager (by Prakash)',
+      'All Driver Manager APIs: Driver Approvals & Status, Vehicle Type Assignment, Company Waiting Charges Policy, and Waiting Charge Adjustments / Waivers - owned by Prakash Mishra',
+    )
+    .addTag(
       'Company Customers (by Prakash)',
       'Company customers & live map APIs - owned by Prakash Mishra',
     )

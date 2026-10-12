@@ -72,6 +72,11 @@ export class DriverController {
   }
 
   @Get('/company-drivers/all')
+  @ApiTags('Driver Manager (by Prakash)', 'Driver')
+  @ApiOperation({
+    summary:
+      'List all company drivers with search, status and vehicle type filters (Driver Manager)',
+  })
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
@@ -98,6 +103,11 @@ export class DriverController {
   }
 
   @Patch(['/status'])
+  @ApiTags('Driver Manager (by Prakash)', 'Driver')
+  @ApiOperation({
+    summary:
+      'Update driver status - Approve, Reject, Suspend or Activate (Driver Manager)',
+  })
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
@@ -153,6 +163,10 @@ export class DriverController {
   }
 
   @Patch('/vehicle-type')
+  @ApiTags('Driver Manager (by Prakash)', 'Driver')
+  @ApiOperation({
+    summary: 'Assign / update vehicle type for a driver (Driver Manager)',
+  })
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard, RoleGuard)
   @Roles(
