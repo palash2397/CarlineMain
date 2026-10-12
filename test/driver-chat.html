@@ -583,7 +583,10 @@
             <input id="emailInput" value="pratik.technorizen@gmail.com" />
           </div>
           <div class="form-group">
-            <label>Password</label>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Password</label>
+              <span onclick="togglePasswordVisibility()" style="font-size:11px; cursor:pointer; color:#38bdf8;">👁️ Show/Hide</span>
+            </div>
             <input id="passwordInput" type="password" value="12345678" />
           </div>
           <button id="loginBtn" onclick="loginDriver()" style="width: 100%; margin-top: 6px;">
@@ -742,10 +745,15 @@
         document.getElementById('logsContainer').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px 0;">Logs cleared.</div>';
       }
 
+      function togglePasswordVisibility() {
+        const pwd = document.getElementById('passwordInput');
+        pwd.type = pwd.type === 'password' ? 'text' : 'password';
+      }
+
       async function loginDriver() {
         const email = document.getElementById('emailInput').value.trim();
         const password = document.getElementById('passwordInput').value.trim();
-        const baseUrl = document.getElementById('serverUrlInput').value.trim();
+        let baseUrl = document.getElementById('serverUrlInput').value.trim().replace(/\/+$/, '');
 
         try {
           const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
@@ -753,7 +761,15 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password, role: 'DRIVER' }),
           });
-          const json = await res.json();
+          const text = await res.text();
+          let json;
+          try {
+            json = JSON.parse(text);
+          } catch (e) {
+            showToast('Invalid response from Server. Check Server Base URL.', true);
+            logEvent('auth:error', `Server (${baseUrl}) returned non-JSON: ${text.slice(0, 120)}`);
+            return;
+          }
           if (json.statusCode === 200 && json.data?.token) {
             document.getElementById('tokenInput').value = json.data.token;
             driverUserId = json.data._id;
@@ -1037,6 +1053,28 @@
       if (qRide) {
         document.getElementById('rideIdInput').value = qRide;
       }
+
+      // Auto-detect Server Base URL and Socket Path based on current page location
+      (function autoDetectServerConfig() {
+        if (window.location.protocol.startsWith('http')) {
+          const origin = window.location.origin;
+          const pathname = window.location.pathname;
+          let prefix = '';
+          const match = pathname.match(/^(\/[^\/]+)\/test\//);
+          if (match) {
+            prefix = match[1];
+          }
+          const detectedBaseUrl = origin + prefix;
+          const serverUrlEl = document.getElementById('serverUrlInput');
+          if (serverUrlEl && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            serverUrlEl.value = detectedBaseUrl;
+          }
+          const socketPathEl = document.getElementById('socketPathInput');
+          if (socketPathEl && prefix) {
+            socketPathEl.value = prefix + '/viamo/socket.io';
+          }
+        }
+      })();
     </script>
   </body>
 </html>

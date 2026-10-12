@@ -1690,7 +1690,6 @@ export class CompanyTripsService {
 
       if (this.socketService) {
         this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.REQUEST, autoEventPayload);
-        this.socketService.emitToDrivers(RIDE_EVENTS.REQUEST, autoEventPayload);
       }
 
       return new ApiResponse(
@@ -1769,7 +1768,6 @@ export class CompanyTripsService {
         this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.REQUEST, eventPayload);
         this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.ASSIGNED, eventPayload);
         this.socketService.emitToRide(tripId, RIDE_EVENTS.REQUEST, eventPayload);
-        this.socketService.emitToDrivers(RIDE_EVENTS.REQUEST, eventPayload);
       }
 
       return new ApiResponse(

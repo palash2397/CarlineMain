@@ -294,7 +294,7 @@
         });
         state.socket.onAny((event, data) => {
           log('ev', 'SOCKET -> ' + event, data);
-          if (event === 'ride:request') loadRequests();
+          if (event === 'ride:request' || event === 'ride:expired' || event === 'ride:taken') loadRequests();
           if (data && data.nextAction !== undefined) applyNextAction(data.status, data.nextAction);
           if (event === 'ride:cancelled' && data && data.rideId && data.rideId === state.rideId) setRide(data.rideId, data.status || 'RIDE_CANCELLED', data.nextAction);
         });
@@ -416,11 +416,15 @@
           accept.textContent = 'Slide to Accept';
           accept.className = 'green';
           accept.onclick = () => acceptRide(r.rideId);
+          const reject = document.createElement('button');
+          reject.textContent = 'Reject (Decline)';
+          reject.className = 'red';
+          reject.onclick = () => rejectRide(r.rideId);
           const details = document.createElement('button');
           details.textContent = 'Request details';
           details.className = 'ghost';
           details.onclick = () => requestDetails(r.rideId);
-          btns.append(accept, details);
+          btns.append(accept, reject, details);
           div.appendChild(btns);
           box.appendChild(div);
         });
@@ -429,6 +433,11 @@
       async function acceptRide(rideId) {
         const res = await api('/driver-ride/accept', 'POST', { rideId });
         if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
+        await loadRequests();
+      }
+
+      async function rejectRide(rideId) {
+        const res = await api('/driver-ride/reject', 'POST', { rideId });
         await loadRequests();
       }
 
