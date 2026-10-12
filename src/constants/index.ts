@@ -42,6 +42,13 @@ export const RECURRING_DISPATCH_BATCH_SIZE = 50;
 // How far ahead the next pickup of a series is looked up (one year of days).
 export const RECURRING_LOOKAHEAD_DAYS = 370;
 
+// Request countdown time before cascading to the next driver (30 seconds)
+export const DRIVER_REQUEST_TIMEOUT_SECONDS = 30;
+
+// Customer pickup waiting defaults (5 minutes free, then $0.30 per minute)
+export const DEFAULT_FREE_WAITING_MINUTES = 5;
+export const DEFAULT_WAITING_CHARGE_PER_MINUTE = 0.3;
+
 // Socket events shared by the passenger app and the driver app.
 export const RIDE_EVENTS = {
   CREATED: 'ride:created',
@@ -55,13 +62,20 @@ export const RIDE_EVENTS = {
   PAYMENT: 'ride:payment',
   ASSIGNED: 'ride:assigned',
   UPDATED: 'ride:updated',
+  EXPIRED: 'ride:expired',
+  MISSED: 'ride:missed',
+  TRANSFERRED: 'ride:transferred',
+  DESTINATION_REACHED: 'ride:destinationReached',
+  FINAL_FARE: 'ride:finalFare',
+  WAITING: 'ride:waiting',
 };
 
 export const DRIVER_ROOM = 'drivers';
 
 // Online drivers of one vehicle type get their own room, so a Sedan driver never
 // receives an SUV request.
-export const driverRoomFor = (vehicleTypeId: string) => `drivers:${vehicleTypeId}`;
+export const driverRoomFor = (vehicleTypeId: string) =>
+  `drivers:${vehicleTypeId}`;
 
 // Statuses in which a ride is running with a driver (the driver is busy).
 export const DRIVER_RUNNING_STATUSES = [

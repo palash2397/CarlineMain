@@ -8,6 +8,7 @@ import {
   CompanyUser,
   CompanyUserSchema,
 } from '../company-user/schema/company-user.schema';
+import { User, UserSchema } from '../user/schema/user.schema';
 
 import { MailModule } from '../mail/mail.module';
 import { VehicleTypeModule } from '../vehicle-type/vehicle-type.module';
@@ -18,6 +19,7 @@ import { VehicleTypeModule } from '../vehicle-type/vehicle-type.module';
       { name: Driver.name, schema: DriverSchema },
       { name: Company.name, schema: CompanySchema },
       { name: CompanyUser.name, schema: CompanyUserSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     MailModule,
     VehicleTypeModule,

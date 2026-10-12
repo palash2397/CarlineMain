@@ -24,12 +24,25 @@ export interface RideFareBreakdown {
   durationMinutes: number;
   distanceRate: number;
   timeRate: number;
+  waitingMinutes?: number;
+  waitingCharge?: number;
+  extraCharges?: number;
+  tollFee?: number;
   subTotal: number;
   discount: number;
   taxAndFees: number;
   totalFare: number;
   payableFare: number;
   currency: string;
+}
+
+export interface TripTimelineEvent {
+  event: string;
+  title: string;
+  description: string;
+  timestamp: Date;
+  actor?: string | null;
+  location?: RideLocation | null;
 }
 
 @Schema({ timestamps: true })
@@ -141,6 +154,40 @@ export class Ride {
 
   @Prop({ type: Boolean, default: false })
   isDispatcherBooking?: boolean;
+
+  // The driver currently being offered this ride in the 30-second window
+  @Prop({ type: String, default: null, index: true })
+  candidateDriverId?: string | null;
+
+  // Drivers who previously timed out or declined this ride request
+  @Prop({ type: [String], default: [] })
+  attemptedDriverIds?: string[];
+
+  // When the current driver's 30-second acceptance window expires
+  @Prop({ type: Date, default: null })
+  requestExpiresAt?: Date | null;
+
+  // When driver reached the pickup location (Customer waiting starts)
+  @Prop({ type: Date, default: null })
+  driverArrivedAt?: Date | null;
+
+  // When driver reached the final destination (Dropoff)
+  @Prop({ type: Date, default: null })
+  destinationReachedAt?: Date | null;
+
+  @Prop({ type: Boolean, default: false })
+  destinationReached?: boolean;
+
+  // Pickup waiting time after grace period (in minutes) and accrued charge
+  @Prop({ type: Number, default: 0 })
+  pickupWaitingMinutes?: number;
+
+  @Prop({ type: Number, default: 0 })
+  waitingCharge?: number;
+
+  // Structured lifecycle events history log
+  @Prop({ type: [Object], default: [] })
+  timeline?: TripTimelineEvent[];
 }
 
 export const RideSchema = SchemaFactory.createForClass(Ride);

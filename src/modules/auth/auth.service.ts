@@ -39,19 +39,60 @@ export class AuthService {
     private readonly driverModel: Model<DriverDocument>,
 
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async userRegister(dto: UserRegisterDto) {
     try {
       const { firstName, lastName, phoneNumber, email, password } = dto;
+      const normalizedEmail = (email || '').toLowerCase().trim();
+      const trimmedPhone = (phoneNumber || '').trim();
 
       const existingUser = await this.userModel.findOne({
-        $or: [{ email }, { phoneNumber }],
+        $or: [{ email: normalizedEmail }, { phoneNumber: trimmedPhone }],
       });
       if (existingUser) {
-        if (existingUser.email === dto.email) {
+        if (existingUser.email?.toLowerCase() === normalizedEmail) {
           return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
-        } else if (existingUser.phoneNumber === dto.phoneNumber) {
+        } else if (existingUser.phoneNumber === trimmedPhone) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
+        }
+      }
+
+      const existingDriver = await this.driverModel.findOne({
+        $or: [{ email: normalizedEmail }, { phoneNumber: trimmedPhone }],
+      });
+      if (existingDriver) {
+        if (existingDriver.email?.toLowerCase() === normalizedEmail) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
+        } else if (existingDriver.phoneNumber === trimmedPhone) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
+        }
+      }
+
+      const existingCompanyUser = await this.companyUserModel.findOne({
+        $or: [{ email: normalizedEmail }, { phoneNumber: trimmedPhone }],
+      });
+      if (existingCompanyUser) {
+        if (existingCompanyUser.email?.toLowerCase() === normalizedEmail) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
+        } else if (existingCompanyUser.phoneNumber === trimmedPhone) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
+        }
+      }
+
+      const existingCompany = await this.companyModel.findOne({
+        $or: [
+          { 'primaryContact.email': normalizedEmail },
+          { 'primaryContact.phone': trimmedPhone },
+        ],
+      });
+      if (existingCompany) {
+        if (
+          existingCompany.primaryContact?.email?.toLowerCase() ===
+          normalizedEmail
+        ) {
+          return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
+        } else if (existingCompany.primaryContact?.phone === trimmedPhone) {
           return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
         }
       }
@@ -280,8 +321,8 @@ export class AuthService {
       } else {
         const isAccountActive = isCompanyAccount
           ? userData.isActive !== false &&
-            userData.status !== 'Inactive' &&
-            userData.status !== 'Suspended'
+          userData.status !== 'Inactive' &&
+          userData.status !== 'Suspended'
           : userData.isActive;
 
         if (!isAccountActive) {
@@ -356,7 +397,7 @@ export class AuthService {
       const fullName = isCompanyAccount
         ? userData.primaryContact?.name || userData.displayName
         : userData.fullName ||
-          `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+        `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
 
       const firstName = isCompanyAccount
         ? userData.primaryContact?.name?.split(' ')[0] || userData.displayName
@@ -365,8 +406,8 @@ export class AuthService {
       const lastName = isCompanyAccount
         ? userData.primaryContact?.name?.split(' ').slice(1).join(' ') || ''
         : userData.lastName ||
-          userData.fullName?.split(' ').slice(1).join(' ') ||
-          '';
+        userData.fullName?.split(' ').slice(1).join(' ') ||
+        '';
 
       const phoneNumber = isCompanyAccount
         ? userData.primaryContact?.phone

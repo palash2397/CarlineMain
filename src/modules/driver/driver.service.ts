@@ -8,6 +8,7 @@ import { Msg } from 'src/helpers/responseMsg';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
 import { UserRole } from 'src/common/enums/user/role.enum';
 
+import { User, UserDocument } from '../user/schema/user.schema';
 import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
 import {
   CompanyUser,
@@ -33,6 +34,8 @@ export class DriverService {
     private readonly companyModel: Model<CompanyDocument>,
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly mailService: MailService,
     private readonly vehicleTypeService: VehicleTypeService,
   ) {}
@@ -99,12 +102,20 @@ export class DriverService {
         .toUpperCase()
         .trim();
 
-      const existingEmail = await this.driverModel.findOne({ email });
+      const existingEmail =
+        (await this.driverModel.findOne({ email })) ||
+        (await this.userModel.findOne({ email })) ||
+        (await this.companyUserModel.findOne({ email })) ||
+        (await this.companyModel.findOne({ 'primaryContact.email': email }));
       if (existingEmail) {
         return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
       }
 
-      const existingPhone = await this.driverModel.findOne({ phoneNumber });
+      const existingPhone =
+        (await this.driverModel.findOne({ phoneNumber })) ||
+        (await this.userModel.findOne({ phoneNumber })) ||
+        (await this.companyUserModel.findOne({ phoneNumber })) ||
+        (await this.companyModel.findOne({ 'primaryContact.phone': phoneNumber }));
       if (existingPhone) {
         return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
       }

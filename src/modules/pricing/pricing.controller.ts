@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -99,9 +100,20 @@ export class PricingController {
   }
 
   // ==========================================
-  // Tab 3: Waiting Charges
+  // Tab 3: Waiting Charges (Company Admin & Driver Manager)
   // ==========================================
   @Get('/waiting-charges')
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.DRIVER_MANAGER,
+    UserRole.MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Get waiting charges policy for company (free grace period minutes and rate per minute)',
+  })
   @ApiQuery({ name: 'companyId', required: false })
   async getWaitingCharges(
     @Req() req: any,
@@ -111,6 +123,17 @@ export class PricingController {
   }
 
   @Post('/waiting-charges')
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.DRIVER_MANAGER,
+    UserRole.MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Set waiting charges policy by Company Admin or Driver Manager (grace period & per minute rate)',
+  })
   async saveWaitingChargesPost(
     @Body() dto: UpdateWaitingChargesDto,
     @Req() req: any,
@@ -119,6 +142,17 @@ export class PricingController {
   }
 
   @Put('/waiting-charges')
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.DRIVER_MANAGER,
+    UserRole.MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Update waiting charges policy by Company Admin or Driver Manager (grace period & per minute rate)',
+  })
   async updateWaitingChargesPut(
     @Body() dto: UpdateWaitingChargesDto,
     @Req() req: any,
@@ -126,4 +160,5 @@ export class PricingController {
     return this.pricingService.updateWaitingCharges(dto, req.user);
   }
 }
+
 

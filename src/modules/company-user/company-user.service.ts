@@ -4,6 +4,7 @@ import { Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from '../user/schema/user.schema';
 import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
 import { CompanyUser, CompanyUserDocument } from './schema/company-user.schema';
+import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { MailService } from '../mail/mail.service';
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
@@ -25,6 +26,8 @@ export class CompanyUserService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Company.name)
     private readonly companyModel: Model<CompanyDocument>,
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -87,15 +90,26 @@ export class CompanyUserService {
       const existingInCompany = await this.companyModel.findOne({
         'primaryContact.email': normalizedEmail,
       });
+      const existingInDriver = await this.driverModel.findOne({
+        email: normalizedEmail,
+      });
 
-      if (existingInCompanyUser || existingInUser || existingInCompany) {
+      if (
+        existingInCompanyUser ||
+        existingInUser ||
+        existingInCompany ||
+        existingInDriver
+      ) {
         return new ApiResponse(400, {}, Msg.USER_EXISTS_EMAIL);
       }
 
       if (dto.phoneNumber) {
-        const existingPhone = await this.companyUserModel.findOne({
-          phoneNumber: dto.phoneNumber.trim(),
-        });
+        const phone = dto.phoneNumber.trim();
+        const existingPhone =
+          (await this.companyUserModel.findOne({ phoneNumber: phone })) ||
+          (await this.userModel.findOne({ phoneNumber: phone })) ||
+          (await this.driverModel.findOne({ phoneNumber: phone })) ||
+          (await this.companyModel.findOne({ 'primaryContact.phone': phone }));
         if (existingPhone) {
           return new ApiResponse(400, {}, Msg.USER_EXISTS_PHONE);
         }

@@ -26,7 +26,10 @@ export class PricingService {
     user: any,
     requestedCompanyId?: string,
   ): Promise<string | null> {
-    const userRole = (user?.roles || user?.role || '').toUpperCase();
+    const rawRole = Array.isArray(user?.roles)
+      ? user.roles[0]
+      : user?.roles || user?.role || '';
+    const userRole = String(rawRole || '').toUpperCase();
 
     if (
       userRole === UserRole.SUPERADMIN ||
@@ -42,6 +45,11 @@ export class PricingService {
       // If superadmin didn't provide companyId, pick the first active company or return null
       const firstCompany = await this.companyModel.findOne();
       return firstCompany ? firstCompany._id.toString() : null;
+    }
+
+    // Company Admin, Driver Manager, or Manager can specify requestedCompanyId or fallback to their user.companyId
+    if (requestedCompanyId) {
+      return requestedCompanyId;
     }
 
     return user?.companyId || user?.id || null;
