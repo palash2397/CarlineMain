@@ -44,6 +44,7 @@ import { RideService } from './ride.service';
 const PASSENGER_ROLES = [UserRole.USER, UserRole.PASSENGER];
 const PASSENGER_TAG = 'User Booking (by Prakash)';
 const DRIVER_TAG = 'Driver Booking (by Prakash)';
+const DRIVER_MANAGER_TAG = 'Driver Manager (by Prakash)';
 
 // Passenger booking flow + driver booking flow. Both prefixes are kept
 // (/ride/* and /driver-ride/*) so the apps keep the same URLs, role wise
@@ -293,7 +294,7 @@ export class RideController {
   }
 
   @Patch('ride/:id/adjust-waiting-charge')
-  @ApiTags('Dispatcher (by Prakash)')
+  @ApiTags(DRIVER_MANAGER_TAG)
   @Roles(
     UserRole.COMPANY_ADMIN,
     UserRole.DRIVER_MANAGER,
