@@ -43,11 +43,14 @@ import {
   RideDocument,
   RideFareBreakdown,
   RideLocation,
+  TripTimelineEvent,
 } from './schema/ride.schema';
 
 import {
   AVERAGE_SPEED_KMH,
   DEFAULT_CURRENCY,
+  DEFAULT_FREE_WAITING_MINUTES,
+  DEFAULT_WAITING_CHARGE_PER_MINUTE,
   DRIVER_REQUEST_LIMIT,
   DRIVER_REQUEST_TIMEOUT_SECONDS,
   DRIVER_RUNNING_STATUSES,
@@ -61,6 +64,7 @@ import {
   SCHEDULED_DISPATCH_LEAD_MINUTES,
 } from 'src/constants';
 
+import { AdjustRideWaitingChargeDto } from './dto/adjust-ride-waiting-charge.dto';
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';
 import { CreateRecurringRideDto } from './dto/create-recurring-ride.dto';
@@ -396,6 +400,16 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         paymentStatus: PaymentStatus.PENDING,
         notes: dto.notes || null,
         otp: generateOtp(),
+        timeline: [
+          {
+            event: 'BOOKED',
+            title: 'Ride Booked',
+            description: `Ride booked successfully for vehicle type ${vehicleType.name || 'Cab'}`,
+            timestamp: new Date(),
+            actor: String(user.id),
+            location: this.locationPayload(dto.pickup),
+          },
+        ],
       });
 
       if (promoCheck.promo) {
@@ -552,6 +566,16 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       const prevCandidate = ride.candidateDriverId;
       ride.candidateDriverId = null;
       ride.requestExpiresAt = null;
+
+      this.addTimelineEvent(
+        ride,
+        'RIDE_CANCELLED',
+        'Ride Cancelled',
+        `Ride cancelled by passenger. Reason: ${dto.reason || 'None provided'}`,
+        String(user.id),
+        ride.pickup,
+      );
+
       await ride.save();
 
       this.clearRequestTimeout(dto.rideId);
@@ -1299,6 +1323,28 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         paymentStatus: PaymentStatus.PENDING,
         notes,
         otp: generateOtp(),
+        timeline: [
+          {
+            event: 'BOOKED',
+            title: 'Ride Booked',
+            description: `Ride booked by dispatcher for vehicle type ${vehicleType.name || 'Cab'}`,
+            timestamp: new Date(),
+            actor: String(dispatcherUser.id || dispatcherUser._id),
+            location: pickupLocation,
+          },
+          ...(assignedDriver
+            ? [
+                {
+                  event: 'DRIVER_ASSIGNED',
+                  title: 'Driver Assigned',
+                  description: `Driver ${assignedDriver.fullName || assignedDriver.name || 'Driver'} assigned directly by dispatcher`,
+                  timestamp: new Date(),
+                  actor: String(dispatcherUser.id || dispatcherUser._id),
+                  location: pickupLocation,
+                },
+              ]
+            : []),
+        ],
       });
 
       if (promoCheck.promo) {
@@ -1915,6 +1961,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       distanceKm: number;
       durationMinutes: number;
       promo?: PromoDocument | null;
+      waitingMinutes?: number;
+      waitingCharge?: number;
+      extraCharges?: number;
+      tollFee?: number;
     },
   ): RideFareBreakdown {
     const fareRules = pricing?.fareRules || {};
@@ -1930,7 +1980,14 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
     const distanceRate = this.round(perKmRate * options.distanceKm);
     const timeRate = this.round(perMinuteRate * options.durationMinutes);
-    const subTotal = this.round(basePrice + distanceRate + timeRate);
+    const waitingMinutes = options.waitingMinutes || 0;
+    const waitingCharge = options.waitingCharge ? this.round(options.waitingCharge) : 0;
+    const extraCharges = options.extraCharges ? this.round(options.extraCharges) : 0;
+    const tollFee = options.tollFee ? this.round(options.tollFee) : 0;
+
+    const subTotal = this.round(
+      basePrice + distanceRate + timeRate + waitingCharge + extraCharges + tollFee,
+    );
     const discount = this.round(
       this.promoDiscount(options.promo, subTotal),
     );
@@ -1948,6 +2005,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       durationMinutes: Math.round(options.durationMinutes),
       distanceRate,
       timeRate,
+      waitingMinutes,
+      waitingCharge,
+      extraCharges,
+      tollFee,
       subTotal,
       discount,
       taxAndFees,
@@ -1955,6 +2016,96 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       payableFare: totalFare,
       currency: DEFAULT_CURRENCY,
     };
+  }
+
+  private addTimelineEvent(
+    ride: any,
+    event: string,
+    title: string,
+    description: string,
+    actor?: string | null,
+    location?: RideLocation | null,
+  ) {
+    if (!ride.timeline) {
+      ride.timeline = [];
+    }
+    ride.timeline.push({
+      event,
+      title,
+      description,
+      timestamp: new Date(),
+      actor: actor ? String(actor) : null,
+      location: location || null,
+    });
+  }
+
+  private async calculateFinalFare(
+    ride: any,
+    options?: { extraCharges?: number; tollFee?: number },
+  ): Promise<RideFareBreakdown> {
+    let targetCompanyId = ride.companyId;
+    if (!targetCompanyId && ride.driver) {
+      const driverDoc = await this.driverModel
+        .findById(ride.driver)
+        .select('companyId')
+        .lean();
+      targetCompanyId = driverDoc?.companyId || null;
+    }
+
+    const [vehicleType, pricing] = await Promise.all([
+      ride.vehicleTypeId && Types.ObjectId.isValid(String(ride.vehicleTypeId))
+        ? this.vehicleTypeModel.findById(ride.vehicleTypeId)
+        : null,
+      this.pricingModel
+        .findOne(targetCompanyId ? { companyId: targetCompanyId } : {})
+        .lean(),
+    ]);
+
+    const startTime = ride.startedAt
+      ? new Date(ride.startedAt).getTime()
+      : ride.createdAt
+        ? new Date(ride.createdAt).getTime()
+        : Date.now();
+    const endTime = ride.destinationReachedAt
+      ? new Date(ride.destinationReachedAt).getTime()
+      : ride.completedAt
+        ? new Date(ride.completedAt).getTime()
+        : Date.now();
+
+    const actualDurationMinutes = Math.max(
+      1,
+      Math.round((endTime - startTime) / 60000),
+    );
+
+    const distanceKm = Number(ride.distanceKm || 0);
+
+    const promo = ride.promoCode
+      ? await this.promoModel.findOne({ code: ride.promoCode.toUpperCase() })
+      : null;
+
+    const fallbackVehicleType: any = vehicleType || {
+      basePrice: pricing?.fareRules?.baseFare || 4.5,
+      perKmRate: pricing?.fareRules?.perKmRate || 1.8,
+      perMinuteRate: pricing?.fareRules?.perMinuteRate || 0.4,
+    };
+
+    const finalFare = this.calculateFare(fallbackVehicleType, pricing, {
+      distanceKm,
+      durationMinutes: actualDurationMinutes,
+      promo,
+      waitingMinutes: ride.pickupWaitingMinutes || 0,
+      waitingCharge: ride.waitingCharge || 0,
+      extraCharges: options?.extraCharges || ride.fare?.extraCharges || 0,
+      tollFee: options?.tollFee || ride.fare?.tollFee || 0,
+    });
+
+    ride.durationMinutes = actualDurationMinutes;
+    ride.fare = finalFare;
+    ride.totalFare = finalFare.totalFare;
+    ride.payableFare = finalFare.payableFare;
+    ride.discount = finalFare.discount;
+
+    return finalFare;
   }
 
   private promoDiscount(promo: any, subTotal: number) {
@@ -2068,6 +2219,11 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       cancelledBy: ride.cancelledBy || null,
       cancelReason: ride.cancelReason || null,
       driver: driver ? this.driverPayload(driver) : null,
+      driverArrivedAt: ride.driverArrivedAt || null,
+      destinationReachedAt: ride.destinationReachedAt || null,
+      destinationReached: Boolean(ride.destinationReached),
+      pickupWaitingMinutes: ride.pickupWaitingMinutes || 0,
+      waitingCharge: ride.waitingCharge || 0,
       createdAt: ride.createdAt || null,
       driverAssignedAt: ride.driverAssignedAt || null,
       startedAt: ride.startedAt || null,
@@ -2158,14 +2314,6 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       if (ride.vehicleTypeId) {
         driverFilter.vehicleTypeId = ride.vehicleTypeId;
-      }
-
-      if (ride.companyId) {
-        driverFilter.$or = [
-          { companyId: ride.companyId },
-          { companyId: null },
-          { companyId: { $exists: false } },
-        ];
       }
 
       const availableDrivers = await this.driverModel.find(driverFilter);
@@ -2281,6 +2429,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             ? 'No driver accepted the request within the time limit'
             : 'No available drivers found';
 
+        const autoCancelTimeline: TripTimelineEvent = {
+          event: 'RIDE_CANCELLED',
+          title: 'Ride Cancelled Automatically',
+          description: cancelReason,
+          timestamp: cancelledAt,
+          actor: 'SYSTEM',
+          location: ride.pickup,
+        };
+
         await this.rideModel.updateOne(
           { _id: ride._id },
           {
@@ -2292,6 +2449,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
               candidateDriverId: null,
               requestExpiresAt: null,
             },
+            $push: {
+              timeline: autoCancelTimeline,
+            },
           },
         );
 
@@ -2301,6 +2461,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ride.cancelledAt = cancelledAt;
         ride.candidateDriverId = null;
         ride.requestExpiresAt = null;
+        if (!ride.timeline) {
+          ride.timeline = [];
+        }
+        ride.timeline.push(autoCancelTimeline);
 
         const cancelPayload = {
           rideId: String(ride._id),
@@ -2618,23 +2782,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ],
       };
 
-      const companyCondition = driver.companyId
-        ? {
-            $or: [
-              { companyId: driver.companyId },
-              { companyId: null },
-              { companyId: { $exists: false } },
-            ],
-          }
-        : {
-            $or: [
-              { companyId: null },
-              { companyId: { $exists: false } },
-            ],
-          };
-
       const rideQuery: any = {
-        $and: [statusCondition, companyCondition],
+        vehicleTypeId: String(vehicleType._id),
+        ...statusCondition,
       };
 
       const rides = await this.rideModel
@@ -2709,14 +2859,6 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       const { driver } = gate;
 
-      if (
-        ride.companyId &&
-        driver.companyId &&
-        String(ride.companyId) !== String(driver.companyId)
-      ) {
-        return new ApiResponse(403, {}, 'Access denied for this company ride');
-      }
-
       const vehicleType = await this.vehicleTypeForDriver(driver);
 
       if (!vehicleType) {
@@ -2769,14 +2911,6 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       if (ride.status !== RideStatus.SEARCHING_DRIVER) {
         return new ApiResponse(400, {}, Msg.RIDE_ALREADY_TAKEN);
-      }
-
-      if (
-        ride.companyId &&
-        driver.companyId &&
-        String(ride.companyId) !== String(driver.companyId)
-      ) {
-        return new ApiResponse(403, {}, 'Access denied for this company ride');
       }
 
       const vehicleType = await this.vehicleTypeForDriver(driver);
@@ -2834,6 +2968,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       // Clear the 30-second timeout timer immediately upon acceptance
       this.clearRequestTimeout(String(claimed._id));
+
+      this.addTimelineEvent(
+        claimed,
+        'DRIVER_ASSIGNED',
+        'Driver Assigned',
+        'Driver accepted the ride and is en route to pickup',
+        driverId,
+      );
+      await claimed.save();
 
       await this.driverModel.updateOne(
         { _id: driverId },
@@ -2950,7 +3093,20 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         return this.rideStatusError(ride);
       }
 
+      if (!ride.driverArrivedAt) {
+        ride.driverArrivedAt = new Date();
+      }
       ride.status = RideStatus.DRIVER_ARRIVED;
+
+      this.addTimelineEvent(
+        ride,
+        'DRIVER_ARRIVED',
+        'Driver Arrived',
+        'Driver arrived at pickup location. Waiting countdown started.',
+        driverId,
+        ride.pickup,
+      );
+
       await ride.save();
 
       this.emitRideEvent(
@@ -2995,8 +3151,72 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         return new ApiResponse(400, {}, Msg.OTP_INVALID);
       }
 
+      const startedAt = new Date();
       ride.status = RideStatus.RIDE_STARTED;
-      ride.startedAt = new Date();
+      ride.startedAt = startedAt;
+
+      // Item 4: Customer pickup waiting time calculation & charges
+      if (ride.driverArrivedAt) {
+        const arrivedAtMs = new Date(ride.driverArrivedAt).getTime();
+        const elapsedMinutes = Math.max(
+          0,
+          Math.floor((startedAt.getTime() - arrivedAtMs) / 60000),
+        );
+
+        let targetCompanyId = ride.companyId;
+        if (!targetCompanyId && driverId) {
+          const driverDoc = await this.driverModel
+            .findById(driverId)
+            .select('companyId')
+            .lean();
+          targetCompanyId = driverDoc?.companyId || null;
+        }
+
+        const pricing = targetCompanyId
+          ? await this.pricingModel.findOne({ companyId: targetCompanyId }).lean()
+          : await this.pricingModel.findOne({}).lean();
+
+        const graceMinutes =
+          pricing?.waitingCharges?.gracePeriodMinutes ??
+          DEFAULT_FREE_WAITING_MINUTES;
+        const waitingPerMinuteRate =
+          pricing?.waitingCharges?.waitingChargePerMinute ??
+          DEFAULT_WAITING_CHARGE_PER_MINUTE;
+
+        const chargeableMinutes = Math.max(0, elapsedMinutes - graceMinutes);
+        const waitingCharge = this.round(
+          chargeableMinutes * waitingPerMinuteRate,
+        );
+
+        ride.pickupWaitingMinutes = elapsedMinutes;
+        ride.waitingCharge = waitingCharge;
+
+        if (waitingCharge > 0 && ride.fare) {
+          ride.fare.waitingMinutes = elapsedMinutes;
+          ride.fare.waitingCharge = waitingCharge;
+          ride.fare.subTotal = this.round(
+            (ride.fare.subTotal || 0) + waitingCharge,
+          );
+          ride.fare.totalFare = this.round(
+            (ride.fare.totalFare || 0) + waitingCharge,
+          );
+          ride.fare.payableFare = ride.fare.totalFare;
+          ride.totalFare = ride.fare.totalFare;
+          ride.payableFare = ride.fare.payableFare;
+        }
+      }
+
+      this.addTimelineEvent(
+        ride,
+        'RIDE_STARTED',
+        'Ride Started',
+        ride.waitingCharge && ride.waitingCharge > 0
+          ? `Ride started. Waiting time: ${ride.pickupWaitingMinutes} min (${ride.waitingCharge} ${DEFAULT_CURRENCY} waiting charge).`
+          : 'Ride started and on the way to destination.',
+        driverId,
+        ride.pickup,
+      );
+
       await ride.save();
 
       this.emitRideEvent(
@@ -3012,6 +3232,70 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       );
     } catch (error) {
       console.error('Error while starting ride:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Destination reached (Driver reached dropoff location)
+  // ==========================================================
+  async destinationReached(driverId: string, dto: DriverRideIdDto) {
+    try {
+      const found: any = await this.driverRideOrError(driverId, dto.rideId);
+
+      if (found.error) {
+        return found.error;
+      }
+
+      const { ride } = found;
+
+      if (ride.status !== RideStatus.RIDE_STARTED) {
+        if (ride.status === RideStatus.RIDE_COMPLETED) {
+          return new ApiResponse(400, {}, Msg.RIDE_ALREADY_COMPLETED);
+        }
+        return this.rideStatusError(ride);
+      }
+
+      const reachedAt = new Date();
+      ride.destinationReached = true;
+      ride.destinationReachedAt = reachedAt;
+
+      // Item 10: Trigger dynamic final fare calculation
+      const finalFare = await this.calculateFinalFare(ride);
+
+      this.addTimelineEvent(
+        ride,
+        'DESTINATION_REACHED',
+        'Destination Reached',
+        `Driver reached the drop-off destination. Final fare: ${finalFare.totalFare} ${DEFAULT_CURRENCY}`,
+        driverId,
+        ride.dropoff,
+      );
+
+      await ride.save();
+
+      const payload = await this.ridePayload(ride);
+
+      this.emitRideEvent(ride, RIDE_EVENTS.DESTINATION_REACHED, payload);
+      this.emitRideEvent(ride, RIDE_EVENTS.FINAL_FARE, {
+        rideId: String(ride._id),
+        fare: finalFare,
+        totalFare: finalFare.totalFare,
+        payableFare: finalFare.payableFare,
+      });
+      this.emitRideEvent(
+        ride,
+        RIDE_EVENTS.STATUS,
+        this.statusPayload(ride, driverId),
+      );
+
+      return new ApiResponse(
+        200,
+        payload,
+        'Destination reached. Final fare calculated.',
+      );
+    } catch (error) {
+      console.error('Error marking destination reached:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }
@@ -3043,12 +3327,36 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       ride.status = RideStatus.RIDE_COMPLETED;
       ride.completedAt = completedAt;
+      if (!ride.destinationReached) {
+        ride.destinationReached = true;
+        ride.destinationReachedAt = completedAt;
+      }
+
+      // Finalize fare calculation
+      await this.calculateFinalFare(ride);
+
+      this.addTimelineEvent(
+        ride,
+        'RIDE_COMPLETED',
+        'Trip Completed',
+        `Trip completed successfully. Total fare: ${ride.totalFare} ${DEFAULT_CURRENCY}`,
+        driverId,
+        ride.dropoff,
+      );
 
       // Card and wallet rides are charged automatically, cash is collected by
       // the driver from the fare screen.
       if (ride.paymentMethod !== PaymentMethod.CASH) {
         ride.paymentStatus = PaymentStatus.PAID;
         ride.paymentCollectedAt = completedAt;
+
+        this.addTimelineEvent(
+          ride,
+          'PAYMENT_COLLECTED',
+          'Payment Completed',
+          `Payment of ${ride.payableFare} ${DEFAULT_CURRENCY} completed via ${ride.paymentMethod}`,
+          driverId,
+        );
       }
 
       await ride.save();
@@ -3105,6 +3413,14 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ride.paymentMethod = dto.paymentMethod;
       }
 
+      this.addTimelineEvent(
+        ride,
+        'PAYMENT_COLLECTED',
+        'Payment Collected',
+        `Payment of ${ride.payableFare} ${DEFAULT_CURRENCY} collected via ${dto.paymentMethod || ride.paymentMethod || PaymentMethod.CASH}`,
+        driverId,
+      );
+
       await ride.save();
 
       const payload = await this.ridePayload(ride);
@@ -3139,6 +3455,16 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       ride.cancelledBy = CancelledBy.DRIVER;
       ride.cancelReason = dto.reason || null;
       ride.cancelledAt = new Date();
+
+      this.addTimelineEvent(
+        ride,
+        'RIDE_CANCELLED',
+        'Ride Cancelled',
+        `Ride cancelled by driver. Reason: ${dto.reason || 'None provided'}`,
+        driverId,
+        ride.pickup,
+      );
+
       await ride.save();
 
       await this.driverModel.updateOne(
@@ -3165,6 +3491,253 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       return new ApiResponse(200, payload, Msg.RIDE_CANCELLED);
     } catch (error) {
       console.error('Error while cancelling ride as driver:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Customer Waiting Status (Realtime countdown and charges)
+  // ==========================================================
+  async getWaitingStatus(rideId: string) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride = await this.rideModel.findById(rideId);
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      let targetCompanyId = ride.companyId;
+      if (!targetCompanyId && ride.driver) {
+        const driverDoc = await this.driverModel
+          .findById(ride.driver)
+          .select('companyId')
+          .lean();
+        targetCompanyId = driverDoc?.companyId || null;
+      }
+
+      const pricing = targetCompanyId
+        ? await this.pricingModel.findOne({ companyId: targetCompanyId }).lean()
+        : await this.pricingModel.findOne({}).lean();
+
+      const graceMinutes =
+        pricing?.waitingCharges?.gracePeriodMinutes ??
+        DEFAULT_FREE_WAITING_MINUTES;
+      const waitingChargePerMinute =
+        pricing?.waitingCharges?.waitingChargePerMinute ??
+        DEFAULT_WAITING_CHARGE_PER_MINUTE;
+
+      const arrivedAt = ride.driverArrivedAt
+        ? new Date(ride.driverArrivedAt)
+        : null;
+      let elapsedSeconds = 0;
+      let isWaitingActive = false;
+
+      if (arrivedAt) {
+        if (ride.status === RideStatus.DRIVER_ARRIVED) {
+          elapsedSeconds = Math.max(
+            0,
+            Math.floor((Date.now() - arrivedAt.getTime()) / 1000),
+          );
+          isWaitingActive = true;
+        } else if (ride.startedAt) {
+          elapsedSeconds = Math.max(
+            0,
+            Math.floor(
+              (new Date(ride.startedAt).getTime() - arrivedAt.getTime()) / 1000,
+            ),
+          );
+        }
+      }
+
+      const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+      const graceSeconds = graceMinutes * 60;
+      const remainingGraceSeconds = Math.max(0, graceSeconds - elapsedSeconds);
+      const remainingGraceMinutes = Number(
+        (remainingGraceSeconds / 60).toFixed(1),
+      );
+      const chargeableSeconds = Math.max(0, elapsedSeconds - graceSeconds);
+      const chargeableMinutes = Math.max(0, Math.ceil(chargeableSeconds / 60));
+      const currentWaitingCharge = this.round(
+        chargeableMinutes * waitingChargePerMinute,
+      );
+
+      return new ApiResponse(
+        200,
+        {
+          rideId: String(ride._id),
+          status: ride.status,
+          driverArrivedAt: arrivedAt,
+          startedAt: ride.startedAt || null,
+          isWaitingActive,
+          graceMinutes,
+          waitingChargePerMinute,
+          elapsedSeconds,
+          elapsedMinutes,
+          remainingGraceSeconds,
+          remainingGraceMinutes,
+          chargeableMinutes,
+          currentWaitingCharge,
+          currency: DEFAULT_CURRENCY,
+        },
+        'Waiting status retrieved successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching waiting status:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Adjust / Waive Waiting Charge (Decided by Company Admin or Driver Manager)
+  // ==========================================================
+  async adjustRideWaitingCharge(
+    user: any,
+    rideId: string,
+    dto: AdjustRideWaitingChargeDto,
+  ) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride = await this.rideModel.findById(rideId);
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const previousCharge = ride.waitingCharge || 0;
+      const newCharge = this.round(dto.waitingCharge);
+
+      ride.waitingCharge = newCharge;
+      if (dto.waitingMinutes !== undefined) {
+        ride.pickupWaitingMinutes = dto.waitingMinutes;
+      }
+
+      // Recalculate fare breakdown with the adjusted waiting charge
+      if (ride.fare) {
+        ride.fare.waitingMinutes = ride.pickupWaitingMinutes;
+        ride.fare.waitingCharge = newCharge;
+        const diff = newCharge - previousCharge;
+        ride.fare.subTotal = this.round((ride.fare.subTotal || 0) + diff);
+        ride.fare.totalFare = this.round((ride.fare.totalFare || 0) + diff);
+        ride.fare.payableFare = ride.fare.totalFare;
+        ride.totalFare = ride.fare.totalFare;
+        ride.payableFare = ride.fare.payableFare;
+      }
+
+      const userRole = user?.roles?.[0] || user?.role || 'MANAGER';
+      const reasonText = dto.reason ? ` Reason: ${dto.reason}` : '';
+
+      this.addTimelineEvent(
+        ride,
+        'WAITING_CHARGE_ADJUSTED',
+        'Waiting Charge Adjusted',
+        `Waiting charge adjusted from ${previousCharge} to ${newCharge} ${DEFAULT_CURRENCY} by ${userRole}.${reasonText}`,
+        String(user.id || user._id),
+        ride.pickup,
+      );
+
+      await ride.save();
+
+      const payload = await this.ridePayload(ride);
+
+      this.emitRideEvent(ride, RIDE_EVENTS.UPDATED, payload);
+      this.emitRideEvent(
+        ride,
+        RIDE_EVENTS.STATUS,
+        this.statusPayload(ride),
+      );
+
+      return new ApiResponse(
+        200,
+        payload,
+        'Waiting charge adjusted successfully by manager',
+      );
+    } catch (error) {
+      console.error('Error while adjusting waiting charge:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Final Fare Breakdown (Item 10)
+  // ==========================================================
+  async getFinalFare(rideId: string) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride = await this.rideModel.findById(rideId);
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      let fare = ride.fare;
+      if (
+        ride.status === RideStatus.RIDE_STARTED ||
+        ride.status === RideStatus.RIDE_COMPLETED ||
+        ride.destinationReached
+      ) {
+        fare = await this.calculateFinalFare(ride);
+        await ride.save();
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          rideId: String(ride._id),
+          status: ride.status,
+          destinationReached: Boolean(ride.destinationReached),
+          destinationReachedAt: ride.destinationReachedAt || null,
+          pickupWaitingMinutes: ride.pickupWaitingMinutes || 0,
+          waitingCharge: ride.waitingCharge || 0,
+          fare,
+          totalFare: ride.totalFare,
+          payableFare: ride.payableFare,
+          paymentMethod: ride.paymentMethod,
+          paymentStatus: ride.paymentStatus,
+        },
+        'Final fare retrieved successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching final fare:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
+  // Trip Timeline Log (Item 13)
+  // ==========================================================
+  async getTripTimeline(rideId: string) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride = await this.rideModel
+        .findById(rideId)
+        .select('timeline status pickup dropoff createdAt driverArrivedAt startedAt completedAt cancelledAt');
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          rideId: String(ride._id),
+          status: ride.status,
+          pickup: ride.pickup,
+          dropoff: ride.dropoff,
+          timeline: ride.timeline || [],
+        },
+        'Trip timeline retrieved successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching trip timeline:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }
@@ -3803,7 +4376,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       case RideStatus.DRIVER_ARRIVED:
         return 'START_TRIP';
       case RideStatus.RIDE_STARTED:
-        return 'END_TRIP';
+        return ride.destinationReached ? 'END_TRIP' : 'REACH_DESTINATION';
       case RideStatus.RIDE_COMPLETED:
         return ride.paymentStatus === PaymentStatus.PENDING &&
           ride.paymentMethod === PaymentMethod.CASH
@@ -3857,6 +4430,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       notes: ride.notes || null,
       cancelReason: ride.cancelReason || null,
       cancelledBy: ride.cancelledBy || null,
+      driverArrivedAt: ride.driverArrivedAt || null,
+      destinationReachedAt: ride.destinationReachedAt || null,
+      destinationReached: Boolean(ride.destinationReached),
+      pickupWaitingMinutes: ride.pickupWaitingMinutes || 0,
+      waitingCharge: ride.waitingCharge || 0,
+      timeline: ride.timeline || [],
       vehicleType: vehicleType
         ? this.vehicleTypeCard(vehicleType)
         : {
@@ -3961,6 +4540,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       status: ride.status,
       etaMinutes: ride.etaMinutes ?? null,
       driverId: driverId || (ride.driver ? String(ride.driver) : null),
+      destinationReached: Boolean(ride.destinationReached),
+      destinationReachedAt: ride.destinationReachedAt || null,
+      pickupWaitingMinutes: ride.pickupWaitingMinutes || 0,
+      waitingCharge: ride.waitingCharge || 0,
       nextAction: this.nextActionFor(ride),
     };
   }

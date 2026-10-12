@@ -8,6 +8,7 @@ import {
   CompanyUser,
   CompanyUserSchema,
 } from '../company-user/schema/company-user.schema';
+import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 import { MailModule } from '../mail/mail.module';
 
 @Module({
@@ -16,6 +17,7 @@ import { MailModule } from '../mail/mail.module';
       { name: User.name, schema: UserSchema },
       { name: Company.name, schema: CompanySchema },
       { name: CompanyUser.name, schema: CompanyUserSchema },
+      { name: Driver.name, schema: DriverSchema },
     ]),
     MailModule,
   ],

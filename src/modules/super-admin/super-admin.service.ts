@@ -8,6 +8,7 @@ import {
   CompanyUser,
   CompanyUserDocument,
 } from '../company-user/schema/company-user.schema';
+import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { ApiResponse } from 'src/helpers/ApiResponse';
 import { Msg } from 'src/helpers/responseMsg';
 
@@ -34,6 +35,8 @@ export class SuperAdminService implements OnModuleInit {
     private readonly companyModel: Model<CompanyDocument>,
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
     private readonly mailService: MailService,
   ) {}
 
@@ -447,7 +450,10 @@ export class SuperAdminService implements OnModuleInit {
       const existingCompanyUser = await this.companyUserModel.findOne({
         email: normalizedEmail,
       });
-      if (existingUser || existingCompanyUser) {
+      const existingDriver = await this.driverModel.findOne({
+        email: normalizedEmail,
+      });
+      if (existingUser || existingCompanyUser || existingDriver) {
         return new ApiResponse(
           409,
           {},

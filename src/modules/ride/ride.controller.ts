@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
 
+import { AdjustRideWaitingChargeDto } from './dto/adjust-ride-waiting-charge.dto';
 import { BookRideDto } from './dto/book-ride.dto';
 import { CancelRideDto } from './dto/cancel-ride.dto';
 import { CreateDispatcherBookingDto } from './dto/create-dispatcher-booking.dto';
@@ -122,6 +123,42 @@ export class RideController {
   @ApiOperation({ summary: 'Cancel a booked ride' })
   async cancelRide(@Req() req: any, @Body() dto: CancelRideDto) {
     return this.rideService.cancelRide(req.user, dto);
+  }
+
+  @Get('ride/:id/waiting')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary:
+      'Customer pickup waiting time status, grace period countdown, and accrued waiting charges',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async passengerWaitingStatus(@Param('id') rideId: string) {
+    return this.rideService.getWaitingStatus(rideId);
+  }
+
+  @Get('ride/:id/final-fare')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary:
+      'Detailed final fare breakdown (duration, distance, waiting charges, extras, discount)',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async passengerFinalFare(@Param('id') rideId: string) {
+    return this.rideService.getFinalFare(rideId);
+  }
+
+  @Get('ride/:id/timeline')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary:
+      'Structured chronological trip timeline event log from booking to completion',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async passengerTripTimeline(@Param('id') rideId: string) {
+    return this.rideService.getTripTimeline(rideId);
   }
 
   // ==========================================================
@@ -255,6 +292,28 @@ export class RideController {
     return this.rideService.bookDispatcherRide(req.user, dto);
   }
 
+  @Patch('ride/:id/adjust-waiting-charge')
+  @ApiTags('Dispatcher (by Prakash)')
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.DRIVER_MANAGER,
+    UserRole.MANAGER,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Company Admin and Driver Manager can decide, adjust or waive waiting charges for a ride',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async adjustWaitingCharge(
+    @Req() req: any,
+    @Param('id') rideId: string,
+    @Body() dto: AdjustRideWaitingChargeDto,
+  ) {
+    return this.rideService.adjustRideWaitingCharge(req.user, rideId, dto);
+  }
+
 
   @Get('ride/:id/track')
   @ApiTags(PASSENGER_TAG)
@@ -370,6 +429,18 @@ export class RideController {
     return this.rideService.arrived(req.user.id, dto);
   }
 
+  @Get('driver-ride/waiting/:id')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Customer pickup waiting time status, grace period countdown, and accrued waiting charges',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async driverWaitingStatus(@Param('id') rideId: string) {
+    return this.rideService.getWaitingStatus(rideId);
+  }
+
   @Post('driver-ride/start')
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
@@ -380,6 +451,17 @@ export class RideController {
     return this.rideService.start(req.user.id, dto);
   }
 
+  @Patch('driver-ride/destination-reached')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Driver reaches dropoff destination (calculates final fare and prepares trip completion)',
+  })
+  async destinationReached(@Req() req: any, @Body() dto: DriverRideIdDto) {
+    return this.rideService.destinationReached(req.user.id, dto);
+  }
+
   @Post('driver-ride/complete')
   @ApiTags(DRIVER_TAG)
   @Roles(UserRole.DRIVER)
@@ -388,6 +470,30 @@ export class RideController {
   })
   async complete(@Req() req: any, @Body() dto: DriverRideIdDto) {
     return this.rideService.complete(req.user.id, dto);
+  }
+
+  @Get('driver-ride/final-fare/:id')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Detailed final fare breakdown (duration, distance, waiting charges, extras, discount)',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async driverFinalFare(@Param('id') rideId: string) {
+    return this.rideService.getFinalFare(rideId);
+  }
+
+  @Get('driver-ride/timeline/:id')
+  @ApiTags(DRIVER_TAG)
+  @Roles(UserRole.DRIVER)
+  @ApiOperation({
+    summary:
+      'Structured chronological trip timeline event log from booking to completion',
+  })
+  @ApiParam({ name: 'id', description: 'Ride id' })
+  async driverTripTimeline(@Param('id') rideId: string) {
+    return this.rideService.getTripTimeline(rideId);
   }
 
   @Post('driver-ride/collect-payment')
