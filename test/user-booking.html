@@ -39,14 +39,19 @@
       .res-err { color: #ffb3c1; }
       .note { color: #8b9ac2; font-size: 12px; margin-top: 6px; }
       .big { font-size: 18px; font-weight: 600; color: #ffd479; }
+      .toast { pointer-events: auto; background: #1c2438; border: 1px solid #4f46e5; border-left: 4px solid #818cf8; color: #fff; padding: 12px 16px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-size: 13px; min-width: 280px; max-width: 360px; animation: slideIn 0.3s ease; }
+      .toast b { color: #818cf8; display: block; margin-bottom: 4px; font-size: 14px; }
+      @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     </style>
   </head>
   <body>
+    <div id="toastBox" style="position:fixed;top:18px;right:18px;z-index:99999;display:flex;flex-direction:column;gap:10px;pointer-events:none;"></div>
     <header>
       <h1>Carline &mdash; User Booking Test</h1>
       <span class="pill" id="whoami">token ?</span>
       <span class="pill" id="socketState">socket: off</span>
       <span class="pill" id="rideState">ride: -</span>
+      <span class="pill" id="notifBell" onclick="fetchMyNotifications()" style="cursor:pointer;background:#4338ca;color:#fff;border-color:#6366f1;">🔔 Notifications (<b id="unreadCountBadge">0</b>)</span>
       <span class="pill">Owner: Prakash Mishra</span>
     </header>
 
@@ -163,6 +168,48 @@
           <button class="red" onclick="cancelRide()">PATCH /ride/cancel</button>
         </div>
         <div class="note">Socket events isi ride ke liye aate hain: ride:created, ride:driver, ride:status, ride:driverLocation, ride:completed, ride:payment, ride:cancelled</div>
+      </section>
+
+      <section style="grid-column: 1 / -1; border-color: #3b4d7a;">
+        <h2 style="color: #818cf8;">🔔 5B. Firebase Push &amp; In-App Notifications (Prakash)</h2>
+        <div class="row">
+          <div style="flex: 2 1 240px;">
+            <label>FCM Device Token (User / Passenger)</label>
+            <input id="fcmTokenInput" value="e0tKgfaPRr6f3P3QDXLmWs:APA91bHHCCjxAWD3IgK0PsaZjeq4ayRpLbWhoaHDQSUj9eY0J-sFyph64jt3hjse_sn5BL_JdZchjHcrHCzDkjKnZZX61Wzx8ThbFqd8KD_uFaHmZ0nhYTU" placeholder="Enter FCM Device Token..." />
+          </div>
+          <div>
+            <div class="btns" style="margin-top: 0;">
+              <button style="background: #4f46e5;" onclick="registerFcmToken()">Register FCM Token</button>
+              <button class="ghost" onclick="fetchUnreadCount()">Unread Count</button>
+              <button class="ghost" onclick="fetchMyNotifications()">Load Notifications</button>
+              <button class="ghost" onclick="markAllNotifsRead()">Mark All Read</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 10px;">
+          <div><label>Test Push Title</label><input id="testPushTitle" value="Hello Passenger!" /></div>
+          <div><label>Test Push Body</label><input id="testPushBody" value="Your Carline ride notification test is working live." /></div>
+          <div><label>Type</label><input id="testPushType" value="TEST_PUSH" /></div>
+          <div>
+            <div class="btns" style="margin-top: 0;">
+              <button class="green" onclick="sendTestPush()">Send Test Push</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <label style="font-weight: 600; color: #b4c6ef;">In-App Notification List</label>
+          <table id="notifTable">
+            <thead>
+              <tr><th>Title</th><th>Message</th><th>Type</th><th>Time</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="color: #64748b; text-align: center; padding: 12px;">Click "Load Notifications" to fetch</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">Socket event <code>notification:new</code> aate hi yahan live toast alert pop up hoga aur Unread Badge auto-update hoga!</div>
       </section>
 
       <section style="grid-column: 1 / -1">
@@ -372,6 +419,12 @@
           }
           if (event === 'ride:driver' && data && data.driver) {
             log('ev', 'driver assigned: ' + data.driver.fullName + ' | ' + data.driver.vehicleRegistrationNumber + ' | rating ' + data.driver.rating);
+          }
+          if (event === 'notification:new' && data) {
+            log('ev', '🔔 notification:new', data);
+            showToast(data.title || 'Notification', data.body || '');
+            fetchUnreadCount(true);
+            prependNotification(data);
           }
         });
       }
@@ -825,6 +878,114 @@
       showWhoAmI();
       if (!$('recStart').value) $('recStart').value = recLocalDate(new Date());
       recFrequencyChanged();
+
+      // ==========================================
+      // Notification Center Handlers (by Prakash)
+      // ==========================================
+      function showToast(title, body) {
+        const box = $('toastBox');
+        if (!box) return;
+        const div = document.createElement('div');
+        div.className = 'toast';
+        div.innerHTML = '<b>' + title + '</b><div>' + body + '</div>';
+        box.appendChild(div);
+        setTimeout(() => {
+          div.style.transition = 'opacity 0.4s ease';
+          div.style.opacity = '0';
+          setTimeout(() => div.remove(), 400);
+        }, 5000);
+      }
+
+      async function registerFcmToken() {
+        const token = $('fcmTokenInput').value.trim();
+        if (!token) return log('err', 'FCM token daalo');
+        const res = await api('/notification/fcm-token', 'POST', { fcmToken: token });
+        if (res?.success) log('ev', 'FCM device token registered successfully');
+      }
+
+      async function fetchUnreadCount(silent = false) {
+        const res = await api('/notification/unread-count', 'GET', undefined, silent);
+        if (res?.data && typeof res.data.count !== 'undefined') {
+          const el = $('unreadCountBadge');
+          if (el) el.textContent = res.data.count;
+        }
+      }
+
+      async function fetchMyNotifications() {
+        const res = await api('/notification/my?page=1&limit=15');
+        const tbody = $('notifTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        const list = res?.data?.notifications || [];
+        if (typeof res?.data?.unreadCount !== 'undefined') {
+          $('unreadCountBadge').textContent = res.data.unreadCount;
+        }
+        if (!list.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 12px;">Koi notification nahi hai</td></tr>';
+          return;
+        }
+        list.forEach((n) => {
+          const tr = document.createElement('tr');
+          const time = n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+          const isUnread = !n.isRead;
+          tr.style.background = isUnread ? '#1a223a' : 'transparent';
+          tr.innerHTML =
+            '<td><b>' + (n.title || '-') + '</b></td>' +
+            '<td>' + (n.body || '-') + '</td>' +
+            '<td><span class="pill">' + (n.type || 'GENERAL') + '</span></td>' +
+            '<td>' + time + '</td>' +
+            '<td>' + (isUnread ? '<span class="pill err">UNREAD</span>' : '<span class="pill ok">READ</span>') + '</td>' +
+            '<td>' + (isUnread ? '<button class="ghost" style="padding: 4px 8px; font-size: 11px;" onclick="markNotifRead(\'' + n._id + '\')">Mark read</button>' : '-') + '</td>';
+          tbody.appendChild(tr);
+        });
+      }
+
+      async function markNotifRead(id) {
+        const res = await api('/notification/' + id + '/read', 'PATCH');
+        if (res?.success) {
+          log('ev', 'Notification marked as read: ' + id);
+          fetchMyNotifications();
+          fetchUnreadCount(true);
+        }
+      }
+
+      async function markAllNotifsRead() {
+        const res = await api('/notification/read-all', 'PATCH');
+        if (res?.success) {
+          log('ev', 'All notifications marked as read');
+          fetchMyNotifications();
+          fetchUnreadCount(true);
+        }
+      }
+
+      async function sendTestPush() {
+        const title = $('testPushTitle').value.trim();
+        const body = $('testPushBody').value.trim();
+        const type = $('testPushType').value.trim() || 'TEST_PUSH';
+        const res = await api('/notification/test-push', 'POST', { title, body, type, data: { test: true } });
+        if (res?.success) {
+          log('ev', 'Test notification dispatched');
+          fetchMyNotifications();
+        }
+      }
+
+      function prependNotification(n) {
+        const tbody = $('notifTable').querySelector('tbody');
+        if (!tbody) return;
+        const tr = document.createElement('tr');
+        tr.style.background = '#1a223a';
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        tr.innerHTML =
+          '<td><b>' + (n.title || '-') + '</b></td>' +
+          '<td>' + (n.body || '-') + '</td>' +
+          '<td><span class="pill">' + (n.type || 'GENERAL') + '</span></td>' +
+          '<td>' + time + '</td>' +
+          '<td><span class="pill err">UNREAD</span></td>' +
+          '<td>' + (n._id ? '<button class="ghost" style="padding: 4px 8px; font-size: 11px;" onclick="markNotifRead(\'' + n._id + '\')">Mark read</button>' : '-') + '</td>';
+        tbody.insertBefore(tr, tbody.firstChild);
+      }
+
+      // Initial badge load
+      setTimeout(() => fetchUnreadCount(true), 800);
     </script>
   </body>
 </html>
