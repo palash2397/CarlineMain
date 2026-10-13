@@ -15,8 +15,13 @@ import {
   Notification,
   NotificationDocument,
 } from './schema/notification.schema';
+import { Broadcast, BroadcastDocument, BroadcastTarget } from './schema/broadcast.schema';
+import { Ride, RideDocument } from '../ride/schema/ride.schema';
 import { UpdateFcmTokenDto } from './dto/update-fcm-token.dto';
 import { SendTestPushDto } from './dto/send-test-push.dto';
+import { DispatcherSendNotificationDto, DispatcherTargetType } from './dto/dispatcher-send-notification.dto';
+import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
+import { Types } from 'mongoose';
 
 export interface PushNotificationPayload {
   title: string;
@@ -33,6 +38,10 @@ export class NotificationService implements OnModuleInit {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    @InjectModel(Broadcast.name)
+    private readonly broadcastModel: Model<BroadcastDocument>,
+    @InjectModel(Ride.name)
+    private readonly rideModel: Model<RideDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Driver.name)
@@ -401,6 +410,258 @@ export class NotificationService implements OnModuleInit {
       );
     } catch (error: any) {
       this.logger.error('Error in sendTestNotification:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Dispatcher sends manual notification/alert to driver or rider of a trip
+   */
+  async dispatcherSendNotification(senderUser: any, dto: DispatcherSendNotificationDto) {
+    try {
+      let targetId = dto.targetId;
+
+      // If rideId is provided and targetId is not specified, resolve from ride
+      if (dto.rideId && !targetId) {
+        if (!Types.ObjectId.isValid(dto.rideId)) {
+          return new ApiResponse(400, {}, 'Invalid rideId provided');
+        }
+        const ride = await this.rideModel.findById(dto.rideId);
+        if (!ride) {
+          return new ApiResponse(404, {}, 'Ride not found');
+        }
+        if (dto.targetType === DispatcherTargetType.DRIVER) {
+          targetId = ride.driver ? String(ride.driver) : ride.candidateDriverId ? String(ride.candidateDriverId) : undefined;
+        } else {
+          targetId = ride.user ? String(ride.user) : undefined;
+        }
+      }
+
+      if (!targetId || !Types.ObjectId.isValid(targetId)) {
+        return new ApiResponse(400, {}, 'Valid targetId or rideId with assigned recipient is required');
+      }
+
+      const notifData = {
+        ...(dto.data || {}),
+        rideId: dto.rideId || '',
+        sentBy: 'DISPATCHER',
+        dispatcherId: senderUser?.id || '',
+        type: 'DISPATCHER_MESSAGE',
+      };
+
+      const result = await this.sendToUser(
+        targetId,
+        {
+          title: dto.title,
+          body: dto.body,
+          data: notifData,
+          type: 'DISPATCHER_MESSAGE',
+        },
+        dto.targetType,
+      );
+
+      // If ride exists, also notify the ride room
+      if (dto.rideId) {
+        this.socketService.emitToRide(dto.rideId, 'notification:new', {
+          title: dto.title,
+          body: dto.body,
+          type: 'DISPATCHER_MESSAGE',
+          data: notifData,
+        });
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          targetId,
+          targetType: dto.targetType,
+          rideId: dto.rideId,
+          notification: result,
+        },
+        'Dispatcher notification sent successfully',
+      );
+    } catch (error: any) {
+      this.logger.error('Error in dispatcherSendNotification:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Broadcast push notification & in-app announcement to all Drivers, all Users, or All
+   */
+  async broadcastNotification(senderUser: any, dto: BroadcastNotificationDto) {
+    try {
+      const { target, title, body, companyId, data } = dto;
+      const targetDrivers = target === BroadcastTarget.DRIVERS || target === BroadcastTarget.ALL;
+      const targetUsers = target === BroadcastTarget.USERS || target === BroadcastTarget.ALL;
+
+      const recipientUserIds: Array<{ id: string; type: 'USER' | 'DRIVER' }> = [];
+      const fcmTokens: string[] = [];
+
+      // 1. Fetch Drivers if targeted
+      if (targetDrivers) {
+        const driverFilter: any = {};
+        if (companyId && Types.ObjectId.isValid(companyId)) {
+          driverFilter.companyId = companyId;
+        }
+        const drivers = await this.driverModel.find(driverFilter, { _id: 1, fcmToken: 1 });
+        drivers.forEach((d) => {
+          recipientUserIds.push({ id: String(d._id), type: 'DRIVER' });
+          if (d.fcmToken && d.fcmToken.trim().length > 10) {
+            fcmTokens.push(d.fcmToken.trim());
+          }
+        });
+      }
+
+      // 2. Fetch Users if targeted
+      if (targetUsers) {
+        const userFilter: any = {};
+        if (companyId && Types.ObjectId.isValid(companyId)) {
+          userFilter.companyId = companyId;
+        }
+        const users = await this.userModel.find(userFilter, { _id: 1, fcmToken: 1 });
+        users.forEach((u) => {
+          recipientUserIds.push({ id: String(u._id), type: 'USER' });
+          if (u.fcmToken && u.fcmToken.trim().length > 10) {
+            fcmTokens.push(u.fcmToken.trim());
+          }
+        });
+      }
+
+      // 3. Batch FCM Push notifications (up to 500 per batch)
+      let successCount = 0;
+      let failureCount = 0;
+      const uniqueTokens = Array.from(new Set(fcmTokens));
+
+      if (uniqueTokens.length > 0 && this.firebaseApp) {
+        const sanitizedData: Record<string, string> = {
+          type: 'BROADCAST',
+          sentAt: new Date().toISOString(),
+        };
+        if (data) {
+          for (const [k, v] of Object.entries(data)) {
+            sanitizedData[k] = typeof v === 'string' ? v : JSON.stringify(v);
+          }
+        }
+
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < uniqueTokens.length; i += BATCH_SIZE) {
+          const batch = uniqueTokens.slice(i, i + BATCH_SIZE);
+          try {
+            const batchResponse = await getMessaging(this.firebaseApp).sendEachForMulticast({
+              tokens: batch,
+              notification: { title, body },
+              data: sanitizedData,
+              android: {
+                priority: 'high',
+                notification: { sound: 'default', channelId: 'carline_rides' },
+              },
+              apns: {
+                payload: { aps: { sound: 'default', badge: 1 } },
+              },
+            });
+            successCount += batchResponse.successCount;
+            failureCount += batchResponse.failureCount;
+          } catch (batchErr: any) {
+            this.logger.error(`Error sending FCM multicast batch: ${batchErr.message}`);
+            failureCount += batch.length;
+          }
+        }
+      }
+
+      // 4. In-App Notifications: Bulk insert into MongoDB
+      if (recipientUserIds.length > 0) {
+        const inAppDocs = recipientUserIds.map((r) => ({
+          user: new Types.ObjectId(r.id),
+          userType: r.type,
+          title,
+          body,
+          type: 'BROADCAST',
+          data: data || {},
+          isRead: false,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }));
+
+        // Insert in batches of 1000
+        const CHUNK_SIZE = 1000;
+        for (let i = 0; i < inAppDocs.length; i += CHUNK_SIZE) {
+          await this.notificationModel.insertMany(inAppDocs.slice(i, i + CHUNK_SIZE), { ordered: false }).catch(() => {});
+        }
+      }
+
+      // 5. Emit Real-time Socket Event to drivers & users
+      const socketPayload = {
+        title,
+        body,
+        type: 'BROADCAST',
+        data: data || {},
+        createdAt: new Date(),
+      };
+      if (targetDrivers) {
+        this.socketService.emitToRoom('drivers', 'notification:new', socketPayload);
+      }
+      recipientUserIds.slice(0, 100).forEach((r) => {
+        this.socketService.emitToUser(r.id, 'notification:new', socketPayload);
+      });
+
+      // 6. Record in Broadcast history collection
+      const broadcastRecord = await this.broadcastModel.create({
+        title,
+        body,
+        target,
+        companyId: companyId || null,
+        senderId: senderUser?.id || null,
+        senderRole: senderUser?.roles || null,
+        data: data || {},
+        totalRecipients: recipientUserIds.length,
+        successCount,
+        failureCount,
+      });
+
+      return new ApiResponse(
+        200,
+        {
+          broadcastId: broadcastRecord._id,
+          target,
+          totalRecipients: recipientUserIds.length,
+          fcmTokensReached: uniqueTokens.length,
+          successCount,
+          failureCount,
+        },
+        'Broadcast notification dispatched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error('Error in broadcastNotification:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Get past broadcast history for Admin / Dispatcher
+   */
+  async getBroadcastHistory(page = 1, limit = 20) {
+    try {
+      const skip = (page - 1) * limit;
+      const [broadcasts, total] = await Promise.all([
+        this.broadcastModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+        this.broadcastModel.countDocuments(),
+      ]);
+
+      return new ApiResponse(
+        200,
+        {
+          broadcasts,
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+        'Broadcast history fetched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error('Error in getBroadcastHistory:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }

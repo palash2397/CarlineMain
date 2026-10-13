@@ -28,6 +28,7 @@ import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { Pricing, PricingDocument } from '../pricing/schema/pricing.schema';
 import { SocketService } from '../socket/socket.service';
 import { NotificationService } from '../notification/notification.service';
+import { MailService } from '../mail/mail.service';
 import { User, UserDocument } from '../user/schema/user.schema';
 import {
   VehicleType,
@@ -143,6 +144,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     private readonly userModel: Model<UserDocument>,
     private readonly socketService: SocketService,
     private readonly notificationService: NotificationService,
+    private readonly mailService: MailService,
   ) {}
 
   async onModuleInit() {
@@ -3497,6 +3499,41 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           'USER',
         )
         .catch(() => {});
+
+      // Send Ride Receipt / Invoice Email to passenger
+      if (ride.user) {
+        this.userModel
+          .findById(ride.user)
+          .then((passenger) => {
+            if (passenger && passenger.email) {
+              this.mailService
+                .sendRideInvoiceEmail(passenger.email, {
+                  rideId: String(ride._id),
+                  pickupAddress: ride.pickup?.address || 'Pickup location',
+                  dropoffAddress: ride.dropoff?.address || 'Dropoff location',
+                  totalFare: ride.totalFare,
+                  payableFare: ride.payableFare || ride.totalFare,
+                  paymentMethod: ride.paymentMethod || 'CASH',
+                  distanceKm: ride.distanceKm,
+                  durationMinutes: ride.durationMinutes,
+                  completedAt: ride.completedAt || new Date(),
+                  passengerName: passenger.firstName
+                    ? `${passenger.firstName} ${passenger.lastName || ''}`.trim()
+                    : 'Passenger',
+                  driverName:
+                    typeof (payload as any)?.driver === 'object' &&
+                    (payload as any)?.driver?.name
+                      ? (payload as any).driver.name
+                      : 'Assigned Driver',
+                  vehicleTypeName: ride.vehicleTypeName || 'Carline Cab',
+                })
+                .catch((err) =>
+                  console.error('Failed to send invoice email:', err.message),
+                );
+            }
+          })
+          .catch(() => {});
+      }
 
       return new ApiResponse(200, payload, Msg.RIDE_COMPLETED);
     } catch (error) {
