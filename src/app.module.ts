@@ -20,6 +20,7 @@ import { VehicleTypeModule } from './modules/vehicle-type/vehicle-type.module';
 import { RideModule } from './modules/ride/ride.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { LegalModule } from './modules/legal/legal.module';
+import { NotificationModule } from './modules/notification/notification.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { LegalModule } from './modules/legal/legal.module';
     RideModule,
     DashboardModule,
     LegalModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [],

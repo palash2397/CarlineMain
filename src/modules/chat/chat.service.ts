@@ -9,6 +9,7 @@ import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { Ride, RideDocument } from '../ride/schema/ride.schema';
 import { ChatMessage, ChatMessageDocument } from './schema/chat-message.schema';
 import { SendMessageDto } from './dto/send-message.dto';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class ChatService {
@@ -26,6 +27,7 @@ export class ChatService {
     private readonly rideModel: Model<RideDocument>,
 
     private readonly socketService: SocketService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -139,6 +141,28 @@ export class ChatService {
         broadcast.emit('newMessage', messagePayload);
       } else {
         this.socketService.emitToRide(String(ride._id), 'chat:message', messagePayload);
+      }
+
+      if (receiverId) {
+        const receiverType = isPassenger ? 'DRIVER' : 'USER';
+        this.notificationService
+          .sendToUser(
+            String(receiverId),
+            {
+              title: `New message from ${senderName}`,
+              body: messageDoc.message,
+              data: {
+                rideId: String(ride._id),
+                senderId: String(userId),
+                type: 'CHAT_MESSAGE',
+              },
+              type: 'CHAT_MESSAGE',
+            },
+            receiverType,
+          )
+          .catch((err: any) =>
+            console.warn(`Failed to dispatch chat push notification: ${err.message}`),
+          );
       }
 
       return new ApiResponse(200, messagePayload, 'Message sent successfully');

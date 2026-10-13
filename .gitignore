@@ -62,4 +62,5 @@ CHAT_*.md
 # Local files
 index.html
 /uploads
-
+*firebase*.json
+firebase-service-account.json

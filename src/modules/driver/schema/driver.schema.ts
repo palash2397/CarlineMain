@@ -288,6 +288,9 @@ export class Driver {
 
   @Prop({ type: Number, default: null })
   rating?: number | null;
+
+  @Prop({ type: String, default: null })
+  fcmToken?: string | null;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);

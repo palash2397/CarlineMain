@@ -115,6 +115,12 @@ export class User {
     default: true,
   })
   isActive: boolean;
+
+  @Prop({
+    type: String,
+    default: null,
+  })
+  fcmToken?: string | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
