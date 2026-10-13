@@ -20,6 +20,7 @@ import { RideController } from './ride.controller';
 import { RideSchedulerService } from './ride-scheduler.service';
 import { RideService } from './ride.service';
 import { NotificationModule } from '../notification/notification.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { NotificationModule } from '../notification/notification.module';
       { name: User.name, schema: UserSchema },
     ]),
     NotificationModule,
+    MailModule,
   ],
   controllers: [RideController],
   providers: [RideService, RideSchedulerService],

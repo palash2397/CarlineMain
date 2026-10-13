@@ -180,6 +180,83 @@ All endpoints require JWT Bearer Authentication (`Authorization: Bearer <TOKEN>`
 
 ---
 
+### 2.7 Dispatcher Communication (Send to Driver or Rider)
+> **Dispatcher Panel ke liye**: Dispatcher dwara kisi trip ke driver ya passenger ko direct custom push + in-app alert bhejna.
+
+- **Method**: `POST`
+- **URL**: `/api/v1/notification/dispatcher/send`
+- **Headers**: `Authorization: Bearer <DISPATCHER_OR_ADMIN_JWT_TOKEN>`
+- **Body**:
+  ```json
+  {
+    "targetType": "DRIVER",
+    "targetId": "6aa8e3a259dc9fc0913ababe",
+    "rideId": "6acce08c76baad27250d94c0",
+    "title": "Dispatcher Alert",
+    "body": "Please report to terminal 2 for pickup immediately.",
+    "data": { "priority": "urgent" }
+  }
+  ```
+- **Response (`201 OK`)**:
+  ```json
+  {
+    "statusCode": 200,
+    "data": {
+      "targetId": "6aa8e3a259dc9fc0913ababe",
+      "targetType": "DRIVER",
+      "rideId": "6acce08c76baad27250d94c0"
+    },
+    "message": "Dispatcher notification sent successfully",
+    "success": true
+  }
+  ```
+
+---
+
+### 2.8 Broadcast Communication (All Drivers / All Users)
+> **Admin / Dispatcher Panel ke liye**: Saare drivers ya saare passengers ko ek click me bulk push announcement bhejna.
+
+- **Method**: `POST`
+- **URL**: `/api/v1/notification/broadcast`
+- **Headers**: `Authorization: Bearer <ADMIN_OR_DISPATCHER_JWT_TOKEN>`
+- **Body**:
+  ```json
+  {
+    "target": "DRIVERS",
+    "title": "Weekend 25% Surge Incentive!",
+    "body": "Complete 5 rides this Saturday and earn 25% extra bonus.",
+    "companyId": "6aa904a815f2afcc842ee858",
+    "data": { "promoCode": "WEEKEND25" }
+  }
+  ```
+- **Response (`201 OK`)**:
+  ```json
+  {
+    "statusCode": 200,
+    "data": {
+      "broadcastId": "6ace14d32354d792f72775a2",
+      "target": "DRIVERS",
+      "totalRecipients": 8,
+      "fcmTokensReached": 2,
+      "successCount": 2,
+      "failureCount": 0
+    },
+    "message": "Broadcast notification dispatched successfully",
+    "success": true
+  }
+  ```
+
+---
+
+### 2.9 Broadcast History
+> **Admin / Dispatcher Panel ke liye**: Purani bheji hui announcements ki list dekhna.
+
+- **Method**: `GET`
+- **URL**: `/api/v1/notification/broadcasts?page=1&limit=20`
+- **Headers**: `Authorization: Bearer <ADMIN_OR_DISPATCHER_JWT_TOKEN>`
+
+---
+
 ## 3. User (Passenger) Lifecycle Events
 
 Backend in sabhi events par User ke phone par Push Notification + In-App notification automatically send karta hai:
@@ -191,7 +268,7 @@ Backend in sabhi events par User ke phone par Push Notification + In-App notific
 | **Driver Arrived** | `DRIVER_ARRIVED` | Driver Arrived | *"Driver has arrived at pickup. Share OTP: {OTP} to start trip."* | `{ "rideId": "...", "otp": "XXXX", "type": "DRIVER_ARRIVED" }` |
 | **Trip Started** | `TRIP_STARTED` | Trip Started | *"Your ride to {Dropoff} has started. Have a safe journey!"* | `{ "rideId": "...", "type": "TRIP_STARTED" }` |
 | **Destination Reached**| `DESTINATION_REACHED` | Reached Destination | *"You have reached your destination. Please pay ${TotalFare}."* | `{ "rideId": "...", "type": "DESTINATION_REACHED" }` |
-| **Trip Completed** | `TRIP_COMPLETED` | Trip Completed | *"Thank you for riding with Carline! Please rate your driver."* | `{ "rideId": "...", "type": "TRIP_COMPLETED" }` |
+| **Trip Completed** | `TRIP_COMPLETED` | Trip Completed | *"Thank you for riding with Carline! Please rate your driver."* *(+ HTML Invoice Receipt Email sent to passenger)* | `{ "rideId": "...", "type": "TRIP_COMPLETED" }` |
 | **Ride Cancelled** | `RIDE_CANCELLED` | Ride Cancelled | *"Your ride was cancelled. Reason: {Reason}"* | `{ "rideId": "...", "type": "RIDE_CANCELLED" }` |
 | **Chat Message** | `CHAT_MESSAGE` | New Message from Driver | *"{MessageContent}"* | `{ "rideId": "...", "type": "CHAT_MESSAGE" }` |
 

@@ -20,6 +20,8 @@ import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { UpdateFcmTokenDto } from './dto/update-fcm-token.dto';
 import { SendTestPushDto } from './dto/send-test-push.dto';
+import { DispatcherSendNotificationDto } from './dto/dispatcher-send-notification.dto';
+import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
 
 @ApiTags('Notifications (by Prakash)')
 @ApiBearerAuth('access-token')
@@ -93,5 +95,43 @@ export class NotificationController {
   sendTestPush(@Req() req: any, @Body() dto: SendTestPushDto) {
     const role = Array.isArray(req.user.roles) ? req.user.roles[0] : req.user.roles;
     return this.notificationService.sendTestNotification(req.user.id, role, dto);
+  }
+
+  @Post('/dispatcher/send')
+  @ApiOperation({
+    summary: 'Dispatcher sends direct message/alert to a trip driver or rider',
+    description:
+      'Allows Dispatchers or Company Staff to send targeted push + in-app notifications to the driver or passenger of an active ride or by direct targetId.',
+  })
+  dispatcherSend(@Req() req: any, @Body() dto: DispatcherSendNotificationDto) {
+    return this.notificationService.dispatcherSendNotification(req.user, dto);
+  }
+
+  @Post('/broadcast')
+  @ApiOperation({
+    summary: 'Broadcast push notification & in-app announcement to all Drivers/Users',
+    description:
+      'Sends bulk push notifications and creates in-app announcements for all DRIVERS, all USERS, or ALL audiences, with optional company filter.',
+  })
+  broadcast(@Req() req: any, @Body() dto: BroadcastNotificationDto) {
+    return this.notificationService.broadcastNotification(req.user, dto);
+  }
+
+  @Get('/broadcasts')
+  @ApiOperation({
+    summary: 'Get past broadcast communication history',
+    description:
+      'Returns paginated list of all announcements and bulk push messages sent by Admins / Dispatchers.',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  getBroadcastHistory(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.notificationService.getBroadcastHistory(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+    );
   }
 }
