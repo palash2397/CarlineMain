@@ -44,4 +44,21 @@ export class RideSchedulerService {
       );
     }
   }
+
+  // Midnight reset job (raat ke 12:00 baje UK time) to reset driver today working hours / online stats to 0
+  @Cron('0 0 * * *', {
+    name: 'midnightDriverReset',
+    timeZone: process.env.APP_TIMEZONE || 'Europe/London',
+  })
+  async resetDailyDriverOnlineStats() {
+    try {
+      await this.rideService.resetDailyDriverOnlineStats();
+      this.logger.log('Daily driver online stats reset successfully at midnight UK time (12:00 AM Europe/London)');
+    } catch (error) {
+      this.logger.error(
+        `Error while resetting driver daily online stats at midnight: ${String(error)}`,
+      );
+    }
+  }
 }
+
