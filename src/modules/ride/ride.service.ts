@@ -2662,6 +2662,25 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
 
       const now = new Date();
+      const { dayKey, todayStart } = this.getLocalDayBounds(now);
+
+      // Auto-reset driver today online hours when midnight has passed
+      if (driver.onlineStatsDate !== dayKey) {
+        driver.onlineStatsDate = dayKey;
+        driver.onlineStatsSeconds = 0;
+        if (
+          driver.isOnline &&
+          driver.onlineSince &&
+          new Date(driver.onlineSince).getTime() < todayStart.getTime()
+        ) {
+          driver.onlineSince = todayStart;
+        }
+        await driver
+          .save()
+          .catch((err) =>
+            console.error('Error auto-syncing driver stats date on dashboard:', err),
+          );
+      }
 
       const [vehicleType, runningRide, stats, today] = await Promise.all([
         this.vehicleTypeForDriver(driver),
@@ -4248,8 +4267,59 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   // ==========================================================
   // Duty time of the running day (dashboard online hours)
   // ==========================================================
+  // Resolves the day key (YYYY-MM-DD), today's midnight start Date, and yesterday's start Date
+  // in the target timezone (UK Europe/London by default or configured via APP_TIMEZONE).
+  private getLocalDayBounds(date: Date = new Date()) {
+    const tz = process.env.APP_TIMEZONE || 'Europe/London';
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const dayKey = formatter.format(date); // 'YYYY-MM-DD'
+
+      const [year, month, day] = dayKey.split('-').map(Number);
+      const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+      const tzDateStr = utcDate.toLocaleString('en-US', {
+        timeZone: tz,
+        hour12: false,
+      });
+      const localMatch = tzDateStr.match(
+        /(\d+)\/(\d+)\/(\d+),\s+(\d+):(\d+):(\d+)/,
+      );
+
+      let todayStart: Date;
+      if (localMatch) {
+        const [, m, d, y, h, min, s] = localMatch.map(Number);
+        const renderedAsUtc = Date.UTC(y, m - 1, d, h, min, s);
+        const offsetMs = renderedAsUtc - utcDate.getTime();
+        todayStart = new Date(utcDate.getTime() - offsetMs);
+      } else {
+        todayStart = new Date(date);
+        todayStart.setHours(0, 0, 0, 0);
+      }
+
+      const yesterdayStart = new Date(todayStart.getTime() - DAY_IN_MS);
+
+      return { dayKey, todayStart, yesterdayStart };
+    } catch {
+      const month = `${date.getMonth() + 1}`.padStart(2, '0');
+      const day = `${date.getDate()}`.padStart(2, '0');
+      const dayKey = `${date.getFullYear()}-${month}-${day}`;
+
+      const todayStart = new Date(date);
+      todayStart.setHours(0, 0, 0, 0);
+      const yesterdayStart = new Date(todayStart.getTime() - DAY_IN_MS);
+
+      return { dayKey, todayStart, yesterdayStart };
+    }
+  }
+
   // Adds the still open duty session to the online seconds of the running day
-  // and closes it.
+  // and closes it. Clips to today's start so hours before midnight are not banked into today.
   private closeOnlineSession(driver: DriverDocument, at: Date = new Date()) {
     const startedAt = driver.onlineSince;
     driver.onlineSince = null;
@@ -4258,10 +4328,14 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const dayKey = this.localDateKey(at);
+    const { dayKey, todayStart } = this.getLocalDayBounds(at);
+    const effectiveStartedAt = Math.max(
+      new Date(startedAt).getTime(),
+      todayStart.getTime(),
+    );
     const sessionSeconds = Math.max(
       0,
-      Math.floor((at.getTime() - new Date(startedAt).getTime()) / 1000),
+      Math.floor((at.getTime() - effectiveStartedAt) / 1000),
     );
     const banked =
       driver.onlineStatsDate === dayKey ? driver.onlineStatsSeconds || 0 : 0;
@@ -4270,19 +4344,23 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     driver.onlineStatsSeconds = banked + sessionSeconds;
   }
 
+  // Calculates today's online seconds.
+  // At raat ke 12:00:00 (midnight), this evaluates to 0.
+  // If driver was online across midnight, only seconds since midnight (todayStart) are counted.
   private onlineSecondsToday(driver: DriverDocument, now: Date) {
-    const dayKey = this.localDateKey(now);
+    const { dayKey, todayStart } = this.getLocalDayBounds(now);
     const banked =
       driver.onlineStatsDate === dayKey ? driver.onlineStatsSeconds || 0 : 0;
-    const running =
-      driver.isOnline && driver.onlineSince
-        ? Math.max(
-            0,
-            Math.floor(
-              (now.getTime() - new Date(driver.onlineSince).getTime()) / 1000,
-            ),
-          )
-        : 0;
+
+    let running = 0;
+    if (driver.isOnline && driver.onlineSince) {
+      const since = new Date(driver.onlineSince).getTime();
+      const effectiveSince = Math.max(since, todayStart.getTime());
+      running = Math.max(
+        0,
+        Math.floor((now.getTime() - effectiveSince) / 1000),
+      );
+    }
 
     return banked + running;
   }
@@ -4293,13 +4371,47 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   }
 
+  // Called by midnight cron job to reset daily online stats for all drivers at 12:00 AM
+  async resetDailyDriverOnlineStats() {
+    try {
+      const now = new Date();
+      const { dayKey, todayStart } = this.getLocalDayBounds(now);
+
+      // 1. Reset all offline drivers to today's date with 0 seconds
+      await this.driverModel.updateMany(
+        { isOnline: { $ne: true } },
+        {
+          $set: {
+            onlineStatsDate: dayKey,
+            onlineStatsSeconds: 0,
+            onlineSince: null,
+          },
+        },
+      );
+
+      // 2. For drivers currently online at midnight:
+      // Reset today's banked stats to 0 and clip onlineSince to today's midnight (00:00:00)
+      // so their online timer for the new day starts cleanly from 0 seconds!
+      await this.driverModel.updateMany(
+        { isOnline: true },
+        {
+          $set: {
+            onlineStatsDate: dayKey,
+            onlineStatsSeconds: 0,
+            onlineSince: todayStart,
+          },
+        },
+      );
+    } catch (error) {
+      console.error('Error resetting daily driver online stats at midnight:', error);
+    }
+  }
+
   // ==========================================================
   // Today's analytics (earnings, trips and the earnings trend)
   // ==========================================================
   private async todayAnalytics(driverId: string, now: Date) {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const yesterdayStart = new Date(todayStart.getTime() - DAY_IN_MS);
+    const { todayStart, yesterdayStart, dayKey } = this.getLocalDayBounds(now);
 
     const rows = await this.rideModel.aggregate([
       {
@@ -4338,7 +4450,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     const trend = this.trendPercent(earnings, yesterdayEarnings);
 
     return {
-      date: this.localDateKey(now),
+      date: dayKey,
       earnings,
       earningsYesterday: yesterdayEarnings,
       earningsTrendPercent: trend.percent,
@@ -5056,10 +5168,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   // Day key (YYYY-MM-DD) of the running day, used by the dashboard cards which
   // follow the day of the driver and not the UTC day.
   private localDateKey(date: Date) {
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-
-    return `${date.getFullYear()}-${month}-${day}`;
+    return this.getLocalDayBounds(date).dayKey;
   }
 
   // ==========================================================
