@@ -26,6 +26,7 @@ import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
 import { CancelledBy } from 'src/common/enums/ride/cancelled-by.enum';
 import { SocketService } from '../socket/socket.service';
+import { NotificationService } from '../notification/notification.service';
 import { RIDE_EVENTS } from 'src/constants';
 
 @Injectable()
@@ -42,6 +43,7 @@ export class CompanyTripsService {
     @InjectModel(CompanyUser.name)
     private readonly companyUserModel: Model<CompanyUserDocument>,
     private readonly socketService: SocketService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getCompanyTrips(query: GetCompanyTripsQueryDto, user: any) {
@@ -1616,97 +1618,91 @@ export class CompanyTripsService {
         return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
       }
 
-      let targetCompany: any = await this.companyModel.findOne({ _id: user?.id || user?._id });
+      if (
+        ride.status === RideStatus.RIDE_COMPLETED ||
+        ride.status === RideStatus.RIDE_CANCELLED
+      ) {
+        return new ApiResponse(
+          400,
+          {},
+          `Cannot assign driver. Trip is already ${ride.status.toLowerCase().replace('_', ' ')}.`,
+        );
+      }
+
+      let targetCompany: any = await this.companyModel.findOne({
+        _id: user?.id || user?._id,
+      });
       if (!targetCompany) {
-        const compUser = await this.companyUserModel.findOne({ _id: user?.id || user?._id });
+        const compUser = await this.companyUserModel.findOne({
+          _id: user?.id || user?._id,
+        });
         if (compUser) {
           targetCompany = await this.companyModel.findOne({
-            $or: [{ _id: compUser.companyId }, { companyId: compUser.companyId }],
+            $or: [
+              { _id: compUser.companyId },
+              { companyId: compUser.companyId },
+            ],
           });
         }
       }
 
       const companyIds = targetCompany
-        ? [targetCompany._id.toString(), targetCompany.companyId].filter(Boolean)
+        ? [targetCompany._id.toString(), targetCompany.companyId].filter(
+            Boolean,
+          )
         : [ride.companyId].filter(Boolean);
 
-      let availableDriver: any = await this.driverModel.findOne({
-        companyId: { $in: companyIds },
-        status: { $in: [DriverStatus.ACTIVE, DriverStatus.ON_RIDE] },
-      } as any);
+      const blockedStatuses = [
+        DriverStatus.PENDING_APPROVAL,
+        DriverStatus.REJECTED,
+        DriverStatus.INACTIVE,
+      ];
 
+      let availableDriver: any = null;
+
+      // 1. Try online & available driver with matching vehicle type
+      if (ride.vehicleTypeId || ride.vehicleTypeName) {
+        availableDriver = await this.driverModel.findOne({
+          companyId: { $in: companyIds },
+          isOnline: true,
+          status: { $nin: [...blockedStatuses, DriverStatus.ON_RIDE] },
+          $or: [
+            ...(ride.vehicleTypeId ? [{ vehicleTypeId: ride.vehicleTypeId }] : []),
+            ...(ride.vehicleTypeName ? [{ vehicleType: ride.vehicleTypeName }] : []),
+          ],
+        } as any);
+      }
+
+      // 2. If not found, any online & available driver of the company
       if (!availableDriver) {
         availableDriver = await this.driverModel.findOne({
           companyId: { $in: companyIds },
-        });
+          isOnline: true,
+          status: { $nin: [...blockedStatuses, DriverStatus.ON_RIDE] },
+        } as any);
+      }
+
+      // 3. If still not found, any active driver of the company
+      if (!availableDriver) {
+        availableDriver = await this.driverModel.findOne({
+          companyId: { $in: companyIds },
+          status: DriverStatus.ACTIVE,
+        } as any);
       }
 
       if (!availableDriver) {
-        availableDriver = await this.driverModel.create({
-          fullName: 'Vikram Singh',
-          phoneNumber: '+919123456789',
-          email: 'vikram.driver@example.com',
-          companyId: companyIds[0] || '6aa904a815f2afcc842ee858',
-          vehicleType: 'Sedan',
-          vehicleRegistrationNumber: 'MP-09-AB-1234',
-          isActive: true,
-          status: DriverStatus.ACTIVE,
-        });
+        return new ApiResponse(
+          404,
+          {},
+          'No available active drivers found for this company to auto-assign.',
+        );
       }
 
-      const driverObj: any = availableDriver.toObject ? availableDriver.toObject() : availableDriver;
-
-      if (!availableDriver.isOnline || availableDriver.status === DriverStatus.PENDING_APPROVAL) {
-        availableDriver.isOnline = true;
-        availableDriver.status = DriverStatus.ACTIVE;
-        await availableDriver.save();
-      }
-
-      await this.rideModel.findByIdAndUpdate(
-        tripId,
-        {
-          driver: driverObj._id.toString(),
-          status: RideStatus.SEARCHING_DRIVER,
-        },
-        { new: true },
-      );
-
-      const autoEventPayload = {
-        event: RIDE_EVENTS.REQUEST,
-        rideId: tripId,
-        tripId: `TRP-${tripId.slice(-4).toUpperCase()}`,
-        status: RideStatus.SEARCHING_DRIVER,
-        driver: {
-          id: driverObj._id.toString(),
-          name: driverObj.fullName,
-          phone: driverObj.phoneNumber,
-          vehicleType: driverObj.vehicleType,
-          vehicleRegistrationNumber: driverObj.vehicleRegistrationNumber,
-        },
-        pickup: ride.pickup,
-        dropoff: ride.dropoff,
-        fare: ride.payableFare || ride.totalFare,
-      };
-
-      if (this.socketService) {
-        this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.REQUEST, autoEventPayload);
-      }
-
-      return new ApiResponse(
-        200,
-        {
-          tripId: `TRP-${ride._id.toString().slice(-4).toUpperCase()}`,
-          id: ride._id,
-          driver: {
-            id: driverObj._id,
-            name: driverObj.fullName,
-            phone: driverObj.phoneNumber,
-            vehicleType: driverObj.vehicleType,
-            vehicleRegistrationNumber: driverObj.vehicleRegistrationNumber,
-          },
-          status: 'REQUEST_SENT',
-        },
-        `Ride request sent to driver ${driverObj.fullName || 'Assigned'}. Awaiting driver acceptance.`,
+      return this.executeDirectDriverAssignment(
+        ride,
+        availableDriver,
+        user,
+        'Auto-assigned by Dispatcher',
       );
     } catch (error: any) {
       console.error('Error auto-assigning driver:', error);
@@ -1725,71 +1721,195 @@ export class CompanyTripsService {
         return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
       }
 
+      if (
+        ride.status === RideStatus.RIDE_COMPLETED ||
+        ride.status === RideStatus.RIDE_CANCELLED
+      ) {
+        return new ApiResponse(
+          400,
+          {},
+          `Cannot assign driver. Trip is already ${ride.status.toLowerCase().replace('_', ' ')}.`,
+        );
+      }
+
       const driverDoc = await this.driverModel.findById(driverId);
       if (!driverDoc) {
         return new ApiResponse(404, {}, 'Driver not found');
       }
 
-      const driverObj: any = driverDoc.toObject ? driverDoc.toObject() : driverDoc;
-
-      if (!driverDoc.isOnline || driverDoc.status === DriverStatus.PENDING_APPROVAL) {
-        driverDoc.isOnline = true;
-        driverDoc.status = DriverStatus.ACTIVE;
-        await driverDoc.save();
+      const blockedStatuses = [
+        DriverStatus.PENDING_APPROVAL,
+        DriverStatus.REJECTED,
+        DriverStatus.INACTIVE,
+      ];
+      if (blockedStatuses.includes(driverDoc.status as any)) {
+        return new ApiResponse(
+          400,
+          {},
+          `Cannot assign driver. Driver account is currently ${driverDoc.status.toLowerCase().replace('_', ' ')}.`,
+        );
       }
 
-      await this.rideModel.findByIdAndUpdate(
-        tripId,
-        {
-          driver: driverObj._id.toString(),
-          status: RideStatus.SEARCHING_DRIVER,
-        },
-        { new: true },
-      );
-
-      const eventPayload = {
-        event: RIDE_EVENTS.REQUEST,
-        rideId: tripId,
-        tripId: `TRP-${tripId.slice(-4).toUpperCase()}`,
-        status: RideStatus.SEARCHING_DRIVER,
-        driver: {
-          id: driverObj._id.toString(),
-          name: driverObj.fullName,
-          phone: driverObj.phoneNumber,
-          vehicleType: driverObj.vehicleType,
-          vehicleRegistrationNumber: driverObj.vehicleRegistrationNumber,
-        },
-        pickup: ride.pickup,
-        dropoff: ride.dropoff,
-        fare: ride.payableFare || ride.totalFare,
-      };
-
-      if (this.socketService) {
-        this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.REQUEST, eventPayload);
-        this.socketService.emitToUser(driverObj._id.toString(), RIDE_EVENTS.ASSIGNED, eventPayload);
-        this.socketService.emitToRide(tripId, RIDE_EVENTS.REQUEST, eventPayload);
-      }
-
-      return new ApiResponse(
-        200,
-        {
-          tripId: `TRP-${tripId.slice(-4).toUpperCase()}`,
-          id: tripId,
-          driver: {
-            id: driverObj._id,
-            name: driverObj.fullName,
-            phone: driverObj.phoneNumber,
-            vehicleType: driverObj.vehicleType,
-            vehicleRegistrationNumber: driverObj.vehicleRegistrationNumber,
-          },
-          status: 'REQUEST_SENT',
-        },
-        `Ride request sent to driver ${driverObj.fullName || 'Selected'}. Awaiting driver acceptance.`,
+      return this.executeDirectDriverAssignment(
+        ride,
+        driverDoc,
+        user,
+        'Manually assigned by Dispatcher',
       );
     } catch (error: any) {
       console.error('Error manually assigning driver:', error);
       return new ApiResponse(500, {}, error.message || Msg.SERVER_ERROR);
     }
+  }
+
+  // ==========================================================
+  // Direct Driver Assignment (Dispatcher Force Dispatch)
+  // ==========================================================
+  // Directly transitions the trip to DRIVER_ASSIGNED, marks the driver ON_RIDE,
+  // emits RIDE_EVENTS.ASSIGNED to the driver app (opening the active trip screen),
+  // emits RIDE_EVENTS.STATUS and RIDE_EVENTS.DRIVER to the ride room, and fires push notifications.
+  private async executeDirectDriverAssignment(
+    ride: RideDocument,
+    driverDoc: DriverDocument,
+    user: any,
+    assignmentMethod: string,
+  ) {
+    const tripId = String(ride._id);
+    const driverId = String(driverDoc._id);
+    const assignedAt = new Date();
+
+    // 1. Update driver state: mark online & on-ride
+    driverDoc.isOnline = true;
+    driverDoc.status = DriverStatus.ON_RIDE;
+    await driverDoc.save();
+
+    // 2. Update ride state: directly set DRIVER_ASSIGNED (no request countdown)
+    ride.driver = driverId;
+    ride.status = RideStatus.DRIVER_ASSIGNED;
+    ride.driverAssignedAt = assignedAt;
+    ride.candidateDriverId = null as any;
+    ride.requestExpiresAt = null as any;
+
+    if (!ride.timeline) {
+      ride.timeline = [];
+    }
+    ride.timeline.push({
+      event: 'DRIVER_ASSIGNED',
+      title: 'Driver Assigned',
+      description: `Driver ${driverDoc.fullName || 'Driver'} was ${assignmentMethod.toLowerCase()}`,
+      timestamp: assignedAt,
+      actor: String(user?.id || user?._id || 'DISPATCHER'),
+      location: ride.pickup,
+    });
+
+    await ride.save();
+
+    // 3. Join driver to the ride socket room
+    if (this.socketService) {
+      this.socketService.joinActorToRide(driverId, tripId);
+    }
+
+    // 4. Prepare rich payload for socket & push
+    const eventPayload = {
+      event: RIDE_EVENTS.ASSIGNED,
+      rideId: tripId,
+      tripId: `TRP-${tripId.slice(-4).toUpperCase()}`,
+      status: RideStatus.DRIVER_ASSIGNED,
+      driver: {
+        id: driverId,
+        name: driverDoc.fullName,
+        fullName: driverDoc.fullName,
+        phone: driverDoc.phoneNumber,
+        phoneNumber: driverDoc.phoneNumber,
+        vehicleType: driverDoc.vehicleType,
+        vehicleRegistrationNumber: driverDoc.vehicleRegistrationNumber,
+        rating: driverDoc.rating ?? 5,
+        avatar: driverDoc.avatar || null,
+      },
+      pickup: ride.pickup,
+      dropoff: ride.dropoff,
+      fare: ride.payableFare || ride.totalFare,
+      payableFare: ride.payableFare || ride.totalFare,
+      totalFare: ride.totalFare,
+      otp: ride.otp,
+      passengerCount: ride.passengerCount || 1,
+      paymentMethod: ride.paymentMethod,
+      notes: ride.notes || null,
+    };
+
+    // 5. Emit socket events
+    if (this.socketService) {
+      // Emit ASSIGNED to the driver so driver app opens active trip screen directly
+      this.socketService.emitToUser(
+        driverId,
+        RIDE_EVENTS.ASSIGNED,
+        eventPayload,
+      );
+      // Emit STATUS (DRIVER_ASSIGNED) to the entire ride room (passenger + dispatcher)
+      this.socketService.emitToRide(tripId, RIDE_EVENTS.STATUS, eventPayload);
+      // Emit DRIVER info to the ride room so rider map updates with driver details
+      this.socketService.emitToRide(tripId, RIDE_EVENTS.DRIVER, {
+        rideId: tripId,
+        driver: eventPayload.driver,
+      });
+    }
+
+    // 6. Push notifications (In-App + FCM Push)
+    if (this.notificationService) {
+      // To Driver:
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Trip Assigned by Dispatcher',
+            body: `You have been directly assigned to trip TRP-${tripId.slice(-4).toUpperCase()} from ${ride.pickup?.address || 'Pickup'} to ${ride.dropoff?.address || 'Destination'}.`,
+            data: { rideId: tripId, type: 'DRIVER_ASSIGNED' },
+            type: 'DRIVER_ASSIGNED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
+
+      // To Passenger / Rider:
+      if (ride.user) {
+        this.notificationService
+          .sendToUser(
+            String(ride.user),
+            {
+              title: 'Driver Assigned',
+              body: `${driverDoc.fullName || 'Your driver'} has been assigned to your ride.`,
+              data: {
+                rideId: tripId,
+                driverId,
+                type: 'DRIVER_ASSIGNED',
+              },
+              type: 'DRIVER_ASSIGNED',
+            },
+            'USER',
+          )
+          .catch(() => {});
+      }
+    }
+
+    // 7. Return clean ApiResponse
+    return new ApiResponse(
+      200,
+      {
+        id: tripId,
+        tripId: `TRP-${tripId.slice(-4).toUpperCase()}`,
+        status: RideStatus.DRIVER_ASSIGNED,
+        driver: {
+          id: driverId,
+          name: driverDoc.fullName,
+          fullName: driverDoc.fullName,
+          phone: driverDoc.phoneNumber,
+          vehicleType: driverDoc.vehicleType,
+          vehicleRegistrationNumber: driverDoc.vehicleRegistrationNumber,
+          rating: driverDoc.rating ?? 5,
+        },
+      },
+      `Driver ${driverDoc.fullName || 'Driver'} assigned to trip successfully.`,
+    );
   }
 
   async cancelCompanyTrip(tripId: string, cancelReason: string | undefined, user: any) {

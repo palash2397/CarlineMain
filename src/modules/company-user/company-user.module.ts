@@ -15,7 +15,7 @@ import { Ride, RideSchema } from '../ride/schema/ride.schema';
 import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 import { Customer, CustomerSchema } from '../customer/schema/customer.schema';
 import { MailModule } from '../mail/mail.module';
-
+import { NotificationModule } from '../notification/notification.module';
 import { RideModule } from '../ride/ride.module';
 
 @Module({
@@ -30,6 +30,7 @@ import { RideModule } from '../ride/ride.module';
     ]),
     MailModule,
     RideModule,
+    NotificationModule,
   ],
   controllers: [
     CompanyUserController,

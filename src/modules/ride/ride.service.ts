@@ -4268,9 +4268,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   // Duty time of the running day (dashboard online hours)
   // ==========================================================
   // Resolves the day key (YYYY-MM-DD), today's midnight start Date, and yesterday's start Date
-  // in the target timezone (UK Europe/London by default or configured via APP_TIMEZONE).
+  // in the target timezone (US America/New_York by default or configured via APP_TIMEZONE).
   private getLocalDayBounds(date: Date = new Date()) {
-    const tz = process.env.APP_TIMEZONE || 'Europe/London';
+    const tz = process.env.APP_TIMEZONE || 'America/New_York';
     try {
       const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: tz,

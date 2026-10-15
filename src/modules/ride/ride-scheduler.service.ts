@@ -45,15 +45,15 @@ export class RideSchedulerService {
     }
   }
 
-  // Midnight reset job (raat ke 12:00 baje UK time) to reset driver today working hours / online stats to 0
+  // Midnight reset job (raat ke 12:00 baje US Eastern time) to reset driver today working hours / online stats to 0
   @Cron('0 0 * * *', {
     name: 'midnightDriverReset',
-    timeZone: process.env.APP_TIMEZONE || 'Europe/London',
+    timeZone: process.env.APP_TIMEZONE || 'America/New_York',
   })
   async resetDailyDriverOnlineStats() {
     try {
       await this.rideService.resetDailyDriverOnlineStats();
-      this.logger.log('Daily driver online stats reset successfully at midnight UK time (12:00 AM Europe/London)');
+      this.logger.log('Daily driver online stats reset successfully at midnight US Eastern time (12:00 AM America/New_York)');
     } catch (error) {
       this.logger.error(
         `Error while resetting driver daily online stats at midnight: ${String(error)}`,
@@ -61,4 +61,5 @@ export class RideSchedulerService {
     }
   }
 }
+
 
