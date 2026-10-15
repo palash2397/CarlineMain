@@ -16,6 +16,7 @@ import { Server, Socket } from 'socket.io';
 import { SocketService } from './socket.service';
 import { RideService } from '../ride/ride.service';
 import { ChatService } from '../chat/chat.service';
+import { NotificationService } from '../notification/notification.service';
 import { DriverLocationDto } from '../ride/dto/driver-location.dto';
 
 @WebSocketGateway({
@@ -37,6 +38,8 @@ export class SocketGateway
     private readonly rideService: RideService,
     @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
+    @Inject(forwardRef(() => NotificationService))
+    private readonly notificationService: NotificationService,
   ) {}
 
   afterInit(server: Server) {
@@ -127,6 +130,13 @@ export class SocketGateway
     }
 
     console.log(`Socket connected: ${user.id}`);
+
+    // Push initial unread notification count to user on connect
+    try {
+      await this.notificationService.emitUnreadCount(user.id);
+    } catch (e) {
+      // Ignore initial socket count push error
+    }
   }
 
   handleDisconnect(client: Socket) {
@@ -262,5 +272,39 @@ export class SocketGateway
     const user = client.data.user;
     if (!user?.id || !data?.rideId) return;
     return this.chatService.markAsRead(user.id, data.rideId);
+  }
+
+  // ==========================================================
+  // Notification Socket Listeners
+  // ==========================================================
+  @SubscribeMessage('notification:getCount')
+  async handleGetNotificationCount(@ConnectedSocket() client: Socket) {
+    const user = client.data.user;
+    if (!user?.id) {
+      return { success: false, unreadCount: 0 };
+    }
+    const unreadCount = await this.notificationService.emitUnreadCount(user.id);
+    return { success: true, unreadCount };
+  }
+
+  @SubscribeMessage('notification:read')
+  async handleNotificationRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { notificationId: string },
+  ) {
+    const user = client.data.user;
+    if (!user?.id || !data?.notificationId) {
+      return { success: false, message: 'Notification ID is required' };
+    }
+    return this.notificationService.markAsRead(user.id, data.notificationId);
+  }
+
+  @SubscribeMessage('notification:readAll')
+  async handleNotificationReadAll(@ConnectedSocket() client: Socket) {
+    const user = client.data.user;
+    if (!user?.id) {
+      return { success: false, message: 'Unauthorized' };
+    }
+    return this.notificationService.markAllAsRead(user.id);
   }
 }
