@@ -159,6 +159,8 @@ export class NotificationService implements OnModuleInit {
           'notification:new',
           notificationDoc.toObject ? notificationDoc.toObject() : notificationDoc,
         );
+        // Realtime unread count update
+        await this.emitUnreadCount(targetUserId);
       } catch (err: any) {
         this.logger.warn(`Failed to emit socket notification to ${targetUserId}: ${err.message}`);
       }
@@ -326,6 +328,28 @@ export class NotificationService implements OnModuleInit {
   }
 
   /**
+   * Recalculate and emit real-time unread notification count via socket to a user
+   */
+  async emitUnreadCount(userId: string): Promise<number> {
+    try {
+      if (!userId) return 0;
+      const unreadCount = await this.notificationModel.countDocuments({
+        user: String(userId),
+        isRead: false,
+      });
+
+      this.socketService.emitToUser(String(userId), 'notification:count', {
+        unreadCount,
+      });
+
+      return unreadCount;
+    } catch (err: any) {
+      this.logger.warn(`Failed to emit notification:count to ${userId}: ${err.message}`);
+      return 0;
+    }
+  }
+
+  /**
    * Unread notifications count
    */
   async getUnreadCount(userId: string) {
@@ -356,7 +380,10 @@ export class NotificationService implements OnModuleInit {
         return new ApiResponse(404, {}, 'Notification not found');
       }
 
-      return new ApiResponse(200, notification, 'Notification marked as read');
+      // Realtime socket count update
+      const unreadCount = await this.emitUnreadCount(userId);
+
+      return new ApiResponse(200, { notification, unreadCount }, 'Notification marked as read');
     } catch (error: any) {
       this.logger.error('Error marking notification as read:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
@@ -373,7 +400,12 @@ export class NotificationService implements OnModuleInit {
         { $set: { isRead: true, readAt: new Date() } },
       );
 
-      return new ApiResponse(200, {}, 'All notifications marked as read');
+      // Realtime socket count update (all are read, count = 0)
+      this.socketService.emitToUser(String(userId), 'notification:count', {
+        unreadCount: 0,
+      });
+
+      return new ApiResponse(200, { unreadCount: 0 }, 'All notifications marked as read');
     } catch (error: any) {
       this.logger.error('Error marking all notifications as read:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);

@@ -8,6 +8,7 @@ import { SocketService } from './socket.service';
 import { User, UserSchema } from '../user/schema/user.schema';
 import { RideModule } from '../ride/ride.module';
 import { ChatModule } from '../chat/chat.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Global()
 @Module({
@@ -23,6 +24,7 @@ import { ChatModule } from '../chat/chat.module';
     ]),
     RideModule,
     forwardRef(() => ChatModule),
+    forwardRef(() => NotificationModule),
   ],
   providers: [SocketGateway, SocketService],
   exports: [SocketService],
