@@ -498,7 +498,7 @@ export class RideController {
   }
 
   @Post('driver-ride/collect-payment')
-  @ApiTags(DRIVER_TAG)
+  @ApiTags('Driver Payment', DRIVER_TAG)
   @Roles(UserRole.DRIVER)
   @ApiOperation({
     summary: 'Collect payment on the fare screen (marks cash rides as PAID)',
@@ -543,7 +543,7 @@ export class RideController {
   }
 
   @Get('driver-ride/earnings')
-  @ApiTags(DRIVER_TAG)
+  @ApiTags('Driver Payment', DRIVER_TAG)
   @Roles(UserRole.DRIVER)
   @ApiOperation({
     summary: 'Earnings tab - today, week, month and daily earning breakdown',

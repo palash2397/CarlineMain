@@ -52,6 +52,19 @@ export class Customer {
 
   @Prop()
   cardBrand: string;
+
+  @Prop()
+  defaultPayMethodKey: string;
+
+  @Prop({ type: Array, default: [] })
+  savedCards: Array<{
+    payMethodKey: string;
+    cardLast4: string;
+    cardBrand: string;
+    cardExpiration?: string;
+    isDefault?: boolean;
+    createdAt?: Date;
+  }>;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);

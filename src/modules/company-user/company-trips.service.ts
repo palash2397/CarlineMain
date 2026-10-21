@@ -423,6 +423,11 @@ export class CompanyTripsService {
           fare: {
             payableFare: ride.payableFare,
             totalFare: ride.totalFare,
+            driverEarnings: (ride as any).driverEarnings ?? null,
+            companyEarnings: (ride as any).companyEarnings ?? null,
+            companyCommissionAmount: (ride as any).companyCommissionAmount ?? null,
+            superAdminCommissionAmount: (ride as any).superAdminCommissionAmount ?? null,
+            commissionBreakdown: (ride as any).commissionBreakdown ?? null,
             discount: ride.discount,
             promoCode: ride.promoCode,
             currency: '$',

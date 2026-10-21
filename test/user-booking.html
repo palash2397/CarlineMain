@@ -59,17 +59,17 @@
       <section>
         <h2>1. Config &amp; Login token</h2>
         <label>API base</label>
-        <input id="apiBase" value="https://node.aitechnotech.in/carlinee/api/v1" />
+        <input id="apiBase" value="http://localhost:4016/api/v1" />
         <label>Socket base</label>
-        <input id="socketBase" value="https://node.aitechnotech.in" />
+        <input id="socketBase" value="http://localhost:4016" />
         <label>Socket path</label>
-        <input id="socketPath" value="/carlinee/viamo/socket.io" />
+        <input id="socketPath" value="/viamo/socket.io" />
         <div class="btns">
           <button class="ghost" onclick="useTarget('local')">Use LOCAL (4016)</button>
           <button class="ghost" onclick="useTarget('live')">Use LIVE (carlinee)</button>
         </div>
         <label>User token (passenger JWT, auto filled)</label>
-        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYWQ0MjA2ZTRhOTRlOGIxNTZlMTgwZCIsInJvbGVzIjoiVVNFUiIsImNvbXBhbnlJZCI6bnVsbCwiaWF0IjoxNzg5OTg4Njc0LCJleHAiOjE3OTI1ODA2NzR9.MXGIzFz8VQCcFEoQfZwuYWHwe4PCuyx7Re_qs95rNnU</textarea>
+        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYWQ0MjA2ZTRhOTRlOGIxNTZlMTgwZCIsInJvbGVzIjoiVVNFUiIsImVtYWlsIjoidGVzdC51c2VyQGNhcmxpbmUuY29tIiwiY29tcGFueUlkIjpudWxsLCJpYXQiOjE3OTI1ODE2NTIsImV4cCI6MTgyNDExNzY1Mn0.npfhLg2fogdnyUqCgV7bUKWAmBL6E562W1p_QlZAuyg</textarea>
         <div class="btns">
           <button class="green" onclick="connectSocket()">Connect socket</button>
           <button class="ghost" onclick="disconnectSocket()">Disconnect</button>
@@ -119,7 +119,7 @@
           <div><label>Ride type</label><select id="rideType" onchange="updateDispatchHint()"><option>INSTANT</option><option>SCHEDULED</option></select></div>
           <div><label>Scheduled at (ISO)</label><input id="scheduledAt" value="2026-10-01T10:30:00.000Z" oninput="updateDispatchHint()" /></div>
           <div><label>Passenger count</label><input id="passengerCount" value="2" /></div>
-          <div><label>Payment method</label><select id="paymentMethod"><option>CASH</option><option>CARD</option><option>WALLET</option></select></div>
+          <div><label>Payment method</label><select id="paymentMethod"><option value="CARD" selected>CARD (USAePay)</option><option value="CASH">CASH</option><option value="WALLET">WALLET</option></select></div>
         </div>
         <label>Scheduled presets (scheduledAt = now + X)</label>
         <div class="btns">
@@ -210,6 +210,105 @@
           </table>
         </div>
         <div class="note">Socket event <code>notification:new</code> aate hi yahan live toast alert pop up hoga aur Unread Badge auto-update hoga!</div>
+      </section>
+
+      <!-- 5C. USAePay Payment Gateway & Saved Cards -->
+      <section style="grid-column: 1 / -1; border-color: #059669;">
+        <h2 style="color: #34d399;">💳 5C. USAePay Payment Gateway &amp; Saved Cards (Tokenize, Charge &amp; Commission)</h2>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <!-- Left: Card Management -->
+          <div style="background: #0f1c29; border: 1px solid #1e3a4b; border-radius: 8px; padding: 12px;">
+            <h3 style="margin: 0 0 8px; font-size: 13px; color: #6ee7b7;">A. Saved Cards (USAePay Vault Tokenization)</h3>
+            <div class="row">
+              <div style="flex: 2 1 180px;"><label>Card number</label><input id="cardNum" value="4000100011112224" placeholder="Card number" /></div>
+              <div><label>Exp (MMYY)</label><input id="cardExp" value="1228" placeholder="MMYY" /></div>
+              <div><label>CVV</label><input id="cardCvv" value="123" placeholder="123" /></div>
+            </div>
+            <div class="row" style="margin-top: 6px;">
+              <div><label>Billing name</label><input id="cardName" value="John Doe" /></div>
+              <div><label>ZIP code</label><input id="cardZip" value="94105" /></div>
+            </div>
+            <div class="btns">
+              <button style="background: #059669;" onclick="addCard()">Tokenize &amp; Add Card</button>
+              <button class="ghost" onclick="listCards()">Refresh Saved Cards</button>
+              <button class="ghost" onclick="fillTestCard('visa')">Visa Preset</button>
+              <button class="ghost" onclick="fillTestCard('master')">Mastercard Preset</button>
+            </div>
+            <div style="margin-top: 10px;">
+              <table id="cardsTable">
+                <thead>
+                  <tr><th>Brand</th><th>Last 4</th><th>Pay Method Key</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="4" style="color: #64748b; text-align: center; padding: 8px;">Click "Refresh Saved Cards" to load</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Right: Charge Ride Payment -->
+          <div style="background: #0f1c29; border: 1px solid #1e3a4b; border-radius: 8px; padding: 12px;">
+            <h3 style="margin: 0 0 8px; font-size: 13px; color: #6ee7b7;">B. Ride Payment &amp; Commission Snapshot</h3>
+            <div class="row">
+              <div style="flex: 2 1 180px;"><label>Ride ID (auto filled from book/active)</label><input id="payRideId" value="" placeholder="Enter or select rideId" /></div>
+              <div><label>Payment Method</label>
+                <select id="payMethodChoice" onchange="togglePayMethodKey()">
+                  <option value="CARD">CARD (USAePay)</option>
+                  <option value="CASH">CASH (Collect directly)</option>
+                </select>
+              </div>
+            </div>
+            <div id="payMethodKeyBox" style="margin-top: 6px;">
+              <label>Select Saved Card (PayMethodKey)</label>
+              <select id="savedCardSelect">
+                <option value="">Default saved card</option>
+              </select>
+            </div>
+            <div class="btns">
+              <button class="green" onclick="chargeRide()">Charge Ride Payment</button>
+              <button class="ghost" onclick="useCurrentRideForPayment()">Copy ID from section 5</button>
+            </div>
+
+            <!-- Commission Result Box -->
+            <div id="commissionBox" style="margin-top: 10px; background: #0b1420; border: 1px solid #20334d; border-radius: 6px; padding: 10px; display: none;">
+              <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;" id="commTitle">Payment Status: -</div>
+              <div id="commDetails" style="font-size: 12px; line-height: 1.6; color: #cbd5e1;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Refund and History Sub-row -->
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 14px; margin-top: 14px;">
+          <!-- Refund -->
+          <div style="background: #1a1625; border: 1px solid #3b2d54; border-radius: 8px; padding: 12px;">
+            <h3 style="margin: 0 0 8px; font-size: 13px; color: #c084fc;">C. Refund Transaction (USAePay Gateway)</h3>
+            <label>Transaction ID (auto filled from charge)</label>
+            <input id="refundTxId" placeholder="Transaction ID" />
+            <label>Refund amount (optional, blank = full refund)</label>
+            <input id="refundAmount" placeholder="e.g. 15.00" />
+            <div class="btns">
+              <button style="background: #9333ea;" onclick="refundTx()">Process Refund</button>
+            </div>
+            <div class="note">Only CARD transactions with status SUCCESS can be refunded. CASH cannot be refunded via gateway.</div>
+          </div>
+
+          <!-- Transaction History -->
+          <div style="background: #131a2c; border: 1px solid #253354; border-radius: 8px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h3 style="margin: 0; font-size: 13px; color: #60a5fa;">D. My Payment Transactions History</h3>
+              <button class="ghost" style="padding: 4px 10px; font-size: 12px;" onclick="loadTransactions()">Load History</button>
+            </div>
+            <table id="txTable">
+              <thead>
+                <tr><th>Time</th><th>Tx ID</th><th>Method</th><th>Amount</th><th>Status</th><th>Commission Info</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="7" style="color: #64748b; text-align: center; padding: 8px;">Click "Load History" to view</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section style="grid-column: 1 / -1">
@@ -307,7 +406,15 @@
 
       try {
         const saved = localStorage.getItem('carline.userToken');
-        if (saved) $('token').value = saved;
+        if (saved) {
+          const raw = saved.split('.')[1];
+          const p = raw ? JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/'))) : null;
+          if (p && p.exp && p.exp * 1000 > Date.now()) {
+            $('token').value = saved;
+          } else {
+            localStorage.removeItem('carline.userToken');
+          }
+        }
       } catch (e) {}
 
       function saveToken() {
@@ -377,6 +484,7 @@
         state.rideId = id;
         $('rideId').value = id || '';
         $('rideState').textContent = 'ride: ' + (status || '-');
+        if ($('payRideId') && id) $('payRideId').value = id;
       }
 
       function connectSocket() {
@@ -432,6 +540,15 @@
       function disconnectSocket() {
         if (state.socket) state.socket.disconnect();
         state.socket = null;
+      }
+
+      function useTarget(target) {
+        const local = target === 'local';
+        $('apiBase').value = local ? 'http://localhost:4016/api/v1' : 'https://node.aitechnotech.in/carlinee/api/v1';
+        $('socketBase').value = local ? 'http://localhost:4016' : 'https://node.aitechnotech.in';
+        $('socketPath').value = local ? '/viamo/socket.io' : '/carlinee/viamo/socket.io';
+        log('ev', 'target set: ' + (local ? 'LOCAL (4016)' : 'LIVE (carlinee)'), { apiBase: $('apiBase').value, socketBase: $('socketBase').value, socketPath: $('socketPath').value });
+        if (state.socket) log('ev', 'socket already connected - Disconnect + Connect again to apply the new target');
       }
 
       function joinRideRoom() {
@@ -984,8 +1101,213 @@
         tbody.insertBefore(tr, tbody.firstChild);
       }
 
-      // Initial badge load
-      setTimeout(() => fetchUnreadCount(true), 800);
+      // ============================================================
+      // 5C. USAePay Payment Gateway & Saved Cards Logic
+      // ============================================================
+      function fillTestCard(type) {
+        if (type === 'visa') {
+          $('cardNum').value = '4000100011112224';
+          $('cardExp').value = '1228';
+          $('cardCvv').value = '123';
+          $('cardName').value = 'Visa Test User';
+          $('cardZip').value = '94105';
+        } else if (type === 'master') {
+          $('cardNum').value = '5454545454545454';
+          $('cardExp').value = '0829';
+          $('cardCvv').value = '456';
+          $('cardName').value = 'Master Test User';
+          $('cardZip').value = '10001';
+        }
+        log('ev', 'Filled test card: ' + type);
+      }
+
+      async function addCard() {
+        const payload = {
+          cardNumber: $('cardNum').value.trim(),
+          cardExpiration: $('cardExp').value.trim(),
+          cardCode: $('cardCvv').value.trim(),
+          billingName: $('cardName').value.trim(),
+          billingZip: $('cardZip').value.trim(),
+          billingAddress: '123 Market St',
+          billingCity: 'San Francisco',
+          billingState: 'CA',
+          billingCountry: 'US',
+        };
+        const res = await api('/payment/card/add', 'POST', payload);
+        if (res && res.statusCode === 200) {
+          log('ev', 'Card successfully added to USAePay vault!', res.data);
+          listCards();
+        }
+      }
+
+      async function listCards() {
+        const res = await api('/payment/card/list', 'GET');
+        const tbody = $('cardsTable').querySelector('tbody');
+        tbody.innerHTML = '';
+        const select = $('savedCardSelect');
+        select.innerHTML = '<option value="">Default saved card</option>';
+
+        const cards = (res && res.data && res.data.cards) ? res.data.cards : [];
+        if (!cards.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="color: #64748b; text-align: center; padding: 8px;">No saved cards found in vault</td></tr>';
+          return;
+        }
+
+        cards.forEach((c) => {
+          const opt = document.createElement('option');
+          opt.value = c.payMethodKey;
+          opt.textContent = (c.cardBrand || 'Card') + ' •••• ' + c.cardLast4 + ' (' + c.payMethodKey + ')';
+          select.appendChild(opt);
+
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td><b>' + (c.cardBrand || 'Card') + '</b></td>' +
+            '<td>•••• ' + c.cardLast4 + '</td>' +
+            '<td><code style="color: #7ee2b8;">' + c.payMethodKey + '</code></td>' +
+            '<td><button class="red" style="padding: 3px 8px; font-size: 11px;" onclick="deleteCard(\'' + c.payMethodKey + '\')">Delete</button></td>';
+          tbody.appendChild(tr);
+        });
+
+        if (select.children.length > 1) {
+          select.selectedIndex = 1;
+        }
+      }
+
+      async function deleteCard(key) {
+        if (!confirm('Are you sure you want to delete this saved card?')) return;
+        const res = await api('/payment/card/' + encodeURIComponent(key), 'DELETE');
+        if (res && res.statusCode === 200) {
+          log('ev', 'Card deleted: ' + key);
+          listCards();
+        }
+      }
+
+      function togglePayMethodKey() {
+        const method = $('payMethodChoice').value;
+        $('payMethodKeyBox').style.display = method === 'CARD' ? 'block' : 'none';
+      }
+
+      function useCurrentRideForPayment() {
+        const rId = $('rideId').value.trim();
+        if (rId) {
+          $('payRideId').value = rId;
+          log('ev', 'Copied rideId to payment: ' + rId);
+        } else {
+          log('err', 'No rideId in Section 5 to copy');
+        }
+      }
+
+      async function chargeRide() {
+        const rideId = $('payRideId').value.trim() || $('rideId').value.trim();
+        if (!rideId) {
+          alert('Please enter or select a Ride ID first!');
+          return;
+        }
+        const method = $('payMethodChoice').value;
+        const payMethodKey = $('savedCardSelect').value || undefined;
+
+        if (method === 'CARD' && !payMethodKey) {
+          const select = $('savedCardSelect');
+          if (!select || select.options.length <= 1) {
+            log('err', '⚠️ No saved card found! Pehle left side se "Tokenize & Add Card" click karke card add karein.');
+          }
+        }
+
+        const payload = { rideId, payMethodKey, paymentMethod: method };
+        const res = await api('/payment/ride/charge', 'POST', payload);
+
+        const box = $('commissionBox');
+        box.style.display = 'block';
+
+        if (res && res.statusCode === 200) {
+          const d = res.data || {};
+          $('commTitle').innerHTML = '✅ Payment SUCCESS (' + method + ')';
+          $('commTitle').style.color = '#34d399';
+
+          if (d.transactionId) $('refundTxId').value = d.transactionId;
+
+          // Fetch full ride details to show detailed commission breakdown
+          const rideRes = await api('/ride/' + rideId, 'GET', undefined, true);
+          const r = rideRes?.data || {};
+          // Extract commission snapshot from charge response or ride
+          const snap = d.commissionSnapshot || r.commissionBreakdown || {};
+          const driverEarn = (snap.driverEarnings && snap.driverEarnings > 0) ? snap.driverEarnings : (r.driverEarnings || snap.driverPayout || 0);
+          const compComm = (snap.companyCommissionAmount && snap.companyCommissionAmount > 0) ? snap.companyCommissionAmount : (r.companyCommissionAmount || snap.companyCommission?.amount || 0);
+          const adminComm = (snap.superAdminCommissionAmount && snap.superAdminCommissionAmount > 0) ? snap.superAdminCommissionAmount : (r.superAdminCommissionAmount || snap.superAdminCommission?.amount || 0);
+          const platEarn = (snap.platformEarnings && snap.platformEarnings > 0) ? snap.platformEarnings : adminComm;
+
+          $('commDetails').innerHTML =
+            '<div><b>Transaction ID:</b> <code>' + (d.transactionId || '-') + '</code> | <b>Auth Code:</b> ' + (d.authCode || 'CASH-AUTO') + '</div>' +
+            '<div><b>Total Fare Charged:</b> <span class="big" style="font-size:15px; color:#ffd479;">$' + Number(d.amount || r.totalFare || 0).toFixed(2) + '</span></div>' +
+            '<hr style="border: 0; border-top: 1px solid #20334d; margin: 8px 0;" />' +
+            '<div style="font-weight: 600; color: #93c5fd; margin-bottom: 4px;">📊 Commission &amp; Earnings Breakdown:</div>' +
+            '<div>🚕 <b>Driver Payout:</b> <span style="color:#6ee7b7; font-weight:600;">$' + Number(driverEarn).toFixed(2) + '</span></div>' +
+            '<div>🏢 <b>Company Commission:</b> <span style="color:#cbd5e1;">$' + Number(compComm).toFixed(2) + '</span></div>' +
+            '<div>👑 <b>Super Admin Commission:</b> <span style="color:#f472b6;">$' + Number(adminComm).toFixed(2) + '</span></div>' +
+            '<div>🌐 <b>Platform Net Earnings:</b> <span style="color:#a78bfa;">$' + Number(platEarn).toFixed(2) + '</span></div>';
+          loadTransactions();
+        } else {
+          $('commTitle').innerHTML = '❌ Payment FAILED';
+          $('commTitle').style.color = '#f87171';
+          $('commDetails').innerHTML = '<span style="color: #fca5a5;">' + (res?.message || 'Charge failed') + '</span>';
+        }
+      }
+
+      async function refundTx() {
+        const transactionId = $('refundTxId').value.trim();
+        if (!transactionId) {
+          alert('Please enter a Transaction ID to refund');
+          return;
+        }
+        const amountVal = $('refundAmount').value.trim();
+        const payload = {
+          transactionId,
+          amount: amountVal ? Number(amountVal) : undefined,
+        };
+
+        const res = await api('/payment/refund', 'POST', payload);
+        if (res && res.statusCode === 200) {
+          log('ev', 'Refund processed successfully!', res.data);
+          loadTransactions();
+        }
+      }
+
+      async function loadTransactions() {
+        const res = await api('/payment/transactions?page=1&limit=10', 'GET');
+        const tbody = $('txTable').querySelector('tbody');
+        tbody.innerHTML = '';
+
+        const items = res?.data?.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="color: #64748b; text-align: center; padding: 8px;">No transaction records found</td></tr>';
+          return;
+        }
+
+        items.forEach((tx) => {
+          const tr = document.createElement('tr');
+          const time = tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+          const isSuccess = tx.status === 'SUCCESS';
+          const statusCls = isSuccess ? 'ok' : tx.status === 'REFUNDED' ? 'pill' : 'err';
+          const comm = tx.commissionSnapshot || {};
+
+          tr.innerHTML =
+            '<td>' + time + '</td>' +
+            '<td><code style="color: #93c5fd;">' + tx.transactionId.slice(-6) + '</code></td>' +
+            '<td><span class="pill">' + tx.paymentMethod + '</span></td>' +
+            '<td><b>$' + Number(tx.amount || 0).toFixed(2) + '</b></td>' +
+            '<td><span class="pill ' + statusCls + '">' + tx.status + '</span></td>' +
+            '<td style="font-size: 11px; color: #94a3b8;">Driver: $' + Number(comm.driverEarnings || 0).toFixed(2) + ' | Platform: $' + Number(comm.platformEarnings || 0).toFixed(2) + '</td>' +
+            '<td><button class="ghost" style="padding: 2px 6px; font-size: 11px;" onclick="$(\'refundTxId\').value=\'' + tx.transactionId + '\'">Use for Refund</button></td>';
+          tbody.appendChild(tr);
+        });
+      }
+
+      // Initial badge load, saved cards & socket
+      setTimeout(() => {
+        connectSocket();
+        fetchUnreadCount(true);
+        listCards();
+      }, 500);
     </script>
   </body>
 </html>

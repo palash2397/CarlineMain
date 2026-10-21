@@ -21,6 +21,7 @@ import { RideModule } from './modules/ride/ride.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { LegalModule } from './modules/legal/legal.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     DashboardModule,
     LegalModule,
     NotificationModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [],

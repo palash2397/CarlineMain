@@ -16,6 +16,7 @@ import { UpdateCompanyUserDto } from './dto/update-company-user.dto';
 import { UpdateCompanyUserStatusDto } from './dto/update-company-user-status.dto';
 import { GetCompanyUsersQueryDto } from './dto/get-company-users-query.dto';
 import { StatusEnum } from 'src/common/enums/general/status-enum';
+import { UpdateDriverCommissionDto } from 'src/common/dto/commission.dto';
 
 @Injectable()
 export class CompanyUserService {
@@ -502,6 +503,96 @@ export class CompanyUserService {
       return new ApiResponse(200, {}, Msg.COMPANY_USER_DELETED);
     } catch (error) {
       console.error('Error deleting company user:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async getMyCompanyCommission(currentUser: any) {
+    try {
+      const companyId = await this.resolveCompanyId(currentUser);
+      if (!companyId) {
+        return new ApiResponse(400, {}, Msg.COMPANY_CONTEXT_REQUIRED);
+      }
+
+      const conditions: any[] = [
+        { companyId },
+        { companyCode: String(companyId).toUpperCase() },
+      ];
+      if (isValidObjectId(companyId)) {
+        conditions.unshift({ _id: companyId });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
+      if (!company) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          companyId: company.companyId,
+          companyName: company.displayName || company.legalName,
+          superAdminCommission: company.superAdminCommission || {
+            type: 'PERCENTAGE',
+            value: 5,
+            isEnabled: true,
+          },
+          defaultDriverCommission: company.defaultDriverCommission || {
+            type: 'PERCENTAGE',
+            value: 15,
+            isEnabled: true,
+          },
+        },
+        'Company commission settings retrieved successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching company commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateMyCompanyDefaultDriverCommission(
+    dto: UpdateDriverCommissionDto,
+    currentUser: any,
+  ) {
+    try {
+      const companyId = await this.resolveCompanyId(currentUser);
+      if (!companyId) {
+        return new ApiResponse(400, {}, Msg.COMPANY_CONTEXT_REQUIRED);
+      }
+
+      const conditions: any[] = [
+        { companyId },
+        { companyCode: String(companyId).toUpperCase() },
+      ];
+      if (isValidObjectId(companyId)) {
+        conditions.unshift({ _id: companyId });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
+      if (!company) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      company.defaultDriverCommission = {
+        type: dto.type,
+        value: Number(dto.value),
+        isEnabled: dto.isEnabled ?? true,
+      };
+
+      await company.save();
+
+      return new ApiResponse(
+        200,
+        {
+          companyId: company.companyId,
+          companyName: company.displayName || company.legalName,
+          defaultDriverCommission: company.defaultDriverCommission,
+        },
+        'Default driver commission updated successfully',
+      );
+    } catch (error) {
+      console.error('Error updating default driver commission:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }

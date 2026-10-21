@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CompanyUserController } from './company-user.controller';
+import { CompanyCommissionController } from './company-commission.controller';
 import { CompanyUserService } from './company-user.service';
 import { CompanyTripsController } from './company-trips.controller';
 import { CompanyTripsService } from './company-trips.service';
@@ -34,6 +35,7 @@ import { RideModule } from '../ride/ride.module';
   ],
   controllers: [
     CompanyUserController,
+    CompanyCommissionController,
     CompanyTripsController,
     DispatcherTripsController,
     CompanyCustomersController,

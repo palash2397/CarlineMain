@@ -22,6 +22,7 @@ import { getDriverRejectionEmailTemplate } from '../mail/template/driver-rejecti
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { UpdateDriverVehicleTypeDto } from './dto/update-driver-vehicle-type.dto';
+import { UpdateDriverCommissionDto } from 'src/common/dto/commission.dto';
 import { CompanyStatus } from 'src/common/enums/companies/status-enum';
 import { VehicleTypeService } from '../vehicle-type/vehicle-type.service';
 
@@ -820,6 +821,191 @@ export class DriverService {
       return this.vehicleTypeService.getActiveVehicleTypes();
     } catch (error) {
       console.error('Error while fetching vehicle types for driver:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  private validateDriverAccess(driver: any, callerUser?: any): ApiResponse | null {
+    if (!callerUser) return null;
+    const isSuperAdmin =
+      callerUser.role === UserRole.SUPERADMIN ||
+      callerUser.role === UserRole.ADMIN;
+    if (isSuperAdmin) {
+      return null;
+    }
+
+    if (!driver.companyId) {
+      return new ApiResponse(
+        403,
+        {},
+        'This driver is an independent driver managed directly by Superadmin. Company users cannot modify independent drivers.',
+      );
+    }
+
+    const callerCompanyId = callerUser.companyId;
+    if (callerCompanyId && String(driver.companyId) !== String(callerCompanyId)) {
+      return new ApiResponse(
+        403,
+        {},
+        'Unauthorized: Driver does not belong to your company.',
+      );
+    }
+
+    return null;
+  }
+
+  async getDriverCommission(driverId: string, callerUser?: any) {
+    try {
+      if (!isValidObjectId(driverId)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      const authError = this.validateDriverAccess(driver, callerUser);
+      if (authError) return authError;
+
+      const isIndependentDriver = !driver.companyId;
+
+      let defaultCommission = {
+        type: 'PERCENTAGE',
+        value: 15,
+        isEnabled: true,
+      };
+
+      let companyDetails: any = null;
+
+      if (driver.companyId) {
+        const companyConditions: any[] = [{ companyId: driver.companyId }];
+        if (isValidObjectId(driver.companyId)) {
+          companyConditions.unshift({ _id: driver.companyId });
+        }
+        const company = await this.companyModel.findOne({
+          $or: companyConditions,
+        });
+        if (company) {
+          companyDetails = {
+            id: company._id,
+            companyId: company.companyId,
+            name: company.displayName || company.legalName,
+          };
+          if (company.defaultDriverCommission) {
+            defaultCommission = company.defaultDriverCommission;
+          }
+        }
+      }
+
+      const isCustomActive = Boolean(
+        driver.commission && driver.commission.isEnabled !== false,
+      );
+      const effectiveCommission = isCustomActive
+        ? driver.commission
+        : defaultCommission;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          driverName: driver.fullName,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          company: companyDetails,
+          customCommission: driver.commission || null,
+          defaultCommission,
+          effectiveCommission,
+          isCustom: isCustomActive,
+        },
+        'Driver commission details fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error fetching driver commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateDriverCommission(
+    driverId: string,
+    dto: UpdateDriverCommissionDto,
+    callerUser?: any,
+  ) {
+    try {
+      if (!isValidObjectId(driverId)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      const authError = this.validateDriverAccess(driver, callerUser);
+      if (authError) return authError;
+
+      driver.commission = {
+        type: dto.type,
+        value: Number(dto.value),
+        isEnabled: dto.isEnabled ?? true,
+      };
+
+      await driver.save();
+
+      const isIndependentDriver = !driver.companyId;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          driverName: driver.fullName,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          commission: driver.commission,
+        },
+        isIndependentDriver
+          ? 'Independent driver commission updated successfully by Superadmin'
+          : 'Driver commission updated successfully',
+      );
+    } catch (error: any) {
+      console.error('Error updating driver commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async resetDriverCommission(driverId: string, callerUser?: any) {
+    try {
+      if (!isValidObjectId(driverId)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      const authError = this.validateDriverAccess(driver, callerUser);
+      if (authError) return authError;
+
+      driver.commission = null;
+      await driver.save();
+
+      const isIndependentDriver = !driver.companyId;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          message: isIndependentDriver
+            ? 'Custom commission removed. Driver now uses platform default (15%).'
+            : 'Custom commission removed. Driver now uses company default.',
+        },
+        'Driver commission reset to default successfully',
+      );
+    } catch (error: any) {
+      console.error('Error resetting driver commission:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }

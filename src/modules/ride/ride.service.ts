@@ -30,6 +30,8 @@ import { SocketService } from '../socket/socket.service';
 import { NotificationService } from '../notification/notification.service';
 import { MailService } from '../mail/mail.service';
 import { User, UserDocument } from '../user/schema/user.schema';
+import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
+import { calculateRideCommissions } from 'src/helpers/commission.helper';
 import {
   VehicleType,
   VehicleTypeDocument,
@@ -142,6 +144,8 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     private readonly pricingModel: Model<PricingDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(Company.name)
+    private readonly companyModel: Model<CompanyDocument>,
     private readonly socketService: SocketService,
     private readonly notificationService: NotificationService,
     private readonly mailService: MailService,
@@ -2134,7 +2138,49 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     ride.payableFare = finalFare.payableFare;
     ride.discount = finalFare.discount;
 
+    await this.applyRideCommission(ride);
+
     return finalFare;
+  }
+
+  private async applyRideCommission(ride: any) {
+    try {
+      const fareAmount = Number(ride.payableFare || ride.totalFare || 0);
+      if (fareAmount <= 0) return;
+
+      let companyDoc: any = null;
+      let driverDoc: any = null;
+
+      if (ride.driver) {
+        driverDoc = await this.driverModel.findById(ride.driver);
+      }
+
+      const targetCompanyId = ride.companyId || driverDoc?.companyId;
+      if (targetCompanyId) {
+        const conditions: any[] = [{ companyId: targetCompanyId }];
+        if (Types.ObjectId.isValid(String(targetCompanyId))) {
+          conditions.unshift({ _id: targetCompanyId });
+        }
+        companyDoc = await this.companyModel.findOne({ $or: conditions });
+      }
+
+      const commissionResult = calculateRideCommissions({
+        fareAmount,
+        company: companyDoc,
+        driver: driverDoc,
+      });
+
+      ride.driverEarnings = commissionResult.driverEarnings;
+      ride.companyCommissionAmount = commissionResult.companyCommission.amount;
+      ride.superAdminCommissionAmount = commissionResult.superAdminCommission.amount;
+      ride.companyEarnings = commissionResult.companyEarnings;
+      ride.commissionBreakdown = {
+        ...commissionResult,
+        calculatedAt: new Date(),
+      };
+    } catch (err) {
+      console.error('Failed to calculate ride commission:', err);
+    }
   }
 
   private promoDiscount(promo: any, subTotal: number) {
@@ -3470,9 +3516,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ride.dropoff,
       );
 
-      // Card and wallet rides are charged automatically, cash is collected by
-      // the driver from the fare screen.
-      if (ride.paymentMethod !== PaymentMethod.CASH) {
+      // Wallet rides are charged automatically from passenger balance.
+      // Card rides are charged via USAePay gateway (/payment/ride/charge).
+      // Cash rides are collected by the driver from the fare screen.
+      if (ride.paymentMethod === PaymentMethod.WALLET) {
         ride.paymentStatus = PaymentStatus.PAID;
         ride.paymentCollectedAt = completedAt;
 
@@ -3480,7 +3527,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           ride,
           'PAYMENT_COLLECTED',
           'Payment Completed',
-          `Payment of ${ride.payableFare} ${DEFAULT_CURRENCY} completed via ${ride.paymentMethod}`,
+          `Payment of ${ride.payableFare} ${DEFAULT_CURRENCY} completed via WALLET`,
           driverId,
         );
       }
@@ -3587,9 +3634,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       ride.paymentStatus = PaymentStatus.PAID;
       ride.paymentCollectedAt = new Date();
 
-      if (dto.paymentMethod) {
-        ride.paymentMethod = dto.paymentMethod;
-      }
+      const collectedMethod = dto.paymentMethod || ride.paymentMethod || PaymentMethod.CASH;
+      ride.paymentMethod = collectedMethod;
+
+      await this.applyRideCommission(ride);
 
       this.addTimelineEvent(
         ride,
@@ -4252,7 +4300,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       {
         $group: {
           _id: null,
-          totalEarned: { $sum: '$payableFare' },
+          totalEarned: {
+            $sum: { $ifNull: ['$driverEarnings', '$payableFare'] },
+          },
           trips: { $sum: 1 },
         },
       },
@@ -4428,7 +4478,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             $sum: {
               $cond: [
                 { $gte: ['$completedAt', todayStart] },
-                '$payableFare',
+                { $ifNull: ['$driverEarnings', '$payableFare'] },
                 0,
               ],
             },
@@ -4438,7 +4488,11 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           },
           yesterdayEarned: {
             $sum: {
-              $cond: [{ $lt: ['$completedAt', todayStart] }, '$payableFare', 0],
+              $cond: [
+                { $lt: ['$completedAt', todayStart] },
+                { $ifNull: ['$driverEarnings', '$payableFare'] },
+                0,
+              ],
             },
           },
         },
@@ -4541,7 +4595,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           _id: {
             $dateToString: { format: '%Y-%m-%d', date: '$completedAt' },
           },
-          earned: { $sum: '$payableFare' },
+          earned: {
+            $sum: { $ifNull: ['$driverEarnings', '$payableFare'] },
+          },
           trips: { $sum: 1 },
         },
       },
@@ -4662,8 +4718,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       case RideStatus.RIDE_STARTED:
         return ride.destinationReached ? 'END_TRIP' : 'REACH_DESTINATION';
       case RideStatus.RIDE_COMPLETED:
-        return ride.paymentStatus === PaymentStatus.PENDING &&
-          ride.paymentMethod === PaymentMethod.CASH
+        return ride.paymentStatus === PaymentStatus.PENDING
           ? 'COLLECT_PAYMENT'
           : null;
       default:
@@ -4705,6 +4760,11 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       fare: ride.fare,
       totalFare: ride.totalFare,
       payableFare: ride.payableFare,
+      driverEarnings: ride.driverEarnings ?? null,
+      companyCommissionAmount: ride.companyCommissionAmount ?? null,
+      superAdminCommissionAmount: ride.superAdminCommissionAmount ?? null,
+      companyEarnings: ride.companyEarnings ?? null,
+      commissionBreakdown: ride.commissionBreakdown ?? null,
       discount: ride.discount || 0,
       promoCode: ride.promoCode || null,
       passengerCount: ride.passengerCount,

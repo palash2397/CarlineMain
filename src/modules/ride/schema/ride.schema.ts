@@ -97,6 +97,21 @@ export class Ride {
   @Prop({ type: Number, default: 0 })
   payableFare: number;
 
+  @Prop({ type: Number, default: 0 })
+  driverEarnings: number;
+
+  @Prop({ type: Number, default: 0 })
+  companyCommissionAmount: number;
+
+  @Prop({ type: Number, default: 0 })
+  superAdminCommissionAmount: number;
+
+  @Prop({ type: Number, default: 0 })
+  companyEarnings: number;
+
+  @Prop({ type: Object, default: null })
+  commissionBreakdown?: any | null;
+
   @Prop({ type: String, default: null })
   promoCode?: string | null;
 

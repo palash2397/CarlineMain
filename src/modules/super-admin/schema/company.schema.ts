@@ -3,6 +3,11 @@ import { Document } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from 'src/common/enums/user/role.enum';
 import { CompanyStatus } from 'src/common/enums/companies/status-enum';
+import { CommissionType } from 'src/common/enums/commission/commission-type.enum';
+import {
+  CommissionConfig,
+  CommissionConfigSchema,
+} from 'src/common/schemas/commission-config.schema';
 
 export type CompanyDocument = Company & Document;
 
@@ -162,6 +167,26 @@ export class Company {
 
   @Prop({ type: String, default: 'SUPERADMIN' })
   createdBy: string;
+
+  @Prop({
+    type: CommissionConfigSchema,
+    default: () => ({
+      type: CommissionType.PERCENTAGE,
+      value: 5,
+      isEnabled: true,
+    }),
+  })
+  superAdminCommission: CommissionConfig;
+
+  @Prop({
+    type: CommissionConfigSchema,
+    default: () => ({
+      type: CommissionType.PERCENTAGE,
+      value: 15,
+      isEnabled: true,
+    }),
+  })
+  defaultDriverCommission: CommissionConfig;
 }
 
 export const CompanySchema = SchemaFactory.createForClass(Company);

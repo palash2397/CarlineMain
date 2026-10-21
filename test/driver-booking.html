@@ -61,7 +61,7 @@
           <button class="ghost" onclick="useTarget('live')">Use LIVE (carlinee)</button>
         </div>
         <label>Driver token (auto filled)</label>
-        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYmY3NDZhODQwZDI2YzdhODUwZDgyYiIsInJvbGVzIjoiRFJJVkVSIiwiZW1haWwiOiJjb21wYW55LmRyaXZlci5hYmNAeW9wbWFpbC5jb20iLCJjb21wYW55SWQiOiI2YWE5MDRhODE1ZjJhZmNjODQyZWU4NTgiLCJpYXQiOjE3OTEyNjM4OTYsImV4cCI6MTc5Mzg1NTg5Nn0.amOQw0QmRcJHrerBlJLaYOuyZ2_jGPoPdOpjrdJgxvo</textarea>
+        <textarea id="token">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYmY3NDZhODQwZDI2YzdhODUwZDgyYiIsInJvbGVzIjoiRFJJVkVSIiwiZW1haWwiOiJjb21wYW55LmRyaXZlci5hYmNAeW9wbWFpbC5jb20iLCJjb21wYW55SWQiOiI2YWE5MDRhODE1ZjJhZmNjODQyZWU4NTgiLCJpYXQiOjE3OTI1ODE2NTIsImV4cCI6MTgyNDExNzY1Mn0.bSB4Iy0Ao74xZuyudDzWU0oiO9DVZakyMTzp0Ai76BM</textarea>
         <div class="btns">
           <button class="green" onclick="connectSocket()">Connect socket</button>
           <button class="ghost" onclick="disconnectSocket()">Disconnect</button>
@@ -110,6 +110,7 @@
         <div class="btns">
           <button id="btnArrived" onclick="arrived()">PATCH arrived (reached pickup)</button>
           <button id="btnStart" class="green" onclick="startTrip()">POST start (OTP)</button>
+          <button id="btnReached" style="background:#0284c7;" onclick="destinationReached()">PATCH reached-destination</button>
           <button id="btnComplete" class="green" onclick="completeTrip()">POST complete (end trip)</button>
           <button type="button" style="background:#4f46e5;color:#fff;" onclick="window.open('./chat-test.html?rideId=' + encodeURIComponent($('rideId').value.trim()), '_blank')">💬 Open In-Ride Chat</button>
         </div>
@@ -122,6 +123,17 @@
           <button id="btnCollect" class="ghost" onclick="collectPayment()">POST collect-payment</button>
           <button class="red" onclick="cancelTrip()">PATCH /driver-ride/cancel</button>
         </div>
+
+        <!-- Live Payment & Driver Commission Breakdown Card -->
+        <div id="driverPaymentBox" class="card" style="display: none; border-color: #059669; background: #0b1a1c; margin-top: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <b style="color: #34d399; font-size: 14px;">💳 Trip Payment &amp; Commission Breakdown</b>
+            <span id="driverPayStatusBadge" class="pill ok">PAID</span>
+          </div>
+          <div id="driverPaymentDetails" style="font-size: 13px; line-height: 1.6;">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
       </section>
 
       <section>
@@ -130,8 +142,9 @@
           <button class="ghost" onclick="activeRide()">GET /driver-ride/active</button>
           <button class="ghost" onclick="history()">GET /driver-ride/history</button>
           <button class="ghost" onclick="earnings()">GET /driver-ride/earnings?range=WEEK</button>
+          <button style="background: #059669; color: #fff;" onclick="fetchCurrentRideCommission()">View Ride Commission</button>
         </div>
-        <div class="note">CARD/WALLET ride complete hote hi PAID. CASH me driver collect-payment karta hai.</div>
+        <div class="note">CARD/WALLET ride complete hote hi PAID. CASH me driver collect-payment karta hai. Har ride ka commission breakdown real-time save hota hai.</div>
       </section>
 
       <section>
@@ -217,38 +230,41 @@
         }
       }
 
-      // Backend har response me `nextAction` bhejta hai: usi se buttons enable/disable hote hain.
       const NEXT_BY_STATUS = {
         DRIVER_ASSIGNED: 'MARK_ARRIVED',
         DRIVER_ARRIVED: 'START_TRIP',
-        RIDE_STARTED: 'END_TRIP',
-        RIDE_COMPLETED: null,
+        RIDE_STARTED: 'REACH_DESTINATION',
+        RIDE_COMPLETED: 'COLLECT_PAYMENT',
         RIDE_CANCELLED: null,
         SEARCHING_DRIVER: null,
-      };
-      const NEXT_BUTTONS = {
-        MARK_ARRIVED: 'btnArrived',
-        START_TRIP: 'btnStart',
-        END_TRIP: 'btnComplete',
-        COLLECT_PAYMENT: 'btnCollect',
       };
       const NEXT_HINT = {
         MARK_ARRIVED: 'pickup pe pahunch ke "arrived" dabao',
         START_TRIP: 'passenger OTP daal ke "start" dabao',
-        END_TRIP: 'drop pe pahunch ke "complete" dabao',
+        REACH_DESTINATION: 'dropoff pe pahunch ke "reached-destination" ya direct "complete" dabao',
+        END_TRIP: 'drop pe pahunch gaye - ab "complete" dabao',
         COLLECT_PAYMENT: 'cash collect karke "collect-payment" dabao',
       };
 
       function applyNextAction(status, nextAction) {
         const next = nextAction === undefined ? NEXT_BY_STATUS[status] : nextAction;
-        Object.keys(NEXT_BUTTONS).forEach((key) => {
-          const btn = $(NEXT_BUTTONS[key]);
-          if (btn) btn.disabled = next ? key !== next : true;
-        });
+        const isAssigned = (status === 'DRIVER_ASSIGNED');
+        const isArrived = (status === 'DRIVER_ARRIVED');
+        const isStarted = (status === 'RIDE_STARTED');
+        const isCompleted = (status === 'RIDE_COMPLETED');
+
+        if ($('btnArrived')) $('btnArrived').disabled = !isAssigned;
+        if ($('btnStart')) $('btnStart').disabled = !isArrived;
+        if ($('btnReached')) $('btnReached').disabled = !isStarted;
+        // Allow complete anytime ride is started or destination is reached
+        if ($('btnComplete')) $('btnComplete').disabled = !isStarted && (next !== 'END_TRIP');
+        // Allow collect-payment if ride is completed
+        if ($('btnCollect')) $('btnCollect').disabled = !isCompleted;
+
         const label = $('nextStep');
         if (label) {
           label.textContent = status
-            ? 'status: ' + status + ' -> next step: ' + (next ? NEXT_HINT[next] : 'koi action pending nahi')
+            ? 'status: ' + status + ' -> next step: ' + (next ? (NEXT_HINT[next] || next) : (isCompleted ? 'Trip completed' : 'koi action pending nahi'))
             : 'Next step: ride accept karo';
         }
         return next;
@@ -297,6 +313,10 @@
           if (event === 'ride:request' || event === 'ride:expired' || event === 'ride:taken') loadRequests();
           if (data && data.nextAction !== undefined) applyNextAction(data.status, data.nextAction);
           if (event === 'ride:cancelled' && data && data.rideId && data.rideId === state.rideId) setRide(data.rideId, data.status || 'RIDE_CANCELLED', data.nextAction);
+          if (event === 'payment:completed' || (data && data.paymentStatus === 'PAID')) {
+            renderDriverCommission(data);
+            log('ev', '💳 Real-time payment update received! Status: PAID', data);
+          }
         });
       }
 
@@ -457,11 +477,20 @@
         if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
       }
 
+      async function destinationReached() {
+        const res = await api('/driver-ride/destination-reached', 'PATCH', { rideId: $('rideId').value.trim() });
+        if (res?.data) {
+          setRide(res.data.rideId, res.data.status, 'END_TRIP');
+          log('ev', 'destination reached! final fare: ' + money(res.data.payableFare));
+        }
+      }
+
       async function completeTrip() {
         const res = await api('/driver-ride/complete', 'POST', { rideId: $('rideId').value.trim() });
         if (res?.data) {
           setRide(res.data.rideId, res.data.status, res.data.nextAction);
           log('ev', 'fare: ' + money(res.data.payableFare) + ' | payment: ' + res.data.paymentStatus);
+          renderDriverCommission(res.data);
         }
       }
 
@@ -470,7 +499,49 @@
           rideId: $('rideId').value.trim(),
           paymentMethod: $('collectMethod').value,
         });
-        if (res?.data) setRide(res.data.rideId, res.data.status, res.data.nextAction);
+        if (res?.data) {
+          setRide(res.data.rideId, res.data.status, res.data.nextAction);
+          renderDriverCommission(res.data);
+        }
+      }
+
+      function renderDriverCommission(d) {
+        if (!d) return;
+        const box = $('driverPaymentBox');
+        if (!box) return;
+        box.style.display = 'block';
+
+        const isPaid = (d.paymentStatus === 'PAID');
+        const badge = $('driverPayStatusBadge');
+        if (badge) {
+          badge.textContent = d.paymentStatus || (isPaid ? 'PAID' : 'PENDING');
+          badge.className = 'pill ' + (isPaid ? 'ok' : 'err');
+        }
+
+        const fare = Number(d.payableFare || d.totalFare || 0);
+        const c = d.commissionBreakdown || {};
+        const driverNet = Number(d.driverEarnings || c.driverEarnings || (fare * 0.85));
+        const companyComm = Number(d.companyCommissionAmount || c.companyCommission?.amount || 0);
+        const superAdminComm = Number(d.superAdminCommissionAmount || c.superAdminCommission?.amount || 0);
+
+        $('driverPaymentDetails').innerHTML =
+          '<div>Trip Fare: <b>' + money(fare) + '</b> | Method: <b>' + (d.paymentMethod || 'CASH') + '</b></div>' +
+          '<hr style="border: 0; border-top: 1px solid #1a3a30; margin: 6px 0;" />' +
+          '<div style="font-size: 14px; color: #6ee7b7;">💰 <b>Driver Take-Home Net: ' + money(driverNet) + '</b></div>' +
+          '<div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">' +
+          '🏢 Company Commission: <b>' + money(companyComm) + '</b><br>' +
+          '👑 Super Admin Cut: <b>' + money(superAdminComm) + '</b>' +
+          '</div>';
+      }
+
+      async function fetchCurrentRideCommission() {
+        const rId = $('rideId').value.trim();
+        if (!rId) return log('err', 'Pehle rideId dalo');
+        const res = await api('/ride/' + rId);
+        if (res?.data) {
+          renderDriverCommission(res.data);
+          log('ev', 'Commission snapshot loaded for ride ' + rId, res.data.commissionBreakdown);
+        }
       }
 
       async function cancelTrip() {
@@ -537,6 +608,13 @@
 
       applyNextAction(null);
       showWhoAmI();
+
+      // Auto-connect socket & load status on page load
+      setTimeout(() => {
+        connectSocket();
+        home();
+        loadRequests();
+      }, 500);
     </script>
   </body>
 </html>

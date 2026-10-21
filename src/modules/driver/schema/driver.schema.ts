@@ -3,6 +3,10 @@ import { HydratedDocument } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { DriverStatus } from 'src/common/enums/driver/status-enum';
 import { UserRole } from 'src/common/enums/user/role.enum';
+import {
+  CommissionConfig,
+  CommissionConfigSchema,
+} from 'src/common/schemas/commission-config.schema';
 
 export type DriverDocument = HydratedDocument<Driver>;
 
@@ -291,6 +295,12 @@ export class Driver {
 
   @Prop({ type: String, default: null })
   fcmToken?: string | null;
+
+  @Prop({
+    type: CommissionConfigSchema,
+    default: null,
+  })
+  commission?: CommissionConfig | null;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);

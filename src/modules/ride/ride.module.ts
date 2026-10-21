@@ -9,6 +9,7 @@ import {
 } from '../vehicle-type/schema/vehicle-type.schema';
 
 import { User, UserSchema } from '../user/schema/user.schema';
+import { Company, CompanySchema } from '../super-admin/schema/company.schema';
 
 import { Promo, PromoSchema } from './schema/promo.schema';
 import {
@@ -32,6 +33,7 @@ import { MailModule } from '../mail/mail.module';
       { name: Driver.name, schema: DriverSchema },
       { name: Pricing.name, schema: PricingSchema },
       { name: User.name, schema: UserSchema },
+      { name: Company.name, schema: CompanySchema },
     ]),
     NotificationModule,
     MailModule,

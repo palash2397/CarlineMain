@@ -1,0 +1,8 @@
+export enum PaymentTransactionStatus {
+  PENDING = 'PENDING',
+  SUCCESS = 'SUCCESS',
+  FAILED = 'FAILED',
+  REFUNDED = 'REFUNDED',
+  VOIDED = 'VOIDED',
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
+}
