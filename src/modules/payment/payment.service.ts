@@ -86,7 +86,7 @@ export class PaymentService {
       }
 
       // Tokenize card in USAePay
-      let result = await this.usaepay.addCardToCustomer(
+      const result = await this.usaepay.addCardToCustomer(
         customer.usaepayCustomerId!,
         {
           cardNumber: dto.cardNumber,
@@ -100,38 +100,6 @@ export class PaymentService {
           billingCountry: dto.billingCountry || 'US',
         },
       );
-
-      // Auto-heal: If source key not found (key belongs to another gateway/sandbox account), re-create vault
-      if (
-        !result.success &&
-        result.error &&
-        /source key not found|not found/i.test(result.error)
-      ) {
-        this.logger.warn(
-          `Customer vault key ${customer.usaepayCustomerId} not found on active gateway for userId=${userId}. Re-creating customer vault...`,
-        );
-        const newVault = await this.usaepay.createOrUpdateCustomer({
-          email: customer.email || undefined,
-          name: customer.fullName || undefined,
-        });
-
-        if (newVault.success && newVault.customerKey) {
-          customer.usaepayCustomerId = newVault.customerKey;
-          await customer.save();
-
-          result = await this.usaepay.addCardToCustomer(newVault.customerKey, {
-            cardNumber: dto.cardNumber,
-            cardExpiration: dto.cardExpiration,
-            cardCode: dto.cardCode,
-            billingName: dto.billingName,
-            billingAddress: dto.billingAddress,
-            billingCity: dto.billingCity,
-            billingState: dto.billingState,
-            billingZip: dto.billingZip,
-            billingCountry: dto.billingCountry || 'US',
-          });
-        }
-      }
 
       if (!result.success) {
         this.logger.error(`addCard failed for userId=${userId}: ${result.error}`);
@@ -872,29 +840,10 @@ export class PaymentService {
           ? lastCustomer.customerId + 1
           : 1;
 
-      let userDoc: any = null;
-      try {
-        if (Types.ObjectId.isValid(userId)) {
-          userDoc = await this.customerModel.db
-            .collection('users')
-            .findOne({ _id: new Types.ObjectId(userId) });
-        }
-      } catch (e) {
-        // Ignore user lookup error
-      }
-
-      const fullName = userDoc
-        ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() ||
-          userDoc.email?.split('@')[0] ||
-          'Carline Passenger'
-        : 'Carline Passenger';
-
       customer = new this.customerModel({
         customerId: newCustomerId,
         accountNumber: userId,
-        fullName,
-        email: userDoc?.email || null,
-        mobileNumber: userDoc?.phoneNumber || null,
+        fullName: 'Carline Passenger',
         autoEmail: 'Inactive',
         credit: 0,
         createdBy: 'PAYMENT_MODULE',
@@ -911,9 +860,7 @@ export class PaymentService {
       });
 
       if (!result.success || !result.customerKey) {
-        this.logger.error(
-          `Failed to create USAePay customer vault for userId=${userId}: ${result.error}`,
-        );
+        this.logger.error(`Failed to create USAePay customer vault for userId=${userId}`);
         return null;
       }
 
