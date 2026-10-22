@@ -3072,7 +3072,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
 
       const vehicleType = await this.vehicleTypeForDriver(driver);
-      const runningRide = await this.findRunningRide(driverId);
+      const runningRide = await this.findRunningOrUnpaidRide(driverId);
 
       return new ApiResponse(
         200,
@@ -3125,7 +3125,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       const [vehicleType, runningRide, stats, today] = await Promise.all([
         this.vehicleTypeForDriver(driver),
-        this.findRunningRide(driverId),
+        this.findRunningOrUnpaidRide(driverId),
         this.driverStats(driver),
         this.todayAnalytics(driverId, now),
       ]);
@@ -4386,7 +4386,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   // ==========================================================
   async driverActiveRide(driverId: string) {
     try {
-      const ride = await this.findRunningRide(driverId);
+      const ride = await this.findRunningOrUnpaidRide(driverId);
 
       if (!ride) {
         return new ApiResponse(200, null, Msg.NO_ACTIVE_TRIP);
@@ -4606,6 +4606,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   }
 
   private findRunningRide(driverId: string) {
+    return this.rideModel
+      .findOne({
+        driver: driverId,
+        status: { $in: DRIVER_RUNNING_STATUSES },
+      })
+      .sort({ createdAt: -1 });
+  }
+
+  private findRunningOrUnpaidRide(driverId: string) {
     return this.rideModel
       .findOne({
         driver: driverId,
