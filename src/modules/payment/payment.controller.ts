@@ -139,14 +139,15 @@ export class PaymentController {
 
   @ApiTags('Driver Payment')
   @ApiOperation({
-    summary: 'Get driver payment transaction history',
+    summary: 'Get driver payment transaction history (Wallet & Statements)',
     description:
-      'Fetches ride payment transactions for the authenticated driver, with breakdown of fare, driver earnings, company commission, and payment method.',
+      'Driver portal transactions view according to UI: Returns 3 summary cards (TOTAL INFLOWS, TOTAL PAYOUTS, NET BALANCE), tabs (ALL, EARNINGS, PAYOUTS), and transactions table with formatted date, description, amount, method, and status.',
   })
+  @ApiQuery({ name: 'tab', required: false, enum: ['ALL', 'EARNINGS', 'PAYOUTS'], description: 'Filter by tab: ALL, EARNINGS, or PAYOUTS' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by status: SUCCESS, PENDING, FAILED, REFUNDED' })
-  @ApiQuery({ name: 'paymentMethod', required: false, description: 'Filter by payment method: CARD, CASH' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by status: Completed, Pending, Failed' })
+  @ApiQuery({ name: 'paymentMethod', required: false, description: 'Filter by payment method: Cash, Card, UPI, Wallet' })
   @Roles(UserRole.DRIVER)
   @Get('driver/transactions')
   driverTransactions(@Req() req: any, @Query() query: any) {
