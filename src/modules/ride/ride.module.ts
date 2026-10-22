@@ -17,6 +17,12 @@ import {
   RecurringBookingSchema,
 } from './schema/recurring-booking.schema';
 import { Ride, RideSchema } from './schema/ride.schema';
+import { Address, AddressSchema } from '../user/schema/address.schema';
+import { Customer, CustomerSchema } from '../customer/schema/customer.schema';
+import {
+  Notification,
+  NotificationSchema,
+} from '../notification/schema/notification.schema';
 import { RideController } from './ride.controller';
 import { RideSchedulerService } from './ride-scheduler.service';
 import { RideService } from './ride.service';
@@ -34,6 +40,9 @@ import { MailModule } from '../mail/mail.module';
       { name: Pricing.name, schema: PricingSchema },
       { name: User.name, schema: UserSchema },
       { name: Company.name, schema: CompanySchema },
+      { name: Address.name, schema: AddressSchema },
+      { name: Customer.name, schema: CustomerSchema },
+      { name: Notification.name, schema: NotificationSchema },
     ]),
     NotificationModule,
     MailModule,

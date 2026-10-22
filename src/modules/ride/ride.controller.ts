@@ -58,6 +58,29 @@ export class RideController {
   // ==========================================================
   // Passenger side - /ride/*
   // ==========================================================
+  @Get('ride/dashboard')
+  @ApiTags(PASSENGER_TAG)
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary: 'User (Passenger) Dashboard - complete home screen activity & widgets',
+    description:
+      'Returns greeting, user profile, 4 metric cards (completed rides, wallet balance, saved places, active ride), live trip card, scheduled & recurring rides, recent trips list, primary credit card, and saved places.',
+  })
+  async userDashboard(@Req() req: any) {
+    return this.rideService.userDashboard(req.user.id);
+  }
+
+  @Get('user/dashboard')
+  @ApiTags('User')
+  @Roles(...PASSENGER_ROLES)
+  @ApiOperation({
+    summary: 'User (Passenger) Dashboard (alias)',
+    description: 'Alias for /ride/dashboard under User tag',
+  })
+  async userDashboardAlias(@Req() req: any) {
+    return this.rideService.userDashboard(req.user.id);
+  }
+
   @Get('ride/vehicle-types')
   @ApiTags(PASSENGER_TAG)
   @Roles(...PASSENGER_ROLES)

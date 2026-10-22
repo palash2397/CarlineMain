@@ -2,6 +2,7 @@ import {
   Injectable,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
@@ -31,6 +32,12 @@ import { NotificationService } from '../notification/notification.service';
 import { MailService } from '../mail/mail.service';
 import { User, UserDocument } from '../user/schema/user.schema';
 import { Company, CompanyDocument } from '../super-admin/schema/company.schema';
+import { Address, AddressDocument } from '../user/schema/address.schema';
+import { Customer, CustomerDocument } from '../customer/schema/customer.schema';
+import {
+  Notification,
+  NotificationDocument,
+} from '../notification/schema/notification.schema';
 import { calculateRideCommissions } from 'src/helpers/commission.helper';
 import {
   VehicleType,
@@ -149,6 +156,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     private readonly socketService: SocketService,
     private readonly notificationService: NotificationService,
     private readonly mailService: MailService,
+    @Optional()
+    @InjectModel(Address.name)
+    private readonly addressModel?: Model<AddressDocument>,
+    @Optional()
+    @InjectModel(Customer.name)
+    private readonly customerModel?: Model<CustomerDocument>,
+    @Optional()
+    @InjectModel(Notification.name)
+    private readonly notificationModel?: Model<NotificationDocument>,
   ) {}
 
   async onModuleInit() {
@@ -501,6 +517,385 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       console.error('Error while fetching rides:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
+  }
+
+  // ==========================================================
+  // Passenger Dashboard - Complete Home Screen Data
+  // ==========================================================
+  async userDashboard(userId: string) {
+    try {
+      const user = await this.userModel.findById(userId).lean();
+      if (!user) {
+        return new ApiResponse(404, {}, 'User not found');
+      }
+
+      // 1. Dynamic Greeting based on current time
+      const hour = new Date().getHours();
+      let timeOfDay = 'Good evening';
+      if (hour < 12) timeOfDay = 'Good morning';
+      else if (hour < 17) timeOfDay = 'Good afternoon';
+
+      const userName = (
+        user.firstName ||
+        (user as any).fullName ||
+        user.email?.split('@')[0] ||
+        'Passenger'
+      ).trim();
+      const greetingText = `${timeOfDay}, ${userName} 👋`;
+      const bannerTitle = `${timeOfDay}, ${userName}`;
+
+      // 2. Fetch Customer record (for USAePay primary card & wallet credit)
+      const customer = this.customerModel
+        ? await this.customerModel
+            .findOne({
+              $or: [
+                { accountNumber: userId },
+                ...(Types.ObjectId.isValid(userId)
+                  ? [{ _id: new Types.ObjectId(userId) }]
+                  : []),
+              ],
+            })
+            .lean()
+        : null;
+
+      // 3. Primary Card Formatting
+      let primaryCard: any = {
+        hasCard: false,
+        card: null,
+      };
+
+      if (
+        customer &&
+        Array.isArray(customer.savedCards) &&
+        customer.savedCards.length > 0
+      ) {
+        const defaultCard =
+          customer.savedCards.find((c: any) => c.isDefault) ||
+          customer.savedCards[0];
+        const rawExpiry = String(defaultCard.cardExpiration || '1228');
+        const formattedExpiry = rawExpiry.includes('/')
+          ? rawExpiry
+          : rawExpiry.length === 4
+            ? `${rawExpiry.slice(0, 2)}/${rawExpiry.slice(2)}`
+            : rawExpiry;
+
+        primaryCard = {
+          hasCard: true,
+          card: {
+            cardBrand: defaultCard.cardBrand || 'Visa',
+            cardLast4: defaultCard.cardLast4 || '••••',
+            maskedNumber: `•••• •••• •••• ${defaultCard.cardLast4 || '••••'}`,
+            cardholderName:
+              customer.fullName ||
+              (user as any).fullName ||
+              userName.toUpperCase(),
+            expires: formattedExpiry,
+            isDefault: Boolean(defaultCard.isDefault ?? true),
+            payMethodKey: defaultCard.payMethodKey || null,
+          },
+        };
+      }
+
+      // 4. Wallet Balance & Formatting
+      const walletBalance = Number(user.walletBalance ?? customer?.credit ?? 0);
+      const walletBalanceFormatted = `$${walletBalance.toFixed(2)}`;
+
+      // 5. Parallel Database Queries
+      const [
+        completedRidesCount,
+        activeRideDoc,
+        scheduledRidesDocs,
+        recentRidesDocs,
+        savedPlacesDocs,
+        unreadCount,
+      ] = await Promise.all([
+        this.rideModel.countDocuments({
+          user: userId,
+          status: RideStatus.RIDE_COMPLETED,
+        }),
+        this.findActiveRide(userId),
+        this.rideModel
+          .find({
+            user: userId,
+            status: RideStatus.SCHEDULED,
+            scheduledAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) },
+          })
+          .sort({ scheduledAt: 1 })
+          .limit(5)
+          .lean(),
+        this.rideModel
+          .find({
+            user: userId,
+            status: {
+              $in: [RideStatus.RIDE_COMPLETED, RideStatus.RIDE_CANCELLED],
+            },
+          })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .lean(),
+        this.addressModel
+          ? this.addressModel
+              .find({ user: userId })
+              .sort({ createdAt: -1 })
+              .limit(5)
+              .lean()
+          : Promise.resolve([]),
+        this.notificationModel
+          ? this.notificationModel.countDocuments({
+              $or: [
+                { targetUserId: userId },
+                { userId: userId },
+                { user: userId },
+              ],
+              isRead: false,
+            })
+          : Promise.resolve(0),
+      ]);
+
+      // 6. Live Trip / Active Ride Formatting
+      let liveTrip: any;
+      let activeRideStatusText = 'None';
+
+      if (activeRideDoc) {
+        activeRideStatusText = activeRideDoc.status;
+        const driverDoc = activeRideDoc.driver
+          ? await this.driverModel.findById(activeRideDoc.driver).lean()
+          : null;
+
+        liveTrip = {
+          hasActiveRide: true,
+          message: 'Ride in progress',
+          subtext: `Status: ${activeRideDoc.status.replace(/_/g, ' ')}`,
+          ctaText: 'View live trip',
+          ride: {
+            rideId: String(activeRideDoc._id),
+            status: activeRideDoc.status,
+            otp: activeRideDoc.otp || null,
+            pickup: activeRideDoc.pickup,
+            dropoff: activeRideDoc.dropoff,
+            payableFare:
+              activeRideDoc.payableFare || activeRideDoc.totalFare || 0,
+            fareFormatted: `$${Number(activeRideDoc.payableFare || activeRideDoc.totalFare || 0).toFixed(2)}`,
+            paymentMethod: activeRideDoc.paymentMethod,
+            paymentStatus: activeRideDoc.paymentStatus,
+            etaMinutes: activeRideDoc.etaMinutes ?? null,
+            distanceKm: activeRideDoc.distanceKm ?? null,
+            vehicleTypeName: activeRideDoc.vehicleTypeName || null,
+            driver: driverDoc
+              ? {
+                  driverId: String(driverDoc._id),
+                  fullName: driverDoc.fullName,
+                  phoneNumber: driverDoc.phoneNumber,
+                  avatar: driverDoc.avatar || null,
+                  rating: driverDoc.rating ?? null,
+                  vehicleType:
+                    driverDoc.vehicleType ||
+                    activeRideDoc.vehicleTypeName ||
+                    null,
+                  vehicleRegistrationNumber:
+                    driverDoc.vehicleRegistrationNumber || null,
+                  make: driverDoc.make || null,
+                  modelAndYear: driverDoc.modelAndYear || null,
+                  currentLatitude: driverDoc.currentLatitude ?? null,
+                  currentLongitude: driverDoc.currentLongitude ?? null,
+                }
+              : null,
+          },
+        };
+      } else {
+        liveTrip = {
+          hasActiveRide: false,
+          message: 'No ride in progress',
+          subtext: 'Book a cab and see a locked fare in seconds.',
+          ctaText: 'Book instant ride',
+          ride: null,
+        };
+      }
+
+      // 7. Scheduled & Recurring Rides Formatting
+      const scheduledItems = scheduledRidesDocs.map((ride: any) => {
+        const scheduledDate = ride.scheduledAt
+          ? new Date(ride.scheduledAt)
+          : new Date();
+        const dateStr = scheduledDate.toISOString().split('T')[0];
+        const timeStr = scheduledDate.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+
+        const pickupShort = this.shortenAddress(
+          ride.pickup?.address || 'Pickup',
+        );
+        const dropoffShort = this.shortenAddress(
+          ride.dropoff?.address || 'Dropoff',
+        );
+
+        return {
+          rideId: String(ride._id),
+          date: dateStr,
+          time: timeStr,
+          scheduledAt: ride.scheduledAt,
+          badge: ride.recurringId ? 'Weekly' : 'Scheduled',
+          pickup: pickupShort,
+          dropoff: dropoffShort,
+          pickupFullAddress: ride.pickup?.address || null,
+          dropoffFullAddress: ride.dropoff?.address || null,
+          vehicleType: ride.vehicleTypeName || 'Sedan',
+          passengerCount: ride.passengerCount || 1,
+          summaryText: `${ride.vehicleTypeName || 'Sedan'} · ${ride.passengerCount || 1} riders`,
+          status: ride.status,
+          payableFare: ride.payableFare || ride.totalFare || 0,
+        };
+      });
+
+      // 8. Recent Trips Formatting
+      const recentTripsItems = recentRidesDocs.map((ride: any) => {
+        const rideDate = ride.createdAt ? new Date(ride.createdAt) : new Date();
+        const dateStr = rideDate.toISOString().split('T')[0];
+
+        const pickupShort = this.shortenAddress(
+          ride.pickup?.address || 'Pickup',
+        );
+        const dropoffShort = this.shortenAddress(
+          ride.dropoff?.address || 'Dropoff',
+        );
+        const isCompleted = ride.status === RideStatus.RIDE_COMPLETED;
+        const fareNum = Number(ride.payableFare || ride.totalFare || 0);
+
+        return {
+          rideId: String(ride._id),
+          rideNumber: `#${String(ride._id).slice(-5).toUpperCase()}`,
+          route: `${pickupShort} → ${dropoffShort}`,
+          pickup: pickupShort,
+          dropoff: dropoffShort,
+          pickupFullAddress: ride.pickup?.address || null,
+          dropoffFullAddress: ride.dropoff?.address || null,
+          date: dateStr,
+          fare: isCompleted ? `$${fareNum.toFixed(2)}` : '$0.00',
+          fareAmount: isCompleted ? fareNum : 0,
+          status: isCompleted ? 'Completed' : 'Cancelled',
+          rawStatus: ride.status,
+          statusBadgeColor: isCompleted ? 'green' : 'red',
+          vehicleTypeName: ride.vehicleTypeName || 'Sedan',
+          paymentMethod: ride.paymentMethod || 'CARD',
+        };
+      });
+
+      // 9. Saved Places Formatting
+      const savedPlacesItems = savedPlacesDocs.map((addr: any) => ({
+        id: String(addr._id),
+        label: addr.label,
+        address: addr.address,
+        type: addr.type,
+        latitude: addr.latitude ?? null,
+        longitude: addr.longitude ?? null,
+      }));
+
+      // 10. Complete Dashboard Data Payload
+      const dashboard = {
+        greeting: {
+          text: greetingText,
+          timeOfDay,
+          userName,
+          subtext: "Hope you had a great day! Here's your ride activity.",
+        },
+        user: {
+          id: String(user._id),
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          fullName:
+            `${user.firstName || ''} ${user.lastName || ''}`.trim() || userName,
+          email: user.email || '',
+          phoneNumber: user.phoneNumber || '',
+          avatar: user.avatar || null,
+          unreadNotificationsCount: unreadCount,
+        },
+        banner: {
+          title: bannerTitle,
+          subtitle: 'Where are we heading today?',
+          badge: 'Zero surge pricing',
+          quickActions: [
+            {
+              id: 'book_ride',
+              title: 'Book a ride',
+              subtitle: 'Pickup in minutes',
+              action: 'BOOK_RIDE',
+            },
+            {
+              id: 'fare_estimate',
+              title: 'Fare estimate',
+              subtitle: 'Locked fare upfront',
+              action: 'FARE_ESTIMATE',
+            },
+            {
+              id: 'schedule_trip',
+              title: 'Schedule trip',
+              subtitle: 'Airport and outstation',
+              action: 'SCHEDULE_TRIP',
+            },
+          ],
+        },
+        metrics: {
+          completedRides: completedRidesCount,
+          walletBalance,
+          walletBalanceFormatted,
+          savedPlacesCount: savedPlacesDocs.length,
+          activeRide: activeRideStatusText,
+        },
+        liveTrip,
+        scheduledAndRecurring: {
+          count: scheduledItems.length,
+          subtitle: `${scheduledItems.length} ride${scheduledItems.length === 1 ? '' : 's'} set for auto-dispatch`,
+          items: scheduledItems,
+        },
+        recentTrips: {
+          count: recentTripsItems.length,
+          items: recentTripsItems,
+        },
+        primaryCard,
+        savedPlaces: {
+          count: savedPlacesItems.length,
+          items: savedPlacesItems,
+          placeholder: {
+            message: 'No saved places yet',
+            ctaText: '+ Add your first place',
+          },
+        },
+        perks: [
+          {
+            id: 'insurance',
+            icon: 'shield',
+            title: '$1M insured',
+            description: 'Every ride covered.',
+          },
+          {
+            id: 'pickup',
+            icon: 'bolt',
+            title: '5-min pickup',
+            description: 'Nearest driver, fast.',
+          },
+        ],
+      };
+
+      return new ApiResponse(
+        200,
+        dashboard,
+        'User dashboard fetched successfully',
+      );
+    } catch (error: any) {
+      console.error('Error while fetching user dashboard:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  private shortenAddress(fullAddress: string): string {
+    if (!fullAddress) return '';
+    const parts = fullAddress.split(',');
+    if (parts.length >= 2) {
+      return `${parts[0].trim()} ${parts[1].trim()}`.slice(0, 35);
+    }
+    return parts[0].trim().slice(0, 35);
   }
 
   async activeRide(user: any) {
