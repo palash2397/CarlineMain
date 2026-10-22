@@ -86,7 +86,7 @@ export class PaymentService {
       }
 
       // Tokenize card in USAePay
-      const result = await this.usaepay.addCardToCustomer(
+      let result = await this.usaepay.addCardToCustomer(
         customer.usaepayCustomerId!,
         {
           cardNumber: dto.cardNumber,
@@ -100,6 +100,38 @@ export class PaymentService {
           billingCountry: dto.billingCountry || 'US',
         },
       );
+
+      // Auto-heal: If source key not found (key belongs to another gateway/sandbox account), re-create vault
+      if (
+        !result.success &&
+        result.error &&
+        /source key not found|not found/i.test(result.error)
+      ) {
+        this.logger.warn(
+          `Customer vault key ${customer.usaepayCustomerId} not found on active gateway for userId=${userId}. Re-creating customer vault...`,
+        );
+        const newVault = await this.usaepay.createOrUpdateCustomer({
+          email: customer.email || undefined,
+          name: customer.fullName || undefined,
+        });
+
+        if (newVault.success && newVault.customerKey) {
+          customer.usaepayCustomerId = newVault.customerKey;
+          await customer.save();
+
+          result = await this.usaepay.addCardToCustomer(newVault.customerKey, {
+            cardNumber: dto.cardNumber,
+            cardExpiration: dto.cardExpiration,
+            cardCode: dto.cardCode,
+            billingName: dto.billingName,
+            billingAddress: dto.billingAddress,
+            billingCity: dto.billingCity,
+            billingState: dto.billingState,
+            billingZip: dto.billingZip,
+            billingCountry: dto.billingCountry || 'US',
+          });
+        }
+      }
 
       if (!result.success) {
         this.logger.error(`addCard failed for userId=${userId}: ${result.error}`);
@@ -715,6 +747,65 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Get payment transaction history for a driver.
+   */
+  async driverTransactions(
+    driverId: string,
+    query: PaymentQueryDto & { status?: string; paymentMethod?: string },
+  ) {
+    try {
+      const page = query.page || 1;
+      const limit = query.limit || 20;
+
+      const filter: any = { driverId };
+      if (query.status) filter.status = query.status;
+      if (query.paymentMethod) filter.paymentMethod = query.paymentMethod;
+
+      const [items, total, agg] = await Promise.all([
+        this.txModel
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean(),
+        this.txModel.countDocuments(filter),
+        this.txModel.aggregate([
+          { $match: { driverId, status: PaymentTransactionStatus.SUCCESS } },
+          {
+            $group: {
+              _id: null,
+              totalFare: { $sum: '$amount' },
+              totalDriverEarnings: { $sum: '$commissionSnapshot.driverEarnings' },
+            },
+          },
+        ]),
+      ]);
+
+      const summary = agg[0] || { totalFare: 0, totalDriverEarnings: 0 };
+
+      return new ApiResponse(
+        200,
+        {
+          items: items.map((tx) => this.txPayload(tx)),
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+          summary: {
+            totalSuccessfulTrips: total,
+            totalFare: Number((summary.totalFare || 0).toFixed(2)),
+            totalDriverEarnings: Number((summary.totalDriverEarnings || 0).toFixed(2)),
+          },
+        },
+        'Driver transactions fetched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`driverTransactions error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
   // ============================================================
   // Admin: All transactions (Superadmin)
   // ============================================================
@@ -781,10 +872,29 @@ export class PaymentService {
           ? lastCustomer.customerId + 1
           : 1;
 
+      let userDoc: any = null;
+      try {
+        if (Types.ObjectId.isValid(userId)) {
+          userDoc = await this.customerModel.db
+            .collection('users')
+            .findOne({ _id: new Types.ObjectId(userId) });
+        }
+      } catch (e) {
+        // Ignore user lookup error
+      }
+
+      const fullName = userDoc
+        ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() ||
+          userDoc.email?.split('@')[0] ||
+          'Carline Passenger'
+        : 'Carline Passenger';
+
       customer = new this.customerModel({
         customerId: newCustomerId,
         accountNumber: userId,
-        fullName: 'Carline Passenger',
+        fullName,
+        email: userDoc?.email || null,
+        mobileNumber: userDoc?.phoneNumber || null,
         autoEmail: 'Inactive',
         credit: 0,
         createdBy: 'PAYMENT_MODULE',
@@ -801,7 +911,9 @@ export class PaymentService {
       });
 
       if (!result.success || !result.customerKey) {
-        this.logger.error(`Failed to create USAePay customer vault for userId=${userId}`);
+        this.logger.error(
+          `Failed to create USAePay customer vault for userId=${userId}: ${result.error}`,
+        );
         return null;
       }
 
