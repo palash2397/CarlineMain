@@ -18,6 +18,8 @@ import {
 } from './schema/payment-transaction.schema';
 
 import { Customer, CustomerDocument } from '../customer/schema/customer.schema';
+import { Ride, RideDocument } from '../ride/schema/ride.schema';
+import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
 
 import { UsaepayService } from './usaepay.service';
 import { AddCardDto } from './dto/add-card.dto';
@@ -61,6 +63,9 @@ export class PaymentService {
 
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
+
+    @InjectModel(Ride.name)
+    private readonly rideModel: Model<RideDocument>,
 
     private readonly usaepay: UsaepayService,
     private readonly config: ConfigService,
@@ -716,54 +721,253 @@ export class PaymentService {
   }
 
   /**
-   * Get payment transaction history for a driver.
+   * Get payment transaction history for a driver according to Driver Portal UI.
+   * Returns:
+   * - 3 Summary Cards: TOTAL INFLOWS, TOTAL PAYOUTS, NET BALANCE
+   * - Tabs: All Transactions, Earnings, Payouts (with counts)
+   * - Table list: Date, Description, Amount, Method, Status, TripCode
+   * - Pagination
    */
   async driverTransactions(
     driverId: string,
-    query: PaymentQueryDto & { status?: string; paymentMethod?: string },
+    query: PaymentQueryDto & {
+      tab?: string;
+      type?: string;
+      status?: string;
+      paymentMethod?: string;
+    },
   ) {
     try {
-      const page = query.page || 1;
-      const limit = query.limit || 20;
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Number(query.limit) || 20);
+      const selectedTab = String(query.tab || query.type || 'ALL').toUpperCase();
 
-      const filter: any = { driverId };
-      if (query.status) filter.status = query.status;
-      if (query.paymentMethod) filter.paymentMethod = query.paymentMethod;
+      // 1. Fetch completed rides for this driver (Driver Earnings)
+      const rideFilter: any = {
+        driver: driverId,
+        status: RideStatus.RIDE_COMPLETED,
+      };
 
-      const [items, total, agg] = await Promise.all([
-        this.txModel
-          .find(filter)
-          .sort({ createdAt: -1 })
-          .skip((page - 1) * limit)
-          .limit(limit)
+      const [completedRides, txList] = await Promise.all([
+        this.rideModel
+          .find(rideFilter)
+          .sort({ completedAt: -1, createdAt: -1 })
           .lean(),
-        this.txModel.countDocuments(filter),
-        this.txModel.aggregate([
-          { $match: { driverId, status: PaymentTransactionStatus.SUCCESS } },
-          {
-            $group: {
-              _id: null,
-              totalFare: { $sum: '$amount' },
-              totalDriverEarnings: { $sum: '$commissionSnapshot.driverEarnings' },
-            },
-          },
-        ]),
+        this.txModel
+          .find({ driverId })
+          .sort({ createdAt: -1 })
+          .lean(),
       ]);
 
-      const summary = agg[0] || { totalFare: 0, totalDriverEarnings: 0 };
+      // 2. Map completed rides to transaction items
+      const rideTxList = completedRides.map((ride: any) => {
+        const earnings = Number(
+          (
+            ride.driverEarnings != null
+              ? ride.driverEarnings
+              : ((ride.payableFare || 0) - (ride.companyCommissionAmount || 0)) || (ride.payableFare || 0)
+          ).toFixed(2),
+        );
+        const dateObj = new Date(ride.completedAt || ride.createdAt);
+        const dateStr = dateObj.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        const tripCode = `#TRIP-${String(ride._id).slice(-4).toUpperCase()}`;
+
+        let method = 'Cash';
+        const rawMethod = String(ride.paymentMethod || '').toUpperCase();
+        if (rawMethod === 'CARD') method = 'Card';
+        else if (rawMethod === 'WALLET') method = 'Wallet';
+        else if (rawMethod === 'UPI') method = 'UPI';
+
+        return {
+          id: String(ride._id),
+          date: dateStr,
+          rawDate: dateObj.toISOString(),
+          description: `Ride Earnings - Trip ${tripCode}`,
+          amount: earnings,
+          formattedAmount: `+₹${earnings.toLocaleString('en-IN')}`,
+          type: 'EARNING',
+          direction: 'INFLOW',
+          method,
+          status: 'Completed',
+          statusColor: 'green',
+          rideId: String(ride._id),
+          tripCode,
+          fareAmount: ride.payableFare || ride.totalFare || earnings,
+          driverEarnings: earnings,
+          commission: ride.companyCommissionAmount || 0,
+        };
+      });
+
+      // 3. Map any gateway transactions (avoid double-counting if rideId is already in rideTxList)
+      const rideIdSet = new Set(completedRides.map((r: any) => String(r._id)));
+      const extraTxList = txList
+        .filter((tx: any) => !tx.rideId || !rideIdSet.has(String(tx.rideId)))
+        .map((tx: any) => {
+          const dateObj = new Date(tx.createdAt);
+          const isPayout =
+            tx.status === PaymentTransactionStatus.REFUNDED ||
+            /payout|withdraw/i.test(tx.description || '');
+          const amount = Number(
+            (tx.commissionSnapshot?.driverEarnings || tx.amount || 0).toFixed(2),
+          );
+          const tripCode = tx.rideId
+            ? `#TRIP-${String(tx.rideId).slice(-4).toUpperCase()}`
+            : null;
+
+          return {
+            id: String(tx._id),
+            date: dateObj.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            }),
+            rawDate: dateObj.toISOString(),
+            description:
+              tx.description ||
+              (isPayout
+                ? 'Withdrawal to bank'
+                : `Ride Payment ${tripCode || '#' + String(tx._id).slice(-4).toUpperCase()}`),
+            amount: isPayout ? -amount : amount,
+            formattedAmount: isPayout
+              ? `-₹${amount.toLocaleString('en-IN')}`
+              : `+₹${amount.toLocaleString('en-IN')}`,
+            type: isPayout ? 'PAYOUT' : 'EARNING',
+            direction: isPayout ? 'OUTFLOW' : 'INFLOW',
+            method:
+              tx.paymentMethod === PaymentMethod.CARD
+                ? 'Card'
+                : isPayout
+                  ? 'Bank Transfer'
+                  : 'Cash',
+            status:
+              tx.status === PaymentTransactionStatus.SUCCESS
+                ? 'Completed'
+                : tx.status,
+            statusColor:
+              tx.status === PaymentTransactionStatus.SUCCESS ? 'green' : 'red',
+            rideId: tx.rideId || null,
+            tripCode,
+            fareAmount: tx.amount,
+            driverEarnings: amount,
+            commission: tx.commissionSnapshot?.companyCommissionAmount || 0,
+          };
+        });
+
+      // 4. Combine all transactions and sort by date descending
+      const allTransactions = [...rideTxList, ...extraTxList].sort(
+        (a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime(),
+      );
+
+      // 5. Compute the exact 3 cards matching UI
+      const totalInflows = Number(
+        allTransactions
+          .filter((t) => t.type === 'EARNING')
+          .reduce((acc, t) => acc + t.amount, 0)
+          .toFixed(2),
+      );
+      const totalPayouts = Number(
+        Math.abs(
+          allTransactions
+            .filter((t) => t.type === 'PAYOUT')
+            .reduce((acc, t) => acc + t.amount, 0),
+        ).toFixed(2),
+      );
+      const netBalance = Number((totalInflows - totalPayouts).toFixed(2));
+
+      const cards = {
+        totalInflows: {
+          amount: totalInflows,
+          formatted: `+₹${totalInflows.toLocaleString('en-IN')}`,
+          label: 'TOTAL INFLOWS',
+          sublabel: 'Rides & incentives',
+          icon: 'inflow',
+          direction: 'INFLOW',
+        },
+        totalPayouts: {
+          amount: totalPayouts,
+          formatted: `-₹${totalPayouts.toLocaleString('en-IN')}`,
+          label: 'TOTAL PAYOUTS',
+          sublabel: 'Withdrawn to bank',
+          icon: 'payout',
+          direction: 'OUTFLOW',
+        },
+        netBalance: {
+          amount: netBalance,
+          formatted: `${netBalance >= 0 ? '+' : '-'}₹${Math.abs(netBalance).toLocaleString('en-IN')}`,
+          label: 'NET BALANCE',
+          sublabel: 'Available for transfer',
+          icon: 'wallet',
+          direction: 'BALANCE',
+        },
+      };
+
+      // 6. Tabs
+      const earningsCount = allTransactions.filter((t) => t.type === 'EARNING').length;
+      const payoutsCount = allTransactions.filter((t) => t.type === 'PAYOUT').length;
+      const tabs = [
+        { key: 'ALL', label: 'All Transactions', count: allTransactions.length },
+        { key: 'EARNINGS', label: 'Earnings', count: earningsCount },
+        { key: 'PAYOUTS', label: 'Payouts', count: payoutsCount },
+      ];
+
+      // 7. Filter by tab / query
+      let filtered = allTransactions;
+      if (selectedTab === 'EARNINGS') {
+        filtered = allTransactions.filter((t) => t.type === 'EARNING');
+      } else if (selectedTab === 'PAYOUTS') {
+        filtered = allTransactions.filter((t) => t.type === 'PAYOUT');
+      }
+
+      if (query.paymentMethod) {
+        filtered = filtered.filter(
+          (t) =>
+            t.method.toLowerCase() === String(query.paymentMethod).toLowerCase(),
+        );
+      }
+
+      if (query.status) {
+        filtered = filtered.filter(
+          (t) =>
+            t.status.toLowerCase() === String(query.status).toLowerCase(),
+        );
+      }
+
+      // 8. Pagination
+      const total = filtered.length;
+      const totalPages = Math.ceil(total / limit) || 1;
+      const paginatedItems = filtered.slice((page - 1) * limit, page * limit);
 
       return new ApiResponse(
         200,
         {
-          items: items.map((tx) => this.txPayload(tx)),
+          cards,
+          tabs,
+          activeTab: selectedTab,
+          transactions: paginatedItems,
+          // Backward compatibility fields
+          items: paginatedItems.map((tx) => ({
+            ...tx,
+            transactionId: tx.id,
+          })),
+          pagination: {
+            total,
+            page,
+            limit,
+            totalPages,
+          },
           total,
           page,
           limit,
-          totalPages: Math.ceil(total / limit) || 1,
+          totalPages,
           summary: {
-            totalSuccessfulTrips: total,
-            totalFare: Number((summary.totalFare || 0).toFixed(2)),
-            totalDriverEarnings: Number((summary.totalDriverEarnings || 0).toFixed(2)),
+            totalInflows,
+            totalPayouts,
+            netBalance,
+            totalSuccessfulTrips: earningsCount,
           },
         },
         'Driver transactions fetched successfully',
