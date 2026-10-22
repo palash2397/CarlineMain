@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -16,6 +17,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -27,6 +29,10 @@ import { SuperAdminLoginDto } from './dto/super-admin-login.dto';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyStatusDto } from './dto/update-company-status.dto';
+import {
+  UpdateCompanyCommissionDto,
+  UpdateDriverCommissionDto,
+} from 'src/common/dto/commission.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
@@ -163,5 +169,76 @@ export class SuperAdminController {
   @Roles(UserRole.SUPERADMIN)
   async updateCompanyStatus(@Body() dto: UpdateCompanyStatusDto) {
     return this.superAdminService.updateCompanyStatus(dto);
+  }
+
+  @Get('/companies/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.SUPERADMIN,
+    UserRole.ADMIN,
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+  )
+  @ApiOperation({
+    summary: 'SuperAdmin: Get company commission settings',
+  })
+  async getCompanyCommission(@Param('id') id: string, @Req() req: any) {
+    return this.superAdminService.getCompanyCommission(id, req.user);
+  }
+
+  @Patch('/companies/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
+  @ApiOperation({
+    summary:
+      'SuperAdmin: Update company commission (superAdminCommission and/or defaultDriverCommission)',
+  })
+  async updateCompanyCommission(
+    @Param('id') id: string,
+    @Body() dto: UpdateCompanyCommissionDto,
+    @Req() req: any,
+  ) {
+    return this.superAdminService.updateCompanyCommission(id, dto, req.user);
+  }
+
+  @Get('/drivers/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
+  @ApiOperation({
+    summary:
+      'SuperAdmin: Get driver commission (supports both independent and company drivers)',
+  })
+  async getDriverCommission(@Param('id') id: string, @Req() req: any) {
+    return this.superAdminService.getDriverCommission(id, req.user);
+  }
+
+  @Patch('/drivers/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
+  @ApiOperation({
+    summary:
+      'SuperAdmin: Set or update commission for an independent driver or company driver',
+  })
+  async updateDriverCommission(
+    @Param('id') id: string,
+    @Body() dto: UpdateDriverCommissionDto,
+    @Req() req: any,
+  ) {
+    return this.superAdminService.updateDriverCommission(id, dto, req.user);
+  }
+
+  @Delete('/drivers/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'SuperAdmin: Reset driver commission back to default',
+  })
+  async resetDriverCommission(@Param('id') id: string, @Req() req: any) {
+    return this.superAdminService.resetDriverCommission(id, req.user);
   }
 }

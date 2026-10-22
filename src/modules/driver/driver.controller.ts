@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -28,6 +29,7 @@ import { GetCompanyDriversQueryDto } from './dto/get-company-drivers-query.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { UpdateDriverVehicleTypeDto } from './dto/update-driver-vehicle-type.dto';
+import { UpdateDriverCommissionDto } from 'src/common/dto/commission.dto';
 import { JwtAuthGuard } from '../auth/jwt/jwt-auth.guard';
 import { RoleGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/roles/roles.decorator';
@@ -191,5 +193,58 @@ export class DriverController {
   @Get('/vehicle-types/all')
   async getAllVehicleTypes() {
     return this.driverService.getAvailableVehicleTypes();
+  }
+
+  @Get('/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Get driver commission details (effective, custom, and company default)',
+  })
+  async getDriverCommission(@Param('id') id: string, @Req() req: any) {
+    return this.driverService.getDriverCommission(id, req.user);
+  }
+
+  @Patch('/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary: 'Set or update custom commission override for a driver',
+  })
+  async updateDriverCommission(
+    @Param('id') id: string,
+    @Body() dto: UpdateDriverCommissionDto,
+    @Req() req: any,
+  ) {
+    return this.driverService.updateDriverCommission(id, dto, req.user);
+  }
+
+  @Delete('/:id/commission')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RoleGuard)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    ...COMPANY_STAFF_ROLES,
+    UserRole.ADMIN,
+    UserRole.SUPERADMIN,
+  )
+  @ApiOperation({
+    summary: 'Reset driver commission to company default',
+  })
+  async resetDriverCommission(@Param('id') id: string, @Req() req: any) {
+    return this.driverService.resetDriverCommission(id, req.user);
   }
 }

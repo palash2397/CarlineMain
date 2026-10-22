@@ -112,14 +112,31 @@ async function bootstrap() {
       'Notifications (by Prakash)',
       'Firebase Cloud Messaging push notifications, FCM device tokens, and In-App notification center APIs - owned by Prakash Mishra',
     )
+    .addTag(
+      'Company Commission',
+      'Company commission configuration APIs (Superadmin commission & Default Driver commission)',
+    )
+    .addTag(
+      'User Payment',
+      'User payment APIs: Card tokenization, Saved cards, Ride payment charge, Refunds, and Transaction history',
+    )
+    .addTag(
+      'Driver Payment',
+      'Driver payment APIs: Collect cash/card payment on dropoff, Trip payment status, and Driver earnings breakdown',
+    )
+    .addTag(
+      'Admin Payment',
+      'Superadmin/Admin: view all payment transactions with filters and commission reports',
+    )
     .build();
+
 
   const document = SwaggerModule.createDocument(app, config);
 
   Object.values(document.paths).forEach((pathItem) => {
     Object.values(pathItem).forEach((operation: any) => {
       if (Array.isArray(operation.tags) && operation.tags.length > 1) {
-        operation.tags = operation.tags.filter((tag: string) => tag !== 'Ride');
+        operation.tags = operation.tags.filter((tag: string) => tag !== 'Ride' && tag !== 'Payment');
       }
     });
   });

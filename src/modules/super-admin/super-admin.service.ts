@@ -19,6 +19,10 @@ import { SuperAdminLoginDto } from './dto/super-admin-login.dto';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyStatusDto } from './dto/update-company-status.dto';
+import {
+  UpdateCompanyCommissionDto,
+  UpdateDriverCommissionDto,
+} from 'src/common/dto/commission.dto';
 import { UserRole } from 'src/common/enums/user/role.enum';
 import { StatusEnum } from 'src/common/enums/general/status-enum';
 import { MailService } from '../mail/mail.service';
@@ -844,6 +848,249 @@ export class SuperAdminService implements OnModuleInit {
       );
     } catch (error) {
       console.log('Error while updating company status:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async getCompanyCommission(id: string, user?: any) {
+    try {
+      const conditions: any[] = [
+        { companyId: id },
+        { companyCode: id.toUpperCase() },
+      ];
+      if (isValidObjectId(id)) {
+        conditions.unshift({ _id: id });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
+      if (!company) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          _id: company._id,
+          companyId: company.companyId,
+          legalName: company.legalName,
+          displayName: company.displayName,
+          superAdminCommission: company.superAdminCommission || {
+            type: 'PERCENTAGE',
+            value: 5,
+            isEnabled: true,
+          },
+          defaultDriverCommission: company.defaultDriverCommission || {
+            type: 'PERCENTAGE',
+            value: 15,
+            isEnabled: true,
+          },
+        },
+        'Company commission fetched successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching company commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateCompanyCommission(
+    id: string,
+    dto: UpdateCompanyCommissionDto,
+    user?: any,
+  ) {
+    try {
+      const conditions: any[] = [
+        { companyId: id },
+        { companyCode: id.toUpperCase() },
+      ];
+      if (isValidObjectId(id)) {
+        conditions.unshift({ _id: id });
+      }
+
+      const company = await this.companyModel.findOne({ $or: conditions });
+      if (!company) {
+        return new ApiResponse(404, {}, Msg.COMPANY_NOT_FOUND);
+      }
+
+      if (dto.superAdminCommission) {
+        company.superAdminCommission = {
+          type: dto.superAdminCommission.type,
+          value: Number(dto.superAdminCommission.value),
+          isEnabled: dto.superAdminCommission.isEnabled ?? true,
+        };
+      }
+
+      if (dto.defaultDriverCommission) {
+        company.defaultDriverCommission = {
+          type: dto.defaultDriverCommission.type,
+          value: Number(dto.defaultDriverCommission.value),
+          isEnabled: dto.defaultDriverCommission.isEnabled ?? true,
+        };
+      }
+
+      await company.save();
+
+      return new ApiResponse(
+        200,
+        {
+          _id: company._id,
+          companyId: company.companyId,
+          legalName: company.legalName,
+          displayName: company.displayName,
+          superAdminCommission: company.superAdminCommission,
+          defaultDriverCommission: company.defaultDriverCommission,
+        },
+        'Company commission updated successfully',
+      );
+    } catch (error) {
+      console.error('Error updating company commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async getDriverCommission(id: string, user?: any) {
+    try {
+      if (!isValidObjectId(id)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(id);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      const isIndependentDriver = !driver.companyId;
+
+      let defaultCommission = {
+        type: 'PERCENTAGE',
+        value: 15,
+        isEnabled: true,
+      };
+
+      let companyDetails: any = null;
+
+      if (driver.companyId) {
+        const companyConditions: any[] = [{ companyId: driver.companyId }];
+        if (isValidObjectId(driver.companyId)) {
+          companyConditions.unshift({ _id: driver.companyId });
+        }
+        const company = await this.companyModel.findOne({
+          $or: companyConditions,
+        });
+        if (company) {
+          companyDetails = {
+            id: company._id,
+            companyId: company.companyId,
+            name: company.displayName || company.legalName,
+          };
+          if (company.defaultDriverCommission) {
+            defaultCommission = company.defaultDriverCommission;
+          }
+        }
+      }
+
+      const isCustomActive = Boolean(
+        driver.commission && driver.commission.isEnabled !== false,
+      );
+      const effectiveCommission = isCustomActive
+        ? driver.commission
+        : defaultCommission;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          driverName: driver.fullName,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          company: companyDetails,
+          customCommission: driver.commission || null,
+          defaultCommission,
+          effectiveCommission,
+          isCustom: isCustomActive,
+        },
+        'Driver commission details fetched successfully',
+      );
+    } catch (error) {
+      console.error('Error fetching driver commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async updateDriverCommission(
+    id: string,
+    dto: UpdateDriverCommissionDto,
+    user?: any,
+  ) {
+    try {
+      if (!isValidObjectId(id)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(id);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      driver.commission = {
+        type: dto.type,
+        value: Number(dto.value),
+        isEnabled: dto.isEnabled ?? true,
+      };
+
+      await driver.save();
+
+      const isIndependentDriver = !driver.companyId;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          driverName: driver.fullName,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          commission: driver.commission,
+        },
+        isIndependentDriver
+          ? 'Independent driver commission updated successfully by Superadmin'
+          : 'Driver custom commission updated successfully by Superadmin',
+      );
+    } catch (error) {
+      console.error('Error updating driver commission:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  async resetDriverCommission(id: string, user?: any) {
+    try {
+      if (!isValidObjectId(id)) {
+        return new ApiResponse(400, {}, Msg.INVALID_INPUT);
+      }
+
+      const driver = await this.driverModel.findById(id);
+      if (!driver) {
+        return new ApiResponse(404, {}, 'Driver not found');
+      }
+
+      driver.commission = null;
+      await driver.save();
+
+      const isIndependentDriver = !driver.companyId;
+
+      return new ApiResponse(
+        200,
+        {
+          driverId: driver._id,
+          isIndependentDriver,
+          managedBy: isIndependentDriver ? 'SUPERADMIN' : 'COMPANY',
+          message: isIndependentDriver
+            ? 'Custom commission removed. Driver now uses platform default (15%).'
+            : 'Custom commission removed. Driver now uses company default.',
+        },
+        'Driver commission reset to default successfully',
+      );
+    } catch (error) {
+      console.error('Error resetting driver commission:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }
