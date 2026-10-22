@@ -3315,7 +3315,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         )
         .filter(
           (request: any) =>
-            String(request.driverId || request.driver || '') === String(driverId) ||
+            String(
+              request.candidateDriverId ||
+                request.driverId ||
+                request.driver ||
+                '',
+            ) === String(driverId) ||
             request.distanceToPickupKm === null ||
             request.distanceToPickupKm <= DRIVER_SEARCH_RADIUS_KM,
         )
@@ -4405,7 +4410,13 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       const ride = await this.rideModel
         .findOne({
           driver: driverId,
-          status: { $in: DRIVER_RUNNING_STATUSES },
+          $or: [
+            { status: { $in: DRIVER_RUNNING_STATUSES } },
+            {
+              status: RideStatus.RIDE_COMPLETED,
+              paymentStatus: { $ne: PaymentStatus.PAID },
+            },
+          ],
         })
         .sort({ createdAt: -1 })
         .select('_id');
@@ -4598,7 +4609,13 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     return this.rideModel
       .findOne({
         driver: driverId,
-        status: { $in: DRIVER_RUNNING_STATUSES },
+        $or: [
+          { status: { $in: DRIVER_RUNNING_STATUSES } },
+          {
+            status: RideStatus.RIDE_COMPLETED,
+            paymentStatus: { $ne: PaymentStatus.PAID },
+          },
+        ],
       })
       .sort({ createdAt: -1 });
   }
@@ -5113,7 +5130,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       case RideStatus.RIDE_STARTED:
         return ride.destinationReached ? 'END_TRIP' : 'REACH_DESTINATION';
       case RideStatus.RIDE_COMPLETED:
-        return ride.paymentStatus === PaymentStatus.PENDING
+        return ride.paymentStatus !== PaymentStatus.PAID
           ? 'COLLECT_PAYMENT'
           : null;
       default:
