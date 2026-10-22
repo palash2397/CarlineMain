@@ -715,6 +715,65 @@ export class PaymentService {
     }
   }
 
+  /**
+   * Get payment transaction history for a driver.
+   */
+  async driverTransactions(
+    driverId: string,
+    query: PaymentQueryDto & { status?: string; paymentMethod?: string },
+  ) {
+    try {
+      const page = query.page || 1;
+      const limit = query.limit || 20;
+
+      const filter: any = { driverId };
+      if (query.status) filter.status = query.status;
+      if (query.paymentMethod) filter.paymentMethod = query.paymentMethod;
+
+      const [items, total, agg] = await Promise.all([
+        this.txModel
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean(),
+        this.txModel.countDocuments(filter),
+        this.txModel.aggregate([
+          { $match: { driverId, status: PaymentTransactionStatus.SUCCESS } },
+          {
+            $group: {
+              _id: null,
+              totalFare: { $sum: '$amount' },
+              totalDriverEarnings: { $sum: '$commissionSnapshot.driverEarnings' },
+            },
+          },
+        ]),
+      ]);
+
+      const summary = agg[0] || { totalFare: 0, totalDriverEarnings: 0 };
+
+      return new ApiResponse(
+        200,
+        {
+          items: items.map((tx) => this.txPayload(tx)),
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1,
+          summary: {
+            totalSuccessfulTrips: total,
+            totalFare: Number((summary.totalFare || 0).toFixed(2)),
+            totalDriverEarnings: Number((summary.totalDriverEarnings || 0).toFixed(2)),
+          },
+        },
+        'Driver transactions fetched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`driverTransactions error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
   // ============================================================
   // Admin: All transactions (Superadmin)
   // ============================================================

@@ -134,6 +134,26 @@ export class PaymentController {
   }
 
   // ============================================================
+  // DRIVER: Transaction History
+  // ============================================================
+
+  @ApiTags('Driver Payment')
+  @ApiOperation({
+    summary: 'Get driver payment transaction history',
+    description:
+      'Fetches ride payment transactions for the authenticated driver, with breakdown of fare, driver earnings, company commission, and payment method.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by status: SUCCESS, PENDING, FAILED, REFUNDED' })
+  @ApiQuery({ name: 'paymentMethod', required: false, description: 'Filter by payment method: CARD, CASH' })
+  @Roles(UserRole.DRIVER)
+  @Get('driver/transactions')
+  driverTransactions(@Req() req: any, @Query() query: any) {
+    return this.paymentService.driverTransactions(req.user.id, query);
+  }
+
+  // ============================================================
   // ADMIN: All Transactions
   // ============================================================
 
