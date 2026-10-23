@@ -110,4 +110,13 @@ export class BookRideDto {
   @IsOptional()
   @IsString()
   promoCode?: string;
+
+  @ApiPropertyOptional({
+    example: '1xrw-ya1z-q8gi-5ji5',
+    description:
+      'Specific saved card payMethodKey when user has multiple cards. If omitted, default card is used.',
+  })
+  @IsOptional()
+  @IsString()
+  payMethodKey?: string;
 }
