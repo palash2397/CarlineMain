@@ -265,6 +265,7 @@ export class UsaepayService {
         currency: 'USD',
         description: params.description || 'Ride payment',
         invoice: params.orderId || undefined,
+        custkey: params.customerKey || undefined,
         creditcard: {
           number: params.payMethodKey,
         },

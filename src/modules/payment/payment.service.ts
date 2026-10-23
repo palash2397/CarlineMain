@@ -1559,10 +1559,20 @@ export class PaymentService {
         return new ApiResponse(404, {}, 'User not found');
       }
 
-      // Find or create customer in Customer collection for USAePay vault
-      let customer = await this.customerModel.findOne({
-        $or: [{ userId }, { user: userId }, { email: user.email }],
+      // Find customer record in Customer collection for USAePay vault
+      let customer: any = await this.customerModel.findOne({
+        $or: [
+          { accountNumber: userId },
+          { email: user.email },
+          { userId },
+          { user: userId },
+          ...(Types.ObjectId.isValid(userId) ? [{ _id: new Types.ObjectId(userId) }] : []),
+        ],
       });
+
+      if (!customer || !customer.usaepayCustomerId) {
+        customer = await this.findOrCreateCustomerVault(userId);
+      }
 
       if (!customer || !customer.usaepayCustomerId) {
         return new ApiResponse(
@@ -1572,9 +1582,22 @@ export class PaymentService {
         );
       }
 
+      const payMethodKeyToUse =
+        dto.payMethodKey ||
+        customer.defaultPayMethodKey ||
+        (customer.savedCards && customer.savedCards[0]?.payMethodKey);
+
+      if (!payMethodKeyToUse) {
+        return new ApiResponse(
+          400,
+          {},
+          'No saved card found. Please provide a payMethodKey or save a card first.',
+        );
+      }
+
       const chargeResult = await this.usaepay.chargeCustomerCard({
         customerKey: customer.usaepayCustomerId,
-        payMethodKey: dto.payMethodKey,
+        payMethodKey: payMethodKeyToUse,
         amount,
         description: dto.description || `Wallet Top-up (+$${amount.toFixed(2)})`,
       });
@@ -1593,6 +1616,12 @@ export class PaymentService {
         { $inc: { walletBalance: amount } },
       );
 
+      const matchedCard = customer.savedCards?.find(
+        (c: any) => c.payMethodKey === payMethodKeyToUse,
+      );
+      const cardLast4 = matchedCard?.cardLast4 || customer.cardLast4 || null;
+      const cardBrand = matchedCard?.cardBrand || customer.cardBrand || null;
+
       // Create PaymentTransaction audit record
       const tx = await this.txModel.create({
         customerId: String(customer._id || userId),
@@ -1601,8 +1630,8 @@ export class PaymentService {
         status: PaymentTransactionStatus.SUCCESS,
         usaepayTransactionKey: chargeResult.transactionKey,
         refNum: chargeResult.refNum,
-        cardLast4: customer.cardLast4 || null,
-        cardBrand: customer.cardBrand || null,
+        cardLast4,
+        cardBrand,
         chargedAt: new Date(),
         description: `Wallet Top-up (+$${amount.toFixed(2)})`,
       });
@@ -1658,7 +1687,13 @@ export class PaymentService {
       const walletBalance = Number(user.walletBalance || 0);
 
       const customer = await this.customerModel.findOne({
-        $or: [{ userId }, { user: userId }, { email: user.email }],
+        $or: [
+          { accountNumber: userId },
+          { email: user.email },
+          { userId },
+          { user: userId },
+          ...(Types.ObjectId.isValid(userId) ? [{ _id: new Types.ObjectId(userId) }] : []),
+        ],
       });
       const customerIds = [String(userId)];
       if (customer) {
@@ -1792,7 +1827,13 @@ export class PaymentService {
       }
 
       const customer = await this.customerModel.findOne({
-        $or: [{ userId }, { user: userId }, { email: user.email }],
+        $or: [
+          { accountNumber: userId },
+          { email: user.email },
+          { userId },
+          { user: userId },
+          ...(Types.ObjectId.isValid(userId) ? [{ _id: new Types.ObjectId(userId) }] : []),
+        ],
       });
 
       // CASE 1: FULL WALLET PAYMENT (Wallet balance >= currentDue)
@@ -1902,11 +1943,20 @@ export class PaymentService {
         description: `Split trip payment via Wallet ($${walletDeducted.toFixed(2)}) for Ride #${ride._id}`,
       });
 
+      const payMethodKeyToUse =
+        dto.payMethodKey ||
+        customer?.defaultPayMethodKey ||
+        (customer?.savedCards && customer.savedCards[0]?.payMethodKey);
+
       // If user chose to pay the remaining via card immediately
-      if (dto.remainingPaymentMethod === PaymentMethod.CARD && dto.payMethodKey && customer?.usaepayCustomerId) {
+      if (
+        dto.remainingPaymentMethod === PaymentMethod.CARD &&
+        payMethodKeyToUse &&
+        customer?.usaepayCustomerId
+      ) {
         const cardCharge = await this.usaepay.chargeCustomerCard({
           customerKey: customer.usaepayCustomerId,
-          payMethodKey: dto.payMethodKey,
+          payMethodKey: payMethodKeyToUse,
           amount: remainingDue,
           description: `Remaining trip payment for Ride #${ride._id}`,
         });
