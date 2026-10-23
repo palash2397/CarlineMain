@@ -393,23 +393,6 @@ export class PaymentService {
 
       const cardCommSnapshot = this.buildCommissionSnapshot(ride, amount);
 
-      // Create a pending transaction record
-      const tx = await this.txModel.create({
-        customerId: userId,
-        rideId: dto.rideId,
-        driverId: ride.driver || null,
-        companyId: ride.companyId || null,
-        amount,
-        paymentMethod: PaymentMethod.CARD,
-        status: PaymentTransactionStatus.PENDING,
-        usaepayCustomerKey: customer.usaepayCustomerId,
-        usaepayPayMethodKey: dto.payMethodKey || (ride as any)?.payMethodKey || null,
-        cardLast4: customer.cardLast4 || null,
-        cardBrand: customer.cardBrand || null,
-        description: `Card payment for ride ${dto.rideId}`,
-        commissionSnapshot: cardCommSnapshot,
-      });
-
       const payMethodKeyToUse =
         dto.payMethodKey ||
         (ride as any)?.payMethodKey ||
@@ -423,6 +406,29 @@ export class PaymentService {
           'No saved card found. Please add a card first.',
         );
       }
+
+      const selectedCard = (customer as any).savedCards?.find(
+        (c: any) => c.payMethodKey === payMethodKeyToUse,
+      );
+      const cardLast4 = selectedCard?.cardLast4 || customer.cardLast4 || null;
+      const cardBrand = selectedCard?.cardBrand || customer.cardBrand || null;
+
+      // Create a pending transaction record
+      const tx = await this.txModel.create({
+        customerId: userId,
+        rideId: dto.rideId,
+        driverId: ride.driver || null,
+        companyId: ride.companyId || null,
+        amount,
+        paymentMethod: PaymentMethod.CARD,
+        status: PaymentTransactionStatus.PENDING,
+        usaepayCustomerKey: customer.usaepayCustomerId,
+        usaepayPayMethodKey: payMethodKeyToUse,
+        cardLast4,
+        cardBrand,
+        description: `Card payment for ride ${dto.rideId}`,
+        commissionSnapshot: cardCommSnapshot,
+      });
 
       // Charge via USAePay
       const chargeResult = await this.usaepay.chargeCustomerCard({
