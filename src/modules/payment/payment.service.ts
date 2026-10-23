@@ -1559,55 +1559,120 @@ export class PaymentService {
         return new ApiResponse(404, {}, 'User not found');
       }
 
-      // Find customer record in Customer collection for USAePay vault
-      let customer: any = await this.customerModel.findOne({
-        $or: [
-          { accountNumber: userId },
-          { email: user.email },
-          { userId },
-          { user: userId },
-          ...(Types.ObjectId.isValid(userId) ? [{ _id: new Types.ObjectId(userId) }] : []),
-        ],
-      });
+      let chargeResult: any;
+      let cardLast4: string | null = null;
+      let cardBrand: string | null = null;
+      let customerIdForTx = String(userId);
 
-      if (!customer || !customer.usaepayCustomerId) {
-        customer = await this.findOrCreateCustomerVault(userId);
-      }
+      // CASE 1: Passenger provided card details directly in payload
+      if (dto.card && dto.card.cardNumber) {
+        chargeResult = await this.usaepay.chargeCard({
+          card: {
+            cardNumber: dto.card.cardNumber,
+            cardExpiration: dto.card.cardExpiration,
+            cardCode: dto.card.cardCode,
+            billingName:
+              dto.card.billingName ||
+              (user as any).fullName ||
+              (user as any).name ||
+              'Carline Passenger',
+            billingAddress: dto.card.billingAddress || '',
+            billingCity: dto.card.billingCity || '',
+            billingState: dto.card.billingState || '',
+            billingZip: dto.card.billingZip || '',
+          },
+          amount,
+          description: dto.description || `Wallet Top-up (+$${amount.toFixed(2)})`,
+        });
 
-      if (!customer || !customer.usaepayCustomerId) {
-        return new ApiResponse(
-          400,
-          {},
-          'No payment vault profile found for this user. Please save a card first.',
+        if (!chargeResult.success) {
+          return new ApiResponse(
+            400,
+            { error: chargeResult.error },
+            chargeResult.error || 'Card charge failed. Unable to recharge wallet.',
+          );
+        }
+
+        const rawNum = dto.card.cardNumber.replace(/\s/g, '');
+        cardLast4 = rawNum.slice(-4);
+        cardBrand = this.usaepay.detectCardBrand(rawNum);
+
+        // Optionally save this card to vault for future use if requested
+        if (dto.card.saveCard) {
+          try {
+            await this.addCard(userId, {
+              cardNumber: dto.card.cardNumber,
+              cardExpiration: dto.card.cardExpiration,
+              cardCode: dto.card.cardCode,
+              billingName: dto.card.billingName,
+              billingAddress: dto.card.billingAddress,
+              billingCity: dto.card.billingCity,
+              billingState: dto.card.billingState,
+              billingZip: dto.card.billingZip,
+            });
+          } catch (saveErr: any) {
+            this.logger.warn(`Could not save card to vault during top-up: ${saveErr.message}`);
+          }
+        }
+      } else {
+        // CASE 2: Passenger using saved card in vault
+        const customer: any = await this.customerModel.findOne({
+          $or: [
+            { accountNumber: userId },
+            { email: user.email },
+            { userId },
+            { user: userId },
+            ...(Types.ObjectId.isValid(userId) ? [{ _id: new Types.ObjectId(userId) }] : []),
+          ],
+        });
+
+        const hasSavedCard =
+          customer &&
+          customer.usaepayCustomerId &&
+          ((customer.savedCards && customer.savedCards.length > 0) || customer.defaultPayMethodKey);
+
+        if (!hasSavedCard) {
+          return new ApiResponse(
+            400,
+            {},
+            'No saved card found on your account. Please add a card first or provide card details in the request to top up your wallet.',
+          );
+        }
+
+        const payMethodKeyToUse =
+          dto.payMethodKey ||
+          customer.defaultPayMethodKey ||
+          (customer.savedCards && customer.savedCards[0]?.payMethodKey);
+
+        if (!payMethodKeyToUse) {
+          return new ApiResponse(
+            400,
+            {},
+            'No saved card found. Please provide a payMethodKey or save a card first.',
+          );
+        }
+
+        chargeResult = await this.usaepay.chargeCustomerCard({
+          customerKey: customer.usaepayCustomerId,
+          payMethodKey: payMethodKeyToUse,
+          amount,
+          description: dto.description || `Wallet Top-up (+$${amount.toFixed(2)})`,
+        });
+
+        if (!chargeResult.success) {
+          return new ApiResponse(
+            400,
+            { error: chargeResult.error },
+            chargeResult.error || 'Card charge failed. Unable to recharge wallet.',
+          );
+        }
+
+        customerIdForTx = String(customer._id || userId);
+        const matchedCard = customer.savedCards?.find(
+          (c: any) => c.payMethodKey === payMethodKeyToUse,
         );
-      }
-
-      const payMethodKeyToUse =
-        dto.payMethodKey ||
-        customer.defaultPayMethodKey ||
-        (customer.savedCards && customer.savedCards[0]?.payMethodKey);
-
-      if (!payMethodKeyToUse) {
-        return new ApiResponse(
-          400,
-          {},
-          'No saved card found. Please provide a payMethodKey or save a card first.',
-        );
-      }
-
-      const chargeResult = await this.usaepay.chargeCustomerCard({
-        customerKey: customer.usaepayCustomerId,
-        payMethodKey: payMethodKeyToUse,
-        amount,
-        description: dto.description || `Wallet Top-up (+$${amount.toFixed(2)})`,
-      });
-
-      if (!chargeResult.success) {
-        return new ApiResponse(
-          400,
-          { error: chargeResult.error },
-          chargeResult.error || 'Card charge failed. Unable to recharge wallet.',
-        );
+        cardLast4 = matchedCard?.cardLast4 || customer.cardLast4 || null;
+        cardBrand = matchedCard?.cardBrand || customer.cardBrand || null;
       }
 
       // Increment user wallet balance
@@ -1616,15 +1681,9 @@ export class PaymentService {
         { $inc: { walletBalance: amount } },
       );
 
-      const matchedCard = customer.savedCards?.find(
-        (c: any) => c.payMethodKey === payMethodKeyToUse,
-      );
-      const cardLast4 = matchedCard?.cardLast4 || customer.cardLast4 || null;
-      const cardBrand = matchedCard?.cardBrand || customer.cardBrand || null;
-
       // Create PaymentTransaction audit record
       const tx = await this.txModel.create({
-        customerId: String(customer._id || userId),
+        customerId: customerIdForTx,
         amount,
         paymentMethod: PaymentMethod.CARD,
         status: PaymentTransactionStatus.SUCCESS,
@@ -1660,7 +1719,7 @@ export class PaymentService {
           isWithdrawable: false,
           transactionId: String(tx._id),
           refNum: chargeResult.refNum,
-          cardLast4: customer.cardLast4 || null,
+          cardLast4: cardLast4 || null,
         },
         'Wallet recharged successfully',
       );

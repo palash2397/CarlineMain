@@ -23,6 +23,10 @@ import {
   Notification,
   NotificationSchema,
 } from '../notification/schema/notification.schema';
+import {
+  PaymentTransaction,
+  PaymentTransactionSchema,
+} from '../payment/schema/payment-transaction.schema';
 import { RideController } from './ride.controller';
 import { RideSchedulerService } from './ride-scheduler.service';
 import { RideService } from './ride.service';
@@ -43,6 +47,7 @@ import { MailModule } from '../mail/mail.module';
       { name: Address.name, schema: AddressSchema },
       { name: Customer.name, schema: CustomerSchema },
       { name: Notification.name, schema: NotificationSchema },
+      { name: PaymentTransaction.name, schema: PaymentTransactionSchema },
     ]),
     NotificationModule,
     MailModule,

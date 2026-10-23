@@ -484,7 +484,7 @@ export class UsaepayService {
   // ============================================================
   // Helper: detect card brand from number
   // ============================================================
-  private detectCardBrand(cardNumber: string): string {
+  detectCardBrand(cardNumber: string): string {
     const num = cardNumber.replace(/\D/g, '');
     if (/^4/.test(num)) return 'Visa';
     if (/^5[1-5]/.test(num)) return 'Mastercard';
