@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { PaymentModule } from '../payment/payment.module';
 
 import { Driver, DriverSchema } from '../driver/schema/driver.schema';
 import { Pricing, PricingSchema } from '../pricing/schema/pricing.schema';
@@ -51,6 +52,7 @@ import { MailModule } from '../mail/mail.module';
     ]),
     NotificationModule,
     MailModule,
+    forwardRef(() => PaymentModule),
   ],
   controllers: [RideController],
   providers: [RideService, RideSchedulerService],
