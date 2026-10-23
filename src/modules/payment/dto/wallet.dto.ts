@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -7,9 +8,60 @@ import {
   IsPositive,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
+
+export class DirectCardDto {
+  @ApiProperty({ example: '4111111111111111', description: 'Credit card number' })
+  @IsString()
+  @IsNotEmpty()
+  cardNumber: string;
+
+  @ApiProperty({ example: '1228', description: 'Card expiration in MMYY format' })
+  @IsString()
+  @IsNotEmpty()
+  cardExpiration: string;
+
+  @ApiPropertyOptional({ example: '123', description: 'Card CVV / security code' })
+  @IsString()
+  @IsOptional()
+  cardCode?: string;
+
+  @ApiPropertyOptional({ example: 'John Doe', description: 'Cardholder name' })
+  @IsString()
+  @IsOptional()
+  billingName?: string;
+
+  @ApiPropertyOptional({ example: '123 Main St', description: 'Billing address' })
+  @IsString()
+  @IsOptional()
+  billingAddress?: string;
+
+  @ApiPropertyOptional({ example: 'New York', description: 'Billing city' })
+  @IsString()
+  @IsOptional()
+  billingCity?: string;
+
+  @ApiPropertyOptional({ example: 'NY', description: 'Billing state' })
+  @IsString()
+  @IsOptional()
+  billingState?: string;
+
+  @ApiPropertyOptional({ example: '10001', description: 'Billing postal / zip code' })
+  @IsString()
+  @IsOptional()
+  billingZip?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Whether to save this card to customer vault for future rides/top-ups',
+  })
+  @IsBoolean()
+  @IsOptional()
+  saveCard?: boolean;
+}
 
 export class TopUpWalletDto {
   @ApiProperty({
@@ -24,13 +76,24 @@ export class TopUpWalletDto {
   @IsNotEmpty()
   amount: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'pm_12345abcdef',
-    description: 'USAePay payment method key of the saved card to charge',
+    description:
+      'USAePay payment method key of the saved card to charge (optional if using card object or default saved card)',
   })
   @IsString()
-  @IsNotEmpty()
-  payMethodKey: string;
+  @IsOptional()
+  payMethodKey?: string;
+
+  @ApiPropertyOptional({
+    type: DirectCardDto,
+    description:
+      'Direct card details if user does not have a saved card or wants to recharge with a new card directly',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DirectCardDto)
+  card?: DirectCardDto;
 
   @ApiPropertyOptional({
     example: 'Wallet balance top-up',

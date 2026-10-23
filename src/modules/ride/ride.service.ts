@@ -16,6 +16,11 @@ import { DriverStatus } from 'src/common/enums/driver/status-enum';
 import { CancelledBy } from 'src/common/enums/ride/cancelled-by.enum';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
+import { PaymentTransactionStatus } from 'src/common/enums/payment/payment-transaction-status.enum';
+import {
+  PaymentTransaction,
+  PaymentTransactionDocument,
+} from '../payment/schema/payment-transaction.schema';
 import { PromoType } from 'src/common/enums/ride/promo-type.enum';
 import { RecurrenceFrequency } from 'src/common/enums/ride/recurrence-frequency.enum';
 import { RecurringStatus } from 'src/common/enums/ride/recurring-status.enum';
@@ -165,6 +170,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @InjectModel(Notification.name)
     private readonly notificationModel?: Model<NotificationDocument>,
+    @Optional()
+    @InjectModel(PaymentTransaction.name)
+    private readonly txModel?: Model<PaymentTransactionDocument>,
   ) {}
 
   async onModuleInit() {
@@ -394,6 +402,24 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         durationMinutes,
         promo: promoCheck.promo,
       });
+
+      // Wallet Balance Guard: If passenger selects WALLET, verify sufficient wallet balance
+      if (dto.paymentMethod === PaymentMethod.WALLET) {
+        const passengerUser = await this.userModel.findById(user.id).select('walletBalance');
+        const walletBalance = Number(passengerUser?.walletBalance || 0);
+        const requiredAmount = Number((fare.payableFare ?? fare.totalFare).toFixed(2));
+
+        if (walletBalance < requiredAmount) {
+          return new ApiResponse(
+            400,
+            {
+              walletBalance: Number(walletBalance.toFixed(2)),
+              requiredAmount,
+            },
+            `Insufficient wallet balance ($${walletBalance.toFixed(2)}). Ride fare is $${requiredAmount.toFixed(2)}. Please recharge your wallet or choose another payment method.`,
+          );
+        }
+      }
 
       const ride = await this.rideModel.create({
         user: user.id,
@@ -1702,6 +1728,23 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       const rawPay = String(dto.paymentMethod || '').toUpperCase();
       if (rawPay.includes('CARD')) paymentMethod = PaymentMethod.CARD;
       else if (rawPay.includes('WALLET') || rawPay.includes('UPI')) paymentMethod = PaymentMethod.WALLET;
+
+      if (paymentMethod === PaymentMethod.WALLET) {
+        const passengerUser = await this.userModel.findById(passengerId).select('walletBalance');
+        const walletBalance = Number(passengerUser?.walletBalance || 0);
+        const requiredAmount = Number((fare.payableFare ?? fare.totalFare).toFixed(2));
+
+        if (walletBalance < requiredAmount) {
+          return new ApiResponse(
+            400,
+            {
+              walletBalance: Number(walletBalance.toFixed(2)),
+              requiredAmount,
+            },
+            `Insufficient passenger wallet balance ($${walletBalance.toFixed(2)}). Ride fare is $${requiredAmount.toFixed(2)}. Please recharge wallet or choose another payment method.`,
+          );
+        }
+      }
 
       // 7. Direct Driver Assignment if driverId provided
       let targetCompanyId = dto.companyId || dispatcherUser?.companyId || null;
@@ -3937,16 +3980,105 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       // Card rides are charged via USAePay gateway (/payment/ride/charge).
       // Cash rides are collected by the driver from the fare screen.
       if (ride.paymentMethod === PaymentMethod.WALLET) {
-        ride.paymentStatus = PaymentStatus.PAID;
-        ride.paymentCollectedAt = completedAt;
+        const fareDue = Number(ride.payableFare ?? ride.totalFare);
+        const passengerUser = await this.userModel.findById(ride.user);
+        const currentBalance = Number(passengerUser?.walletBalance || 0);
 
-        this.addTimelineEvent(
-          ride,
-          'PAYMENT_COLLECTED',
-          'Payment Completed',
-          `Payment of ${ride.payableFare} ${DEFAULT_CURRENCY} completed via WALLET`,
-          driverId,
-        );
+        if (currentBalance >= fareDue) {
+          // Full deduction from wallet
+          await this.userModel.updateOne(
+            { _id: ride.user },
+            { $inc: { walletBalance: -fareDue } },
+          );
+          const newBalance = Number((currentBalance - fareDue).toFixed(2));
+          ride.walletAmountDeducted = fareDue;
+          ride.remainingPayableFare = 0;
+          ride.payableFare = 0;
+          ride.cashToCollect = 0;
+          ride.paymentStatus = PaymentStatus.PAID;
+          ride.paymentCollectedAt = completedAt;
+          ride.nextAction = null;
+
+          this.addTimelineEvent(
+            ride,
+            'PAYMENT_COLLECTED',
+            'Payment Completed',
+            `Payment of ${fareDue} ${DEFAULT_CURRENCY} completed via WALLET`,
+            driverId,
+          );
+
+          try {
+            this.socketService.emitToUser(String(ride.user), 'wallet:updated', {
+              walletBalance: newBalance,
+              formattedBalance: `$${newBalance.toFixed(2)}`,
+              type: 'DEBIT',
+              amount: fareDue,
+              description: `Trip Fare (#${String(ride._id).slice(-6).toUpperCase()})`,
+            });
+          } catch (e) {}
+
+          if (this.txModel) {
+            try {
+              await this.txModel.create({
+                customerId: String(ride.user),
+                rideId: String(ride._id),
+                driverId: String(driverId),
+                companyId: ride.companyId ? String(ride.companyId) : null,
+                amount: fareDue,
+                paymentMethod: PaymentMethod.WALLET,
+                status: PaymentTransactionStatus.SUCCESS,
+                description: `Ride Fare Payment via Wallet`,
+              });
+            } catch (txErr) {
+              console.error('Failed to record wallet PaymentTransaction:', txErr);
+            }
+          }
+        } else {
+          // Partial wallet payment: deduct whatever balance is available
+          const partialDeducted = Math.max(0, currentBalance);
+          const remainingDue = Number((fareDue - partialDeducted).toFixed(2));
+
+          if (partialDeducted > 0) {
+            await this.userModel.updateOne(
+              { _id: ride.user },
+              { $inc: { walletBalance: -partialDeducted } },
+            );
+            ride.walletAmountDeducted = partialDeducted;
+          }
+
+          ride.remainingPayableFare = remainingDue;
+          ride.payableFare = remainingDue;
+          ride.remainingPaymentMethod = PaymentMethod.CASH;
+          ride.cashToCollect = remainingDue;
+          ride.paymentStatus = PaymentStatus.PENDING;
+          ride.nextAction = 'COLLECT_PAYMENT';
+
+          this.addTimelineEvent(
+            ride,
+            'PAYMENT_PARTIAL',
+            'Partial Wallet Payment',
+            `$${partialDeducted} deducted from Wallet. Remaining $${remainingDue} ${DEFAULT_CURRENCY} payable via CASH.`,
+            driverId,
+          );
+
+          try {
+            this.socketService.emitToUser(String(ride.user), 'wallet:updated', {
+              walletBalance: 0,
+              formattedBalance: '$0.00',
+              type: 'DEBIT',
+              amount: partialDeducted,
+              description: `Partial Trip Fare (#${String(ride._id).slice(-6).toUpperCase()})`,
+            });
+
+            this.socketService.emitToUser(String(ride.user), 'payment:partial', {
+              rideId: String(ride._id),
+              walletDeducted: partialDeducted,
+              remainingToPay: remainingDue,
+              remainingPaymentMethod: 'CASH',
+              message: `$${partialDeducted} paid from wallet. Please pay remaining $${remainingDue} in cash to the driver.`,
+            });
+          } catch (e) {}
+        }
       }
 
       await ride.save();
