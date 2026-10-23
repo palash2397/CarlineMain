@@ -1,9 +1,12 @@
 import {
+  forwardRef,
+  Inject,
   Injectable,
   OnModuleDestroy,
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { PaymentService } from '../payment/payment.service';
 import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Model, Types } from 'mongoose';
@@ -173,6 +176,9 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @InjectModel(PaymentTransaction.name)
     private readonly txModel?: Model<PaymentTransactionDocument>,
+    @Optional()
+    @Inject(forwardRef(() => PaymentService))
+    private readonly paymentService?: PaymentService,
   ) {}
 
   async onModuleInit() {
@@ -4080,6 +4086,62 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
               message: `$${partialDeducted} paid from wallet. Please pay remaining $${remainingDue} in cash to the driver.`,
             });
           } catch (e) {}
+        }
+      } else if (ride.paymentMethod === PaymentMethod.CARD) {
+        const fareDue = Number(ride.payableFare ?? ride.totalFare);
+        if (fareDue > 0 && this.paymentService && ride.user) {
+          // Persist current state and final fare before calling payment gateway
+          await ride.save();
+
+          try {
+            const chargeRes: any = await this.paymentService.chargeRide(
+              String(ride.user),
+              {
+                rideId: String(ride._id),
+                paymentMethod: PaymentMethod.CARD,
+                payMethodKey: ride.payMethodKey || undefined,
+              },
+              this.rideModel,
+            );
+
+            if (chargeRes?.statusCode === 200 || chargeRes?.data?.status === 'SUCCESS') {
+              ride.paymentStatus = PaymentStatus.PAID;
+              ride.paymentCollectedAt = completedAt;
+              ride.remainingPayableFare = 0;
+              ride.payableFare = 0;
+              ride.cashToCollect = 0;
+              ride.nextAction = null;
+
+              this.addTimelineEvent(
+                ride,
+                'PAYMENT_COLLECTED',
+                'Card Payment Completed',
+                `Payment of $${fareDue.toFixed(2)} ${DEFAULT_CURRENCY} charged successfully via card`,
+                driverId,
+              );
+            } else {
+              ride.paymentStatus = PaymentStatus.PENDING;
+              ride.remainingPayableFare = fareDue;
+              ride.cashToCollect = fareDue;
+              ride.remainingPaymentMethod = PaymentMethod.CASH;
+              ride.nextAction = 'COLLECT_PAYMENT';
+
+              this.addTimelineEvent(
+                ride,
+                'PAYMENT_FAILED',
+                'Card Charge Failed',
+                `Card payment failed: ${chargeRes?.message || 'Declined'}. Please collect in cash.`,
+                driverId,
+              );
+            }
+          } catch (cardErr: any) {
+            console.error('Card auto-charge error on trip completion:', cardErr.message);
+            ride.paymentStatus = PaymentStatus.PENDING;
+            ride.remainingPayableFare = fareDue;
+            ride.cashToCollect = fareDue;
+            ride.remainingPaymentMethod = PaymentMethod.CASH;
+            ride.nextAction = 'COLLECT_PAYMENT';
+          }
         }
       }
 
