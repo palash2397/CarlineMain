@@ -10,20 +10,29 @@ import { Msg } from 'src/helpers/responseMsg';
 import { PaymentMethod } from 'src/common/enums/ride/payment-method.enum';
 import { PaymentStatus } from 'src/common/enums/ride/payment-status.enum';
 import { PaymentTransactionStatus } from 'src/common/enums/payment/payment-transaction-status.enum';
+import { PayoutStatus } from 'src/common/enums/payment/payout-status.enum';
 
 import {
   PaymentTransaction,
   PaymentTransactionDocument,
   CommissionSnapshot,
 } from './schema/payment-transaction.schema';
+import { Payout, PayoutDocument } from './schema/payout.schema';
 
 import { Customer, CustomerDocument } from '../customer/schema/customer.schema';
 import { Ride, RideDocument } from '../ride/schema/ride.schema';
+import { Driver, DriverDocument } from '../driver/schema/driver.schema';
 import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
 
 import { UsaepayService } from './usaepay.service';
 import { AddCardDto } from './dto/add-card.dto';
 import { ChargeRideDto, RefundTransactionDto, PaymentQueryDto } from './dto/payment.dto';
+import {
+  CreatePayoutRequestDto,
+  ApprovePayoutDto,
+  RejectPayoutDto,
+  GetPayoutsQueryDto,
+} from './dto/payout.dto';
 
 // Ride document shape (minimal fields we need)
 interface RideDoc {
@@ -66,6 +75,12 @@ export class PaymentService {
 
     @InjectModel(Ride.name)
     private readonly rideModel: Model<RideDocument>,
+
+    @InjectModel(Payout.name)
+    private readonly payoutModel: Model<PayoutDocument>,
+
+    @InjectModel(Driver.name)
+    private readonly driverModel: Model<DriverDocument>,
 
     private readonly usaepay: UsaepayService,
     private readonly config: ConfigService,
@@ -1138,4 +1153,398 @@ export class PaymentService {
       createdAt: tx.createdAt,
     };
   }
+
+  // ============================================================
+  // DRIVER FINANCIAL MANAGEMENT: PAYOUT REQUESTS & APPROVALS
+  // ============================================================
+
+  /**
+   * Driver submits a payout/withdrawal request.
+   * Validates available balance (earnings - existing payouts - pending requests).
+   */
+  async requestPayout(driverId: string, dto: CreatePayoutRequestDto) {
+    try {
+      if (!Types.ObjectId.isValid(driverId)) {
+        return new ApiResponse(400, {}, 'Invalid ID');
+      }
+
+      const driver = await this.driverModel.findById(driverId);
+      if (!driver) {
+        return new ApiResponse(404, {}, Msg.DRIVER_NOT_FOUND);
+      }
+
+      // Calculate total inflows (all earnings from completed rides)
+      const completedRides = await this.rideModel.find({
+        driver: driverId,
+        status: RideStatus.RIDE_COMPLETED,
+      });
+
+      const totalInflows = Number(
+        completedRides
+          .reduce(
+            (sum: number, r: any) =>
+              sum + (Number(r.driverEarnings) || Number(r.payableFare) || Number(r.totalFare) || 0),
+            0,
+          )
+          .toFixed(2),
+      );
+
+      // Calculate total approved/paid payouts
+      const approvedPayouts = await this.payoutModel.find({
+        driverId: String(driverId),
+        status: { $in: [PayoutStatus.APPROVED, PayoutStatus.TRANSFERRED] },
+      });
+
+      const totalApprovedAmount = Number(
+        approvedPayouts
+          .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+          .toFixed(2),
+      );
+
+      // Calculate total pending payout requests currently on hold
+      const pendingPayouts = await this.payoutModel.find({
+        driverId: String(driverId),
+        status: PayoutStatus.PENDING,
+      });
+
+      const totalPendingAmount = Number(
+        pendingPayouts
+          .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+          .toFixed(2),
+      );
+
+      const netBalance = Number((totalInflows - totalApprovedAmount).toFixed(2));
+      const availableBalance = Number((netBalance - totalPendingAmount).toFixed(2));
+
+      if (dto.amount > availableBalance) {
+        return new ApiResponse(
+          400,
+          {
+            requestedAmount: dto.amount,
+            netBalance,
+            pendingHolds: totalPendingAmount,
+            availableBalance,
+          },
+          `Insufficient balance. You have an available balance of $${availableBalance} (Net balance: $${netBalance}, Pending requests: $${totalPendingAmount}).`,
+        );
+      }
+
+      const payout = await this.payoutModel.create({
+        driverId: String(driverId),
+        driverName: driver.fullName || null,
+        companyId: driver.companyId ? String(driver.companyId) : null,
+        amount: Number(dto.amount),
+        currency: 'USD',
+        status: PayoutStatus.PENDING,
+        bankDetails: dto.bankDetails,
+        notes: dto.notes || null,
+        requestedAt: new Date(),
+      });
+
+      try {
+        this.socketService?.emitToUser(
+          String(driverId),
+          'payout:created',
+          this.payoutPayload(payout),
+        );
+      } catch (err: any) {
+        this.logger.warn(`Failed to emit socket for payout: ${err.message}`);
+      }
+
+      return new ApiResponse(
+        201,
+        this.payoutPayload(payout),
+        'Payout request submitted successfully and is pending company approval',
+      );
+    } catch (error: any) {
+      this.logger.error(`requestPayout error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Driver lists their payout requests with status filter & pagination.
+   */
+  async getDriverPayouts(driverId: string, query: GetPayoutsQueryDto) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+      const skip = (page - 1) * limit;
+
+      const filter: any = { driverId: String(driverId) };
+      if (query.status) {
+        filter.status = query.status;
+      }
+
+      const [payouts, total] = await Promise.all([
+        this.payoutModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+        this.payoutModel.countDocuments(filter),
+      ]);
+
+      // Summary statistics
+      const allDriverPayouts = await this.payoutModel.find({ driverId: String(driverId) });
+      const stats = {
+        totalRequested: Number(
+          allDriverPayouts.reduce((acc, p) => acc + (Number(p.amount) || 0), 0).toFixed(2),
+        ),
+        totalApproved: Number(
+          allDriverPayouts
+            .filter((p) => p.status === PayoutStatus.APPROVED || p.status === PayoutStatus.TRANSFERRED)
+            .reduce((acc, p) => acc + (Number(p.amount) || 0), 0)
+            .toFixed(2),
+        ),
+        totalPending: Number(
+          allDriverPayouts
+            .filter((p) => p.status === PayoutStatus.PENDING)
+            .reduce((acc, p) => acc + (Number(p.amount) || 0), 0)
+            .toFixed(2),
+        ),
+        totalRejected: Number(
+          allDriverPayouts
+            .filter((p) => p.status === PayoutStatus.REJECTED)
+            .reduce((acc, p) => acc + (Number(p.amount) || 0), 0)
+            .toFixed(2),
+        ),
+      };
+
+      return new ApiResponse(
+        200,
+        {
+          payouts: payouts.map((p) => this.payoutPayload(p)),
+          stats,
+          pagination: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit),
+          },
+        },
+        'Driver payouts retrieved successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`getDriverPayouts error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Get single payout details.
+   */
+  async getPayoutById(payoutId: string, allowedDriverOrCompanyId?: string) {
+    try {
+      if (!Types.ObjectId.isValid(payoutId)) {
+        return new ApiResponse(400, {}, 'Invalid ID');
+      }
+
+      const payout = await this.payoutModel.findById(payoutId);
+      if (!payout) {
+        return new ApiResponse(404, {}, 'Payout request not found');
+      }
+
+      if (
+        allowedDriverOrCompanyId &&
+        String(payout.driverId) !== String(allowedDriverOrCompanyId) &&
+        String(payout.companyId) !== String(allowedDriverOrCompanyId)
+      ) {
+        return new ApiResponse(403, {}, 'Access denied to this payout request');
+      }
+
+      return new ApiResponse(200, this.payoutPayload(payout), 'Payout details fetched successfully');
+    } catch (error: any) {
+      this.logger.error(`getPayoutById error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Company Admin / Super Admin lists payout requests with filters and stats.
+   */
+  async getCompanyPayouts(currentUser: any, query: GetPayoutsQueryDto) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+      const skip = (page - 1) * limit;
+
+      const filter: any = {};
+
+      // If user is company staff, constrain to their company
+      if (currentUser.companyId) {
+        filter.companyId = String(currentUser.companyId);
+      }
+
+      if (query.status) {
+        filter.status = query.status;
+      }
+
+      const [payouts, total] = await Promise.all([
+        this.payoutModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+        this.payoutModel.countDocuments(filter),
+      ]);
+
+      return new ApiResponse(
+        200,
+        {
+          payouts: payouts.map((p) => this.payoutPayload(p)),
+          pagination: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit),
+          },
+        },
+        'Company payout requests fetched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`getCompanyPayouts error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Company Admin or Super Admin approves a driver payout request.
+   * Marks as APPROVED / TRANSFERRED and creates an Outflow PaymentTransaction.
+   */
+  async approvePayout(currentUser: any, payoutId: string, dto: ApprovePayoutDto) {
+    try {
+      if (!Types.ObjectId.isValid(payoutId)) {
+        return new ApiResponse(400, {}, 'Invalid ID');
+      }
+
+      const payout = await this.payoutModel.findById(payoutId);
+      if (!payout) {
+        return new ApiResponse(404, {}, 'Payout request not found');
+      }
+
+      if (
+        currentUser.companyId &&
+        String(payout.companyId) !== String(currentUser.companyId)
+      ) {
+        return new ApiResponse(403, {}, 'Access denied: Payout belongs to another company');
+      }
+
+      if (payout.status !== PayoutStatus.PENDING) {
+        return new ApiResponse(
+          400,
+          {},
+          `Cannot approve payout with status '${payout.status}'. Only PENDING payouts can be approved.`,
+        );
+      }
+
+      payout.status = PayoutStatus.APPROVED;
+      payout.processedAt = new Date();
+      payout.processedBy = String(currentUser.id || currentUser._id);
+      payout.transferReference = dto.transferReference || `TXN-PO-${Date.now()}`;
+      if (dto.notes) {
+        payout.notes = payout.notes ? `${payout.notes} | ${dto.notes}` : dto.notes;
+      }
+
+      // Create an OUTFLOW PaymentTransaction so it appears in the Driver Transactions table and reduces NET BALANCE
+      const tx = await this.txModel.create({
+        customerId: String(payout.driverId),
+        driverId: String(payout.driverId),
+        companyId: payout.companyId ? String(payout.companyId) : null,
+        amount: Number(payout.amount),
+        paymentMethod: PaymentMethod.WALLET,
+        status: PaymentTransactionStatus.SUCCESS,
+        description: `Driver Payout Transfer (#${payout.transferReference})`,
+        chargedAt: new Date(),
+      });
+
+      payout.transactionId = String(tx._id);
+      await payout.save();
+
+      try {
+        this.socketService?.emitToUser(
+          String(payout.driverId),
+          'payout:updated',
+          this.payoutPayload(payout),
+        );
+      } catch (err: any) {
+        this.logger.warn(`Failed to emit socket for payout approval: ${err.message}`);
+      }
+
+      return new ApiResponse(
+        200,
+        this.payoutPayload(payout),
+        'Payout request approved and outflow recorded successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`approvePayout error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Company Admin or Super Admin rejects a driver payout request.
+   */
+  async rejectPayout(currentUser: any, payoutId: string, dto: RejectPayoutDto) {
+    try {
+      if (!Types.ObjectId.isValid(payoutId)) {
+        return new ApiResponse(400, {}, 'Invalid ID');
+      }
+
+      const payout = await this.payoutModel.findById(payoutId);
+      if (!payout) {
+        return new ApiResponse(404, {}, 'Payout request not found');
+      }
+
+      if (
+        currentUser.companyId &&
+        String(payout.companyId) !== String(currentUser.companyId)
+      ) {
+        return new ApiResponse(403, {}, 'Access denied: Payout belongs to another company');
+      }
+
+      if (payout.status !== PayoutStatus.PENDING) {
+        return new ApiResponse(
+          400,
+          {},
+          `Cannot reject payout with status '${payout.status}'. Only PENDING payouts can be rejected.`,
+        );
+      }
+
+      payout.status = PayoutStatus.REJECTED;
+      payout.rejectionReason = dto.rejectionReason;
+      payout.processedAt = new Date();
+      payout.processedBy = String(currentUser.id || currentUser._id);
+      await payout.save();
+
+      try {
+        this.socketService?.emitToUser(
+          String(payout.driverId),
+          'payout:updated',
+          this.payoutPayload(payout),
+        );
+      } catch (err: any) {
+        this.logger.warn(`Failed to emit socket for payout rejection: ${err.message}`);
+      }
+
+      return new ApiResponse(200, this.payoutPayload(payout), 'Payout request rejected successfully');
+    } catch (error: any) {
+      this.logger.error(`rejectPayout error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  private payoutPayload(payout: any) {
+    return {
+      payoutId: String(payout._id),
+      driverId: String(payout.driverId),
+      driverName: payout.driverName || null,
+      companyId: payout.companyId ? String(payout.companyId) : null,
+      amount: Number(payout.amount),
+      currency: payout.currency || 'USD',
+      formattedAmount: `${payout.currency || '$'}${Number(payout.amount).toFixed(2)}`,
+      status: payout.status,
+      bankDetails: payout.bankDetails || null,
+      requestedAt: payout.requestedAt || payout.createdAt,
+      processedAt: payout.processedAt || null,
+      processedBy: payout.processedBy || null,
+      transferReference: payout.transferReference || null,
+      transactionId: payout.transactionId || null,
+      notes: payout.notes || null,
+      rejectionReason: payout.rejectionReason || null,
+    };
+  }
 }
+

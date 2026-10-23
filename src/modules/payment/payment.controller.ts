@@ -6,9 +6,11 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -29,11 +31,25 @@ import { Roles } from '../auth/roles/roles.decorator';
 import { PaymentService } from './payment.service';
 import { AddCardDto } from './dto/add-card.dto';
 import { ChargeRideDto, RefundTransactionDto, PaymentQueryDto } from './dto/payment.dto';
+import {
+  CreatePayoutRequestDto,
+  ApprovePayoutDto,
+  RejectPayoutDto,
+  GetPayoutsQueryDto,
+} from './dto/payout.dto';
 
 import { Ride } from '../ride/schema/ride.schema';
 
 const PASSENGER_ROLES = [UserRole.USER, UserRole.PASSENGER];
 const ADMIN_ROLES = [UserRole.SUPERADMIN, UserRole.ADMIN];
+const COMPANY_PAYOUT_ROLES = [
+  UserRole.SUPERADMIN,
+  UserRole.ADMIN,
+  UserRole.COMPANY_ADMIN,
+  UserRole.ACCOUNTANT,
+  UserRole.ACCOUNTING,
+  UserRole.BILLING,
+];
 
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RoleGuard)
@@ -169,5 +185,148 @@ export class PaymentController {
   @Get('admin/transactions')
   allTransactions(@Query() query: any) {
     return this.paymentService.allTransactions(query);
+  }
+
+  // ============================================================
+  // DRIVER FINANCIAL MANAGEMENT: PAYOUTS
+  // ============================================================
+
+  @ApiTags('Driver Financial Management')
+  @ApiOperation({
+    summary: 'Submit a payout / withdrawal request',
+    description:
+      'Driver requests a payout from their available net balance. Validates that requested amount does not exceed available balance.',
+  })
+  @Roles(UserRole.DRIVER)
+  @Post('driver/payout-request')
+  async requestPayout(
+    @Req() req: any,
+    @Body() dto: CreatePayoutRequestDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.requestPayout(req.user.id, dto);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('Driver Financial Management')
+  @ApiOperation({
+    summary: 'Get driver payout requests history and statistics',
+    description: 'Lists all payout requests made by the logged-in driver with status filtering and totals.',
+  })
+  @Roles(UserRole.DRIVER)
+  @Get('driver/payouts')
+  async getDriverPayouts(
+    @Req() req: any,
+    @Query() query: GetPayoutsQueryDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.getDriverPayouts(req.user.id, query);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('Driver Financial Management')
+  @ApiOperation({ summary: 'Get single payout request details' })
+  @ApiParam({ name: 'id', description: 'Payout request ID' })
+  @Roles(UserRole.DRIVER)
+  @Get('driver/payouts/:id')
+  async getDriverPayoutById(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.getPayoutById(id, req.user.id);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  // ============================================================
+  // COMPANY & ADMIN: PAYOUT APPROVALS & MANAGEMENT
+  // ============================================================
+
+  @ApiTags('Company Financial Management')
+  @ApiOperation({
+    summary: 'List company driver payout requests',
+    description: 'Allows Company Admin or Superadmin to view driver payout requests awaiting approval.',
+  })
+  @Roles(...COMPANY_PAYOUT_ROLES)
+  @Get('company/payouts')
+  async getCompanyPayouts(
+    @Req() req: any,
+    @Query() query: GetPayoutsQueryDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.getCompanyPayouts(req.user, query);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('Company Financial Management')
+  @ApiOperation({ summary: 'Get payout request details (Admin / Company Admin)' })
+  @ApiParam({ name: 'id', description: 'Payout request ID' })
+  @Roles(...COMPANY_PAYOUT_ROLES)
+  @Get('company/payouts/:id')
+  async getCompanyPayoutById(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.getPayoutById(id, req.user.companyId);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('Company Financial Management')
+  @ApiOperation({
+    summary: 'Approve driver payout request',
+    description:
+      'Approves a PENDING payout request. Automatically records an OUTFLOW transaction in PaymentTransaction and deducts from Driver Net Balance.',
+  })
+  @ApiParam({ name: 'id', description: 'Payout request ID' })
+  @Roles(...COMPANY_PAYOUT_ROLES)
+  @Patch('company/payouts/:id/approve')
+  async approvePayout(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ApprovePayoutDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.approvePayout(req.user, id, dto);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('Company Financial Management')
+  @ApiOperation({
+    summary: 'Reject driver payout request',
+    description: 'Rejects a PENDING payout request with a mandatory rejection reason, releasing the hold on driver balance.',
+  })
+  @ApiParam({ name: 'id', description: 'Payout request ID' })
+  @Roles(...COMPANY_PAYOUT_ROLES)
+  @Patch('company/payouts/:id/reject')
+  async rejectPayout(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: RejectPayoutDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.rejectPayout(req.user, id, dto);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
   }
 }
