@@ -2663,6 +2663,8 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
   private rideSummary(ride: any, vehicleType?: any, driver?: any) {
     return {
+      _id: String(ride._id),
+      id: String(ride._id),
       rideId: String(ride._id),
       status: ride.status,
       otp: ride.otp || null,
@@ -3934,10 +3936,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       await ride.save();
 
-      await this.driverModel.updateOne(
-        { _id: driverId },
-        { $set: { status: DriverStatus.ACTIVE } },
-      );
+      if (ride.paymentStatus === PaymentStatus.PAID) {
+        await this.driverModel.updateOne(
+          { _id: driverId },
+          { $set: { status: DriverStatus.ACTIVE } },
+        );
+      }
 
       const payload = await this.ridePayload(ride);
 
@@ -3947,7 +3951,10 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         RIDE_EVENTS.STATUS,
         this.statusPayload(ride, driverId),
       );
-      this.socketService.leaveRideRoom(String(ride._id));
+
+      if (ride.paymentStatus === PaymentStatus.PAID) {
+        this.socketService.leaveRideRoom(String(ride._id));
+      }
 
       this.notificationService
         .sendToUser(
@@ -4049,9 +4056,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       await ride.save();
 
+      await this.driverModel.updateOne(
+        { _id: driverId },
+        { $set: { status: DriverStatus.ACTIVE } },
+      );
+
       const payload = await this.ridePayload(ride);
 
       this.emitRideEvent(ride, RIDE_EVENTS.PAYMENT, payload);
+      this.socketService.leaveRideRoom(String(ride._id));
 
       return new ApiResponse(200, payload, Msg.PAYMENT_COLLECTED);
     } catch (error) {
@@ -4636,7 +4649,13 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     return this.rideModel
       .findOne({
         user: userId,
-        status: { $in: ACTIVE_RIDE_STATUSES },
+        $or: [
+          { status: { $in: ACTIVE_RIDE_STATUSES } },
+          {
+            status: RideStatus.RIDE_COMPLETED,
+            paymentStatus: { $ne: PaymentStatus.PAID },
+          },
+        ],
       })
       .sort({ createdAt: -1 });
   }
@@ -5163,6 +5182,8 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   }
   private ridePayloadWith(ride: any, passenger?: any, vehicleType?: any) {
     return {
+      _id: String(ride._id),
+      id: String(ride._id),
       rideId: String(ride._id),
       status: ride.status,
       otp: ride.otp || null,
