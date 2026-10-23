@@ -4542,6 +4542,214 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ==========================================================
+  // Ride Invoice & Receipt Generation
+  // ==========================================================
+  async getRideInvoice(rideId: string, requestingUser?: any) {
+    try {
+      if (!Types.ObjectId.isValid(rideId)) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      const ride: any = await this.rideModel.findById(rideId).lean();
+      if (!ride) {
+        return new ApiResponse(404, {}, Msg.RIDE_NOT_FOUND);
+      }
+
+      // Security check: passenger, driver, or admin/dispatcher
+      if (requestingUser) {
+        const userId = String(requestingUser.id || requestingUser._id);
+        const role = requestingUser.roles || requestingUser.role;
+        const isAdmin = [UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.DISPATCHER].includes(role);
+        const isOwner = String(ride.user) === userId;
+        const isDriver = String(ride.driver) === userId;
+
+        if (!isAdmin && !isOwner && !isDriver) {
+          return new ApiResponse(403, {}, 'Access denied to this ride invoice');
+        }
+      }
+
+      const [passenger, driver] = await Promise.all([
+        ride.user ? (this.userModel.findById(ride.user).select('firstName lastName email phoneNumber avatar').lean() as any) : null,
+        ride.driver ? (this.driverModel.findById(ride.driver).select('fullName phoneNumber vehicleRegistrationNumber vehicleType').lean() as any) : null,
+      ]);
+
+      const passengerName = passenger
+        ? (passenger.fullName || `${passenger.firstName || ''} ${passenger.lastName || ''}`.trim() || 'Passenger')
+        : 'Passenger';
+
+      const driverName = driver
+        ? (driver.fullName || 'Assigned Driver')
+        : (ride.driverName || 'Assigned Driver');
+      const driverVehiclePlate = driver?.vehicleRegistrationNumber || null;
+
+      const invoiceNumber = `INV-${String(ride._id).slice(-8).toUpperCase()}`;
+      const completedDate = ride.completedAt ? new Date(ride.completedAt) : (ride.createdAt ? new Date(ride.createdAt) : new Date());
+      const formattedDate = completedDate.toLocaleString('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+
+      const fareBreakdown = {
+        basePrice: Number(ride.fare?.basePrice || 0),
+        distanceRate: Number(ride.fare?.distanceRate || 0),
+        timeRate: Number(ride.fare?.timeRate || 0),
+        waitingMinutes: Number(ride.pickupWaitingMinutes || ride.fare?.waitingMinutes || 0),
+        waitingCharge: Number(ride.waitingCharge || ride.fare?.waitingCharge || 0),
+        extraCharges: Number(ride.fare?.extraCharges || 0),
+        tollFee: Number(ride.fare?.tollFee || 0),
+        subTotal: Number(ride.fare?.subTotal || ride.totalFare || 0),
+        discount: Number(ride.discount || ride.fare?.discount || 0),
+        taxAndFees: Number(ride.fare?.taxAndFees || 0),
+        totalFare: Number(ride.totalFare || 0),
+        walletAmountDeducted: Number(ride.walletAmountDeducted || 0),
+        payableFare: Number(ride.payableFare || 0),
+        currency: DEFAULT_CURRENCY,
+      };
+
+      const htmlReceipt = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Carline Invoice - ${invoiceNumber}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; padding: 24px; color: #1e293b; }
+            .invoice-card { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+            .inv-header { background: #0f172a; color: #ffffff; padding: 24px 30px; display: flex; justify-content: space-between; align-items: center; }
+            .inv-title { font-size: 22px; font-weight: 700; margin: 0; }
+            .inv-sub { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+            .inv-body { padding: 30px; }
+            .inv-row { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            .inv-col { flex: 1; }
+            .label { font-size: 11px; text-transform: uppercase; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+            .value { font-size: 14px; font-weight: 500; color: #0f172a; }
+            .fare-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .fare-table th, .fare-table td { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+            .fare-table th { text-align: left; color: #64748b; font-weight: 600; font-size: 12px; }
+            .fare-table td.amount { text-align: right; font-weight: 500; }
+            .total-row td { border-top: 2px solid #0f172a; border-bottom: none; font-size: 16px; font-weight: 700; color: #0f172a; padding-top: 14px; }
+            .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+            .badge-paid { background: #dcfce7; color: #166534; }
+            .badge-pending { background: #fef3c7; color: #92400e; }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-card">
+            <div class="inv-header">
+              <div>
+                <div class="inv-title">Carline Technologies</div>
+                <div class="inv-sub">Official Trip Invoice & Receipt</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: 700;">${invoiceNumber}</div>
+                <div class="inv-sub">${formattedDate}</div>
+              </div>
+            </div>
+            <div class="inv-body">
+              <div class="inv-row">
+                <div class="inv-col">
+                  <div class="label">Billed To (Passenger)</div>
+                  <div class="value">${passengerName}</div>
+                  <div class="value" style="font-size: 13px; color: #64748b;">${passenger?.email || ''} ${passenger?.phoneNumber || ''}</div>
+                </div>
+                <div class="inv-col" style="text-align: right;">
+                  <div class="label">Driver & Vehicle</div>
+                  <div class="value">${driverName}</div>
+                  <div class="value" style="font-size: 13px; color: #64748b;">${ride.vehicleTypeName || 'Cab'} ${driverVehiclePlate ? `(${driverVehiclePlate})` : ''}</div>
+                </div>
+              </div>
+
+              <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <div style="margin-bottom: 10px;">
+                  <span class="label">Pickup:</span> <span class="value" style="font-size: 13px;">${ride.pickup?.address || 'Pickup'}</span>
+                </div>
+                <div>
+                  <span class="label">Dropoff:</span> <span class="value" style="font-size: 13px;">${ride.dropoff?.address || 'Dropoff'}</span>
+                </div>
+              </div>
+
+              <div class="inv-row" style="margin-bottom: 10px;">
+                <div>
+                  <span class="label">Distance:</span> <span class="value">${ride.distanceKm || 0} km</span>
+                  <span class="label" style="margin-left: 15px;">Duration:</span> <span class="value">${ride.durationMinutes || 0} min</span>
+                </div>
+                <div>
+                  <span class="badge ${ride.paymentStatus === 'PAID' ? 'badge-paid' : 'badge-pending'}">${ride.paymentStatus || 'PENDING'} VIA ${ride.paymentMethod || 'CASH'}</span>
+                </div>
+              </div>
+
+              <table class="fare-table">
+                <thead>
+                  <tr><th>Description</th><th style="text-align: right;">Amount</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Base Fare</td><td class="amount">$${fareBreakdown.basePrice.toFixed(2)}</td></tr>
+                  ${fareBreakdown.distanceRate > 0 ? `<tr><td>Distance Fare</td><td class="amount">$${fareBreakdown.distanceRate.toFixed(2)}</td></tr>` : ''}
+                  ${fareBreakdown.timeRate > 0 ? `<tr><td>Time Fare</td><td class="amount">$${fareBreakdown.timeRate.toFixed(2)}</td></tr>` : ''}
+                  ${fareBreakdown.waitingCharge > 0 ? `<tr><td>Waiting Charges (${fareBreakdown.waitingMinutes} min)</td><td class="amount">$${fareBreakdown.waitingCharge.toFixed(2)}</td></tr>` : ''}
+                  ${fareBreakdown.tollFee > 0 ? `<tr><td>Toll & Surcharges</td><td class="amount">$${fareBreakdown.tollFee.toFixed(2)}</td></tr>` : ''}
+                  ${fareBreakdown.discount > 0 ? `<tr><td style="color: #16a34a;">Discount Applied</td><td class="amount" style="color: #16a34a;">-$${fareBreakdown.discount.toFixed(2)}</td></tr>` : ''}
+                  ${fareBreakdown.walletAmountDeducted > 0 ? `<tr><td style="color: #2563eb;">Wallet Credit Deducted</td><td class="amount" style="color: #2563eb;">-$${fareBreakdown.walletAmountDeducted.toFixed(2)}</td></tr>` : ''}
+                  <tr class="total-row">
+                    <td>Total Fare</td>
+                    <td class="amount">$${fareBreakdown.totalFare.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      return new ApiResponse(
+        200,
+        {
+          invoiceNumber,
+          invoiceDate: completedDate,
+          formattedDate,
+          rideId: String(ride._id),
+          status: ride.status,
+          passenger: {
+            id: passenger ? String(passenger._id) : String(ride.user),
+            name: passengerName,
+            email: passenger?.email || null,
+            phoneNumber: passenger?.phoneNumber || null,
+          },
+          driver: {
+            id: driver ? String(driver._id) : (ride.driver ? String(ride.driver) : null),
+            name: driverName,
+            phoneNumber: driver?.phoneNumber || null,
+            vehicleTypeName: ride.vehicleTypeName || null,
+            vehicleNumber: driverVehiclePlate,
+          },
+          trip: {
+            pickupAddress: ride.pickup?.address || '',
+            dropoffAddress: ride.dropoff?.address || '',
+            distanceKm: ride.distanceKm || 0,
+            durationMinutes: ride.durationMinutes || 0,
+            startedAt: ride.startedAt || null,
+            completedAt: ride.completedAt || null,
+          },
+          fareBreakdown,
+          payment: {
+            method: ride.paymentMethod || 'CASH',
+            status: ride.paymentStatus || 'PENDING',
+            collectedAt: ride.paymentCollectedAt || null,
+            cashToCollect: Number(ride.cashToCollect || 0),
+            walletAmountDeducted: Number(ride.walletAmountDeducted || 0),
+          },
+          htmlReceipt,
+        },
+        'Ride invoice and receipt retrieved successfully',
+      );
+    } catch (error) {
+      console.error('Error generating ride invoice:', error);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ==========================================================
   // Running ride of the driver (app resume + socket rejoin)
   // ==========================================================
   async driverActiveRide(driverId: string) {

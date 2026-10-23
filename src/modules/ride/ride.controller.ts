@@ -185,6 +185,28 @@ export class RideController {
     return this.rideService.getTripTimeline(rideId);
   }
 
+  @Get('ride/:id/invoice')
+  @ApiTags(PASSENGER_TAG, 'Payment & Billing')
+  @Roles(...PASSENGER_ROLES, UserRole.DRIVER, UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.DISPATCHER)
+  @ApiOperation({
+    summary: 'Get Trip Invoice & Receipt breakdown (includes JSON fare breakdown and printable HTML)',
+  })
+  @ApiParam({ name: 'id', description: 'Ride ID' })
+  async getRideInvoice(@Req() req: any, @Param('id') rideId: string) {
+    return this.rideService.getRideInvoice(rideId, req.user);
+  }
+
+  @Get('ride/:id/receipt')
+  @ApiTags(PASSENGER_TAG, 'Payment & Billing')
+  @Roles(...PASSENGER_ROLES, UserRole.DRIVER, UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.DISPATCHER)
+  @ApiOperation({
+    summary: 'Get Trip Receipt (alias for invoice)',
+  })
+  @ApiParam({ name: 'id', description: 'Ride ID' })
+  async getRideReceipt(@Req() req: any, @Param('id') rideId: string) {
+    return this.rideService.getRideInvoice(rideId, req.user);
+  }
+
   // ==========================================================
   // Recurring bookings - /ride/recurring/*
   // ==========================================================
@@ -518,6 +540,17 @@ export class RideController {
   @ApiParam({ name: 'id', description: 'Ride id' })
   async driverTripTimeline(@Param('id') rideId: string) {
     return this.rideService.getTripTimeline(rideId);
+  }
+
+  @Get('driver-ride/invoice/:id')
+  @ApiTags(DRIVER_TAG, 'Payment & Billing')
+  @Roles(UserRole.DRIVER, UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({
+    summary: 'Driver Trip Invoice & Receipt breakdown',
+  })
+  @ApiParam({ name: 'id', description: 'Ride ID' })
+  async driverRideInvoice(@Req() req: any, @Param('id') rideId: string) {
+    return this.rideService.getRideInvoice(rideId, req.user);
   }
 
   @Post('driver-ride/collect-payment')
