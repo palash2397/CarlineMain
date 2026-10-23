@@ -496,9 +496,17 @@ export class PaymentService {
               nextAction: null,
             };
 
+            const targetDriverId = updatedRide.driver || (updatedRide as any).driverId;
+            const targetPassengerId = updatedRide.user || (updatedRide as any).passengerId;
+
             this.socketService.emitToRide(
               String(updatedRide._id),
               'payment:completed',
+              socketPayload,
+            );
+            this.socketService.emitToRide(
+              String(updatedRide._id),
+              'ride:payment',
               socketPayload,
             );
             this.socketService.emitToRide(
@@ -507,27 +515,37 @@ export class PaymentService {
               socketPayload,
             );
 
-            if (updatedRide.driverId) {
+            if (targetDriverId) {
               this.socketService.emitToUser(
-                String(updatedRide.driverId),
+                String(targetDriverId),
                 'payment:completed',
                 socketPayload,
               );
               this.socketService.emitToUser(
-                String(updatedRide.driverId),
+                String(targetDriverId),
+                'ride:payment',
+                socketPayload,
+              );
+              this.socketService.emitToUser(
+                String(targetDriverId),
                 'ride:status',
                 socketPayload,
               );
             }
 
-            if (updatedRide.passengerId) {
+            if (targetPassengerId) {
               this.socketService.emitToUser(
-                String(updatedRide.passengerId),
+                String(targetPassengerId),
                 'payment:completed',
                 socketPayload,
               );
               this.socketService.emitToUser(
-                String(updatedRide.passengerId),
+                String(targetPassengerId),
+                'ride:payment',
+                socketPayload,
+              );
+              this.socketService.emitToUser(
+                String(targetPassengerId),
                 'ride:status',
                 socketPayload,
               );

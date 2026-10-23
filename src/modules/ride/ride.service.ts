@@ -4100,6 +4100,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       );
 
       if (ride.paymentStatus === PaymentStatus.PAID) {
+        this.emitRideEvent(ride, RIDE_EVENTS.PAYMENT, payload);
+        this.socketService.emitToRide(String(ride._id), 'payment:completed', payload);
+        this.socketService.emitToUser(String(driverId), 'payment:completed', payload);
+        if (ride.user) {
+          this.socketService.emitToUser(String(ride.user), 'payment:completed', payload);
+        }
         this.socketService.leaveRideRoom(String(ride._id));
       }
 
@@ -4211,6 +4217,11 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       const payload = await this.ridePayload(ride);
 
       this.emitRideEvent(ride, RIDE_EVENTS.PAYMENT, payload);
+      this.socketService.emitToRide(String(ride._id), 'payment:completed', payload);
+      this.socketService.emitToUser(String(driverId), 'payment:completed', payload);
+      if (ride.user) {
+        this.socketService.emitToUser(String(ride.user), 'payment:completed', payload);
+      }
       this.socketService.leaveRideRoom(String(ride._id));
 
       return new ApiResponse(200, payload, Msg.PAYMENT_COLLECTED);
