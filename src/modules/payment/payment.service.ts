@@ -22,6 +22,7 @@ import { Payout, PayoutDocument } from './schema/payout.schema';
 import { Customer, CustomerDocument } from '../customer/schema/customer.schema';
 import { Ride, RideDocument } from '../ride/schema/ride.schema';
 import { Driver, DriverDocument } from '../driver/schema/driver.schema';
+import { User, UserDocument } from '../user/schema/user.schema';
 import { RideStatus } from 'src/common/enums/ride/ride-status.enum';
 
 import { UsaepayService } from './usaepay.service';
@@ -33,6 +34,11 @@ import {
   RejectPayoutDto,
   GetPayoutsQueryDto,
 } from './dto/payout.dto';
+import {
+  TopUpWalletDto,
+  PayRideWithWalletDto,
+  WalletHistoryQueryDto,
+} from './dto/wallet.dto';
 
 // Ride document shape (minimal fields we need)
 interface RideDoc {
@@ -81,6 +87,9 @@ export class PaymentService {
 
     @InjectModel(Driver.name)
     private readonly driverModel: Model<DriverDocument>,
+
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
 
     private readonly usaepay: UsaepayService,
     private readonly config: ConfigService,
@@ -1522,6 +1531,511 @@ export class PaymentService {
       return new ApiResponse(200, this.payoutPayload(payout), 'Payout request rejected successfully');
     } catch (error: any) {
       this.logger.error(`rejectPayout error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  // ============================================================
+  // PASSENGER WALLET & SPLIT PAYMENT
+  // ============================================================
+
+  /**
+   * Passenger recharges their wallet using a saved card (USAePay customer vault).
+   * Note: Recharged wallet funds are non-withdrawable ride credits.
+   */
+  async topUpWallet(userId: string, dto: TopUpWalletDto) {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        return new ApiResponse(400, {}, 'Invalid user ID');
+      }
+
+      const amount = Number(dto.amount);
+      if (isNaN(amount) || amount <= 0) {
+        return new ApiResponse(400, {}, 'Top-up amount must be greater than 0');
+      }
+
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        return new ApiResponse(404, {}, 'User not found');
+      }
+
+      // Find or create customer in Customer collection for USAePay vault
+      let customer = await this.customerModel.findOne({
+        $or: [{ userId }, { user: userId }, { email: user.email }],
+      });
+
+      if (!customer || !customer.usaepayCustomerId) {
+        return new ApiResponse(
+          400,
+          {},
+          'No payment vault profile found for this user. Please save a card first.',
+        );
+      }
+
+      const chargeResult = await this.usaepay.chargeCustomerCard({
+        customerKey: customer.usaepayCustomerId,
+        payMethodKey: dto.payMethodKey,
+        amount,
+        description: dto.description || `Wallet Top-up (+$${amount.toFixed(2)})`,
+      });
+
+      if (!chargeResult.success) {
+        return new ApiResponse(
+          400,
+          { error: chargeResult.error },
+          chargeResult.error || 'Card charge failed. Unable to recharge wallet.',
+        );
+      }
+
+      // Increment user wallet balance
+      await this.userModel.updateOne(
+        { _id: userId },
+        { $inc: { walletBalance: amount } },
+      );
+
+      // Create PaymentTransaction audit record
+      const tx = await this.txModel.create({
+        customerId: String(customer._id || userId),
+        amount,
+        paymentMethod: PaymentMethod.CARD,
+        status: PaymentTransactionStatus.SUCCESS,
+        usaepayTransactionKey: chargeResult.transactionKey,
+        refNum: chargeResult.refNum,
+        cardLast4: customer.cardLast4 || null,
+        cardBrand: customer.cardBrand || null,
+        chargedAt: new Date(),
+        description: `Wallet Top-up (+$${amount.toFixed(2)})`,
+      });
+
+      const updatedUser = await this.userModel.findById(userId).select('walletBalance');
+      const newBalance = Number(updatedUser?.walletBalance || 0);
+
+      // Emit socket event to user
+      try {
+        this.socketService?.emitToUser(userId, 'wallet:updated', {
+          walletBalance: newBalance,
+          formattedBalance: `$${newBalance.toFixed(2)}`,
+          transactionId: String(tx._id),
+          amountAdded: amount,
+        });
+      } catch (err: any) {
+        this.logger.warn(`Failed to emit wallet:updated socket: ${err.message}`);
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          walletBalance: newBalance,
+          formattedBalance: `$${newBalance.toFixed(2)}`,
+          currency: 'USD',
+          isWithdrawable: false,
+          transactionId: String(tx._id),
+          refNum: chargeResult.refNum,
+          cardLast4: customer.cardLast4 || null,
+        },
+        'Wallet recharged successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`topUpWallet error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Get passenger wallet balance and passbook transaction history.
+   */
+  async getWalletDetails(userId: string, query: WalletHistoryQueryDto) {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        return new ApiResponse(400, {}, 'Invalid user ID');
+      }
+
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        return new ApiResponse(404, {}, 'User not found');
+      }
+
+      const walletBalance = Number(user.walletBalance || 0);
+
+      const customer = await this.customerModel.findOne({
+        $or: [{ userId }, { user: userId }, { email: user.email }],
+      });
+      const customerIds = [String(userId)];
+      if (customer) {
+        customerIds.push(String(customer._id));
+      }
+
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+      const skip = (page - 1) * limit;
+
+      const walletFilter = {
+        customerId: { $in: customerIds },
+        status: PaymentTransactionStatus.SUCCESS,
+        $or: [
+          { description: { $regex: /wallet top-up/i } },
+          { paymentMethod: PaymentMethod.WALLET },
+        ],
+      };
+
+      const [txs, total] = await Promise.all([
+        this.txModel.find(walletFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+        this.txModel.countDocuments(walletFilter),
+      ]);
+
+      let totalRecharged = 0;
+      let totalSpentOnRides = 0;
+
+      const allTxs = await this.txModel.find(walletFilter).select('amount description paymentMethod');
+      for (const t of allTxs) {
+        if (/wallet top-up/i.test(t.description || '')) {
+          totalRecharged += Number(t.amount || 0);
+        } else {
+          totalSpentOnRides += Number(t.amount || 0);
+        }
+      }
+
+      const history = txs.map((t) => {
+        const isTopUp = /wallet top-up/i.test(t.description || '');
+        return {
+          transactionId: String(t._id),
+          type: isTopUp ? 'CREDIT' : 'DEBIT',
+          direction: isTopUp ? 'INFLOW' : 'OUTFLOW',
+          amount: Number(t.amount),
+          formattedAmount: `${isTopUp ? '+' : '-'}$${Number(t.amount).toFixed(2)}`,
+          description: t.description || (isTopUp ? 'Wallet Top-up' : 'Ride Payment'),
+          paymentMethod: isTopUp ? 'Card' : 'Wallet',
+          rideId: t.rideId ? String(t.rideId) : null,
+          status: t.status,
+          date: t.chargedAt || (t as any).createdAt,
+        };
+      });
+
+      return new ApiResponse(
+        200,
+        {
+          walletBalance: Number(walletBalance.toFixed(2)),
+          formattedBalance: `$${walletBalance.toFixed(2)}`,
+          currency: 'USD',
+          isWithdrawable: false,
+          stats: {
+            totalRecharged: Number(totalRecharged.toFixed(2)),
+            totalSpentOnRides: Number(totalSpentOnRides.toFixed(2)),
+          },
+          transactions: history,
+          pagination: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit),
+          },
+        },
+        'Wallet details fetched successfully',
+      );
+    } catch (error: any) {
+      this.logger.error(`getWalletDetails error: ${error.message}`);
+      return new ApiResponse(500, {}, Msg.SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Pay ride fare using passenger wallet (Full payment or Split payment with Cash / Card).
+   * Example: $100 wallet balance on a $120 ride -> $100 deducted from wallet, remaining $20 payable via Cash/Card.
+   */
+  async payRideWithWallet(userId: string, dto: PayRideWithWalletDto) {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        return new ApiResponse(400, {}, 'Invalid user ID');
+      }
+      if (!Types.ObjectId.isValid(dto.rideId)) {
+        return new ApiResponse(400, {}, 'Invalid ride ID');
+      }
+
+      const [user, ride] = await Promise.all([
+        this.userModel.findById(userId),
+        this.rideModel.findById(dto.rideId),
+      ]);
+
+      if (!user) {
+        return new ApiResponse(404, {}, 'User not found');
+      }
+      if (!ride) {
+        return new ApiResponse(404, {}, 'Ride not found');
+      }
+
+      if (String(ride.user) !== String(userId)) {
+        return new ApiResponse(403, {}, 'Access denied: This ride does not belong to your account');
+      }
+
+      if (ride.paymentStatus === PaymentStatus.PAID) {
+        return new ApiResponse(400, {}, 'Ride fare is already paid in full');
+      }
+
+      // Calculate the amount currently due
+      const currentDue = Number(
+        (ride.remainingPayableFare !== null && ride.remainingPayableFare !== undefined)
+          ? ride.remainingPayableFare
+          : (ride.payableFare ?? ride.totalFare),
+      );
+
+      if (currentDue <= 0) {
+        return new ApiResponse(400, {}, 'No pending fare remaining for this ride');
+      }
+
+      const walletBalance = Number(user.walletBalance || 0);
+      if (walletBalance <= 0) {
+        return new ApiResponse(
+          400,
+          { walletBalance: 0, requiredAmount: currentDue },
+          'Wallet balance is $0.00. Please recharge your wallet or pay via Cash/Card.',
+        );
+      }
+
+      const customer = await this.customerModel.findOne({
+        $or: [{ userId }, { user: userId }, { email: user.email }],
+      });
+
+      // CASE 1: FULL WALLET PAYMENT (Wallet balance >= currentDue)
+      if (walletBalance >= currentDue) {
+        const deducted = currentDue;
+
+        await this.userModel.updateOne(
+          { _id: userId },
+          { $inc: { walletBalance: -deducted } },
+        );
+
+        ride.walletAmountDeducted = Number(((ride.walletAmountDeducted || 0) + deducted).toFixed(2));
+        ride.remainingPayableFare = 0;
+        ride.payableFare = 0;
+        ride.paymentMethod = PaymentMethod.WALLET;
+        ride.paymentStatus = PaymentStatus.PAID;
+        ride.paymentCollectedAt = new Date();
+        await ride.save();
+
+        // Update driver status to ACTIVE if completed
+        if (ride.driver) {
+          await this.driverModel.updateOne(
+            { _id: ride.driver },
+            { $set: { status: 'ACTIVE' } },
+          );
+        }
+
+        // Record PaymentTransaction for wallet
+        await this.txModel.create({
+          customerId: String(customer?._id || userId),
+          rideId: String(ride._id),
+          driverId: ride.driver ? String(ride.driver) : null,
+          companyId: ride.companyId ? String(ride.companyId) : null,
+          amount: deducted,
+          paymentMethod: PaymentMethod.WALLET,
+          status: PaymentTransactionStatus.SUCCESS,
+          chargedAt: new Date(),
+          description: `Full trip payment via Wallet for Ride #${ride._id}`,
+        });
+
+        const updatedUser = await this.userModel.findById(userId).select('walletBalance');
+        const remainingWallet = Number(updatedUser?.walletBalance || 0);
+
+        const socketPayload = {
+          rideId: String(ride._id),
+          status: ride.status,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.WALLET,
+          totalFare: ride.totalFare,
+          walletAmountDeducted: ride.walletAmountDeducted,
+          remainingPayableFare: 0,
+          cashToCollect: 0,
+        };
+
+        try {
+          this.socketService?.emitToRide(String(ride._id), 'payment:completed', socketPayload);
+          this.socketService?.emitToRide(String(ride._id), 'ride:status', socketPayload);
+          if (ride.driver) {
+            this.socketService?.emitToUser(String(ride.driver), 'payment:completed', socketPayload);
+            this.socketService?.emitToUser(String(ride.driver), 'ride:status', socketPayload);
+          }
+          this.socketService?.emitToUser(String(ride.user), 'payment:completed', socketPayload);
+          this.socketService?.emitToUser(String(ride.user), 'wallet:updated', {
+            walletBalance: remainingWallet,
+            formattedBalance: `$${remainingWallet.toFixed(2)}`,
+          });
+          this.socketService?.leaveRideRoom(String(ride._id));
+        } catch (err: any) {
+          this.logger.warn(`Socket notification error: ${err.message}`);
+        }
+
+        return new ApiResponse(
+          200,
+          {
+            isFullPayment: true,
+            totalFare: ride.totalFare,
+            walletDeducted: deducted,
+            remainingToPay: 0,
+            paymentStatus: PaymentStatus.PAID,
+            remainingWalletBalance: remainingWallet,
+          },
+          `Full fare of $${deducted.toFixed(2)} paid successfully from wallet`,
+        );
+      }
+
+      // CASE 2: SPLIT PAYMENT (0 < Wallet balance < currentDue)
+      // E.g. $100 wallet on a $120 ride -> $100 deducted from wallet, $20 remaining
+      const walletDeducted = walletBalance;
+      const remainingDue = Number((currentDue - walletDeducted).toFixed(2));
+
+      // Exhaust wallet balance
+      await this.userModel.updateOne(
+        { _id: userId },
+        { $set: { walletBalance: 0 } },
+      );
+
+      // Record wallet transaction portion
+      await this.txModel.create({
+        customerId: String(customer?._id || userId),
+        rideId: String(ride._id),
+        driverId: ride.driver ? String(ride.driver) : null,
+        companyId: ride.companyId ? String(ride.companyId) : null,
+        amount: walletDeducted,
+        paymentMethod: PaymentMethod.WALLET,
+        status: PaymentTransactionStatus.SUCCESS,
+        chargedAt: new Date(),
+        description: `Split trip payment via Wallet ($${walletDeducted.toFixed(2)}) for Ride #${ride._id}`,
+      });
+
+      // If user chose to pay the remaining via card immediately
+      if (dto.remainingPaymentMethod === PaymentMethod.CARD && dto.payMethodKey && customer?.usaepayCustomerId) {
+        const cardCharge = await this.usaepay.chargeCustomerCard({
+          customerKey: customer.usaepayCustomerId,
+          payMethodKey: dto.payMethodKey,
+          amount: remainingDue,
+          description: `Remaining trip payment for Ride #${ride._id}`,
+        });
+
+        if (cardCharge.success) {
+          ride.walletAmountDeducted = Number(((ride.walletAmountDeducted || 0) + walletDeducted).toFixed(2));
+          ride.remainingPayableFare = 0;
+          ride.payableFare = 0;
+          ride.paymentMethod = PaymentMethod.CARD;
+          ride.paymentStatus = PaymentStatus.PAID;
+          ride.paymentCollectedAt = new Date();
+          await ride.save();
+
+          if (ride.driver) {
+            await this.driverModel.updateOne(
+              { _id: ride.driver },
+              { $set: { status: 'ACTIVE' } },
+            );
+          }
+
+          await this.txModel.create({
+            customerId: String(customer._id || userId),
+            rideId: String(ride._id),
+            driverId: ride.driver ? String(ride.driver) : null,
+            companyId: ride.companyId ? String(ride.companyId) : null,
+            amount: remainingDue,
+            paymentMethod: PaymentMethod.CARD,
+            status: PaymentTransactionStatus.SUCCESS,
+            usaepayTransactionKey: cardCharge.transactionKey,
+            refNum: cardCharge.refNum,
+            cardLast4: customer.cardLast4 || null,
+            cardBrand: customer.cardBrand || null,
+            chargedAt: new Date(),
+            description: `Remaining split trip payment via Card for Ride #${ride._id}`,
+          });
+
+          const socketPayload = {
+            rideId: String(ride._id),
+            status: ride.status,
+            paymentStatus: PaymentStatus.PAID,
+            totalFare: ride.totalFare,
+            walletAmountDeducted: ride.walletAmountDeducted,
+            cardAmountDeducted: remainingDue,
+            remainingPayableFare: 0,
+            cashToCollect: 0,
+          };
+
+          try {
+            this.socketService?.emitToRide(String(ride._id), 'payment:completed', socketPayload);
+            this.socketService?.emitToRide(String(ride._id), 'ride:status', socketPayload);
+            if (ride.driver) {
+              this.socketService?.emitToUser(String(ride.driver), 'payment:completed', socketPayload);
+            }
+            this.socketService?.emitToUser(String(ride.user), 'wallet:updated', {
+              walletBalance: 0,
+              formattedBalance: '$0.00',
+            });
+            this.socketService?.leaveRideRoom(String(ride._id));
+          } catch (err: any) {
+            this.logger.warn(`Socket notification error: ${err.message}`);
+          }
+
+          return new ApiResponse(
+            200,
+            {
+              isFullPayment: true,
+              totalFare: ride.totalFare,
+              walletDeducted,
+              cardDeducted: remainingDue,
+              remainingToPay: 0,
+              paymentStatus: PaymentStatus.PAID,
+              remainingWalletBalance: 0,
+            },
+            `Ride payment completed successfully: $${walletDeducted.toFixed(2)} from wallet and $${remainingDue.toFixed(2)} from card`,
+          );
+        }
+      }
+
+      // Default Split: Remaining via CASH (collected by driver)
+      ride.walletAmountDeducted = Number(((ride.walletAmountDeducted || 0) + walletDeducted).toFixed(2));
+      ride.remainingPayableFare = remainingDue;
+      ride.payableFare = remainingDue;
+      ride.remainingPaymentMethod = PaymentMethod.CASH;
+      ride.paymentMethod = PaymentMethod.CASH;
+      ride.paymentStatus = PaymentStatus.PENDING;
+      await ride.save();
+
+      const socketPayload = {
+        rideId: String(ride._id),
+        status: ride.status,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.CASH,
+        totalFare: ride.totalFare,
+        walletAmountDeducted: ride.walletAmountDeducted,
+        remainingPayableFare: remainingDue,
+        cashToCollect: remainingDue,
+      };
+
+      try {
+        this.socketService?.emitToRide(String(ride._id), 'payment:partial', socketPayload);
+        this.socketService?.emitToRide(String(ride._id), 'ride:status', socketPayload);
+        if (ride.driver) {
+          this.socketService?.emitToUser(String(ride.driver), 'payment:partial', socketPayload);
+          this.socketService?.emitToUser(String(ride.driver), 'ride:status', socketPayload);
+        }
+        this.socketService?.emitToUser(String(ride.user), 'wallet:updated', {
+          walletBalance: 0,
+          formattedBalance: '$0.00',
+        });
+      } catch (err: any) {
+        this.logger.warn(`Socket notification error: ${err.message}`);
+      }
+
+      return new ApiResponse(
+        200,
+        {
+          isFullPayment: false,
+          totalFare: ride.totalFare,
+          walletDeducted,
+          remainingToPay: remainingDue,
+          remainingPaymentMethod: PaymentMethod.CASH,
+          cashToCollect: remainingDue,
+          paymentStatus: PaymentStatus.PENDING,
+          remainingWalletBalance: 0,
+        },
+        `$${walletDeducted.toFixed(2)} deducted from wallet. Remaining $${remainingDue.toFixed(2)} to be collected in cash by driver.`,
+      );
+    } catch (error: any) {
+      this.logger.error(`payRideWithWallet error: ${error.message}`);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
     }
   }
