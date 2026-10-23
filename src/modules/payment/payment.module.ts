@@ -10,6 +10,7 @@ import { Payout, PayoutSchema } from './schema/payout.schema';
 import { Customer, CustomerSchema } from '../customer/schema/customer.schema';
 import { Ride, RideSchema } from '../ride/schema/ride.schema';
 import { Driver, DriverSchema } from '../driver/schema/driver.schema';
+import { User, UserSchema } from '../user/schema/user.schema';
 
 import { UsaepayService } from './usaepay.service';
 import { PaymentService } from './payment.service';
@@ -24,6 +25,7 @@ import { PaymentController } from './payment.controller';
       { name: Customer.name, schema: CustomerSchema },
       { name: Ride.name, schema: RideSchema },
       { name: Driver.name, schema: DriverSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [PaymentController],

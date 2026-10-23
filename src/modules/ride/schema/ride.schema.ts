@@ -140,6 +140,18 @@ export class Ride {
   @Prop({ type: Date, default: null })
   paymentCollectedAt?: Date | null;
 
+  /** Amount deducted from passenger wallet (for split or full wallet payment) */
+  @Prop({ type: Number, default: 0 })
+  walletAmountDeducted?: number;
+
+  /** Remaining fare after wallet deduction (e.g. $20 when $100 deducted from $120 total) */
+  @Prop({ type: Number, default: null })
+  remainingPayableFare?: number | null;
+
+  /** Payment method for remaining fare (CASH or CARD) */
+  @Prop({ type: String, enum: PaymentMethod, default: null })
+  remainingPaymentMethod?: PaymentMethod | null;
+
   @Prop({ type: String, default: null })
   notes?: string | null;
 

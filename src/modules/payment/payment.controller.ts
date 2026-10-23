@@ -37,6 +37,11 @@ import {
   RejectPayoutDto,
   GetPayoutsQueryDto,
 } from './dto/payout.dto';
+import {
+  TopUpWalletDto,
+  PayRideWithWalletDto,
+  WalletHistoryQueryDto,
+} from './dto/wallet.dto';
 
 import { Ride } from '../ride/schema/ride.schema';
 
@@ -109,6 +114,70 @@ export class PaymentController {
   @Post('ride/charge')
   chargeRide(@Req() req: any, @Body() dto: ChargeRideDto) {
     return this.paymentService.chargeRide(req.user.id, dto, this.rideModel);
+  }
+
+  // ============================================================
+  // PASSENGER WALLET & SPLIT PAYMENT
+  // ============================================================
+
+  @ApiTags('User Payment')
+  @ApiOperation({
+    summary: 'Recharge passenger wallet via saved card',
+    description:
+      'Charges the specified saved card on USAePay and credits the amount to the passenger wallet. Recharged wallet funds are non-withdrawable ride credits.',
+  })
+  @Roles(...PASSENGER_ROLES)
+  @Post('wallet/topup')
+  async topUpWallet(
+    @Req() req: any,
+    @Body() dto: TopUpWalletDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.topUpWallet(req.user.id, dto);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('User Payment')
+  @ApiOperation({
+    summary: 'Get passenger wallet balance and history',
+    description:
+      'Returns current non-withdrawable wallet balance, totals recharged and spent, and paginated transaction passbook.',
+  })
+  @Roles(...PASSENGER_ROLES)
+  @Get('wallet')
+  async getWalletDetails(
+    @Req() req: any,
+    @Query() query: WalletHistoryQueryDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.getWalletDetails(req.user.id, query);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
+  }
+
+  @ApiTags('User Payment')
+  @ApiOperation({
+    summary: 'Pay ride fare from passenger wallet (Full or Split with Cash/Card)',
+    description:
+      'Deducts available balance from passenger wallet. If wallet has full fare, marks ride PAID. If wallet has partial balance (e.g. $100 of $120), deducts $100 from wallet and marks remaining $20 as pending for driver cash collection or immediate card charge.',
+  })
+  @Roles(...PASSENGER_ROLES)
+  @Post('ride/pay-with-wallet')
+  async payRideWithWallet(
+    @Req() req: any,
+    @Body() dto: PayRideWithWalletDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.paymentService.payRideWithWallet(req.user.id, dto);
+    if (result?.statusCode) {
+      res.status(result.statusCode);
+    }
+    return result;
   }
 
   // ============================================================

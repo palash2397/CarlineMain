@@ -2679,6 +2679,21 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       fare: ride.fare,
       totalFare: ride.totalFare,
       payableFare: ride.payableFare,
+      walletAmountDeducted: Number(ride.walletAmountDeducted || 0),
+      remainingPayableFare: Number(
+        ride.remainingPayableFare !== null && ride.remainingPayableFare !== undefined
+          ? ride.remainingPayableFare
+          : (ride.payableFare ?? ride.totalFare ?? 0),
+      ),
+      remainingPaymentMethod: ride.remainingPaymentMethod || null,
+      cashToCollect:
+        ride.paymentMethod === PaymentMethod.CASH && ride.paymentStatus !== PaymentStatus.PAID
+          ? Number(
+              ride.remainingPayableFare !== null && ride.remainingPayableFare !== undefined
+                ? ride.remainingPayableFare
+                : (ride.payableFare ?? ride.totalFare ?? 0),
+            )
+          : 0,
       promoCode: ride.promoCode || null,
       discount: ride.discount || 0,
       passengerCount: ride.passengerCount,
@@ -5202,6 +5217,21 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       fare: ride.fare,
       totalFare: ride.totalFare,
       payableFare: ride.payableFare,
+      walletAmountDeducted: Number(ride.walletAmountDeducted || 0),
+      remainingPayableFare: Number(
+        ride.remainingPayableFare !== null && ride.remainingPayableFare !== undefined
+          ? ride.remainingPayableFare
+          : (ride.payableFare ?? ride.totalFare ?? 0),
+      ),
+      remainingPaymentMethod: ride.remainingPaymentMethod || null,
+      cashToCollect:
+        ride.paymentMethod === PaymentMethod.CASH && ride.paymentStatus !== PaymentStatus.PAID
+          ? Number(
+              ride.remainingPayableFare !== null && ride.remainingPayableFare !== undefined
+                ? ride.remainingPayableFare
+                : (ride.payableFare ?? ride.totalFare ?? 0),
+            )
+          : 0,
       driverEarnings: ride.driverEarnings ?? null,
       companyCommissionAmount: ride.companyCommissionAmount ?? null,
       superAdminCommissionAmount: ride.superAdminCommissionAmount ?? null,
