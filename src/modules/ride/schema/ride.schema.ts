@@ -134,6 +134,10 @@ export class Ride {
   @Prop({ type: String, enum: PaymentMethod, default: PaymentMethod.CASH })
   paymentMethod: PaymentMethod;
 
+  /** Selected card payment method key from customer vault (if paymentMethod is CARD) */
+  @Prop({ type: String, default: null })
+  payMethodKey?: string | null;
+
   @Prop({ type: String, enum: PaymentStatus, default: PaymentStatus.PENDING })
   paymentStatus: PaymentStatus;
 

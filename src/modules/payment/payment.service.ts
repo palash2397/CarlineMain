@@ -403,7 +403,7 @@ export class PaymentService {
         paymentMethod: PaymentMethod.CARD,
         status: PaymentTransactionStatus.PENDING,
         usaepayCustomerKey: customer.usaepayCustomerId,
-        usaepayPayMethodKey: dto.payMethodKey || null,
+        usaepayPayMethodKey: dto.payMethodKey || (ride as any)?.payMethodKey || null,
         cardLast4: customer.cardLast4 || null,
         cardBrand: customer.cardBrand || null,
         description: `Card payment for ride ${dto.rideId}`,
@@ -412,6 +412,7 @@ export class PaymentService {
 
       const payMethodKeyToUse =
         dto.payMethodKey ||
+        (ride as any)?.payMethodKey ||
         (customer as any).defaultPayMethodKey ||
         ((customer as any).savedCards && (customer as any).savedCards[0]?.payMethodKey);
 
@@ -2022,6 +2023,7 @@ export class PaymentService {
 
       const payMethodKeyToUse =
         dto.payMethodKey ||
+        (ride as any)?.payMethodKey ||
         customer?.defaultPayMethodKey ||
         (customer?.savedCards && customer.savedCards[0]?.payMethodKey);
 

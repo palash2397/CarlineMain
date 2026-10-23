@@ -121,4 +121,9 @@ export class CreateDispatcherBookingDto {
   @ApiPropertyOptional({ description: 'Optional company ID' })
   @IsOptional()
   companyId?: string;
+
+  @ApiPropertyOptional({ description: 'Saved card payMethodKey when paymentMethod is CARD' })
+  @IsOptional()
+  @IsString()
+  payMethodKey?: string;
 }
