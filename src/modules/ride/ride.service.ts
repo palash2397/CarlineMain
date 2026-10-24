@@ -1050,18 +1050,35 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           )
           .catch(() => {});
       } else if (prevCandidate) {
+        const cancelPayload = {
+          _id: String(ride._id),
+          id: String(ride._id),
+          rideId: String(ride._id),
+          status: RideStatus.RIDE_CANCELLED,
+          message: 'Ride request cancelled by passenger',
+          reason: dto.reason || 'Ride request cancelled by passenger',
+          cancelReason: dto.reason || 'Ride request cancelled by passenger',
+        };
         this.socketService.emitToUser(
           String(prevCandidate),
           RIDE_EVENTS.EXPIRED,
-          {
-            rideId: String(ride._id),
-            message: 'Ride request cancelled by passenger',
-          },
+          cancelPayload,
         );
-        this.socketService.emitToUser(String(prevCandidate), RIDE_EVENTS.TAKEN, {
-          rideId: String(ride._id),
-          status: RideStatus.RIDE_CANCELLED,
-        });
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.TAKEN,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.CANCELLED,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.STATUS,
+          cancelPayload,
+        );
       }
 
       this.notificationService
@@ -3127,9 +3144,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ride.timeline.push(autoCancelTimeline);
 
         const cancelPayload = {
+          _id: String(ride._id),
+          id: String(ride._id),
           rideId: String(ride._id),
           status: RideStatus.RIDE_CANCELLED,
           reason: cancelReason,
+          cancelReason,
           cancelledBy: CancelledBy.SYSTEM,
           cancelledAt,
         };
@@ -3140,6 +3160,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           cancelPayload,
         );
         this.emitRideEvent(ride, RIDE_EVENTS.STATUS, this.statusPayload(ride));
+
+        // ALSO emit to all candidate/attempted drivers so their screen/popup closes immediately!
+        for (const drvId of attempted) {
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.CANCELLED, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.EXPIRED, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.TAKEN, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.STATUS, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.MISSED, cancelPayload);
+        }
 
         this.notificationService
           .sendToUser(
@@ -3181,7 +3210,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleRequestTimeout(
+  async handleRequestTimeout(
     rideId: string,
     timedOutDriverId: string,
   ) {
@@ -3202,15 +3231,22 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Notify previous driver that request expired
-      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.EXPIRED, {
-        rideId,
-        message: 'Ride request timed out after 30 seconds',
-      });
-      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.TAKEN, {
-        rideId,
+      const timeoutPayload = {
+        _id: String(rideId),
+        id: String(rideId),
+        rideId: String(rideId),
         status: 'EXPIRED',
-      });
+        reason: 'Ride request timed out after 30 seconds',
+        cancelReason: 'Ride request timed out after 30 seconds',
+        message: 'Ride request timed out after 30 seconds',
+      };
+
+      // Notify previous driver that request expired across all socket listeners
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.EXPIRED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.TAKEN, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.CANCELLED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.STATUS, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.MISSED, timeoutPayload);
 
       // Clear candidate on ride before transferring
       await this.rideModel.updateOne(
@@ -3230,6 +3266,28 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         `Error in handleRequestTimeout for ride ${rideId}:`,
         error,
       );
+    }
+  }
+
+  // Periodic sweep for any expired searching candidate requests
+  async sweepExpiredRequests() {
+    try {
+      const expired = await this.rideModel.find({
+        status: RideStatus.SEARCHING_DRIVER,
+        candidateDriverId: { $ne: null },
+        requestExpiresAt: { $lte: new Date() },
+      });
+
+      for (const ride of expired) {
+        if (ride.candidateDriverId) {
+          await this.handleRequestTimeout(
+            String(ride._id),
+            String(ride.candidateDriverId),
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error sweeping expired requests:', err);
     }
   }
 
@@ -3769,14 +3827,17 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         },
       );
 
-      this.socketService.emitToUser(driverId, RIDE_EVENTS.EXPIRED, {
+      const rejectPayload = {
+        _id: String(dto.rideId),
+        id: String(dto.rideId),
         rideId: dto.rideId,
         status: 'REJECTED',
-      });
-      this.socketService.emitToUser(driverId, RIDE_EVENTS.TAKEN, {
-        rideId: dto.rideId,
-        status: 'REJECTED',
-      });
+        reason: 'Ride request declined',
+      };
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.EXPIRED, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.TAKEN, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.CANCELLED, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.STATUS, rejectPayload);
 
       // Immediately cascade request to next available driver without waiting
       await this.dispatchRide(dto.rideId);
