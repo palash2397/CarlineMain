@@ -222,6 +222,20 @@ export class NotificationService implements OnModuleInit {
       }
       sanitizedData.type = payload.type || 'GENERAL';
 
+      if (!sanitizedData.sound) {
+        sanitizedData.sound = 'default';
+      }
+
+      const androidNotification: any = {
+        sound: 'default',
+        defaultSound: true,
+        defaultVibrateTimings: true,
+        priority: 'high',
+      };
+      if (payload.data?.channelId && payload.data.channelId !== 'carline_rides') {
+        androidNotification.channelId = payload.data.channelId;
+      }
+
       const message: Message = {
         token: fcmToken,
         notification: {
@@ -231,16 +245,14 @@ export class NotificationService implements OnModuleInit {
         data: sanitizedData,
         android: {
           priority: 'high',
-          notification: {
-            sound: 'default',
-            channelId: 'carline_rides',
-          },
+          notification: androidNotification,
         },
         apns: {
           payload: {
             aps: {
               sound: 'default',
               badge: 1,
+              contentAvailable: true,
             },
           },
         },
@@ -598,10 +610,15 @@ export class NotificationService implements OnModuleInit {
               data: sanitizedData,
               android: {
                 priority: 'high',
-                notification: { sound: 'default', channelId: 'carline_rides' },
+                notification: {
+                  sound: 'default',
+                  defaultSound: true,
+                  defaultVibrateTimings: true,
+                  priority: 'high',
+                },
               },
               apns: {
-                payload: { aps: { sound: 'default', badge: 1 } },
+                payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } },
               },
             });
             successCount += batchResponse.successCount;
