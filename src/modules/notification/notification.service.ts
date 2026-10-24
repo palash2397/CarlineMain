@@ -225,8 +225,8 @@ export class NotificationService implements OnModuleInit {
       if (!sanitizedData.sound) {
         sanitizedData.sound = 'default';
       }
-      if (!sanitizedData.channelId) {
-        sanitizedData.channelId = 'carline_rides';
+      if (!sanitizedData.channelId || sanitizedData.channelId === 'carline_rides') {
+        sanitizedData.channelId = 'high_importance_channel';
       }
 
       const message: Message = {
@@ -243,7 +243,7 @@ export class NotificationService implements OnModuleInit {
             defaultSound: true,
             defaultVibrateTimings: true,
             priority: 'max',
-            channelId: 'carline_rides',
+            channelId: sanitizedData.channelId,
           },
         },
         apns: {
@@ -614,7 +614,7 @@ export class NotificationService implements OnModuleInit {
                   defaultSound: true,
                   defaultVibrateTimings: true,
                   priority: 'max',
-                  channelId: 'carline_rides',
+                  channelId: 'high_importance_channel',
                 },
               },
               apns: {

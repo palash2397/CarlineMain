@@ -1079,6 +1079,18 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           RIDE_EVENTS.STATUS,
           cancelPayload,
         );
+        this.notificationService
+          .sendToUser(
+            String(prevCandidate),
+            {
+              title: 'Ride Cancelled',
+              body: `Passenger has cancelled the ride request.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+              data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
       }
 
       this.notificationService
