@@ -143,18 +143,37 @@ export class ChatService {
         this.socketService.emitToRide(String(ride._id), 'chat:message', messagePayload);
       }
 
+      // Send dedicated real-time in-app notification & push notification to the recipient
       if (receiverId) {
         const receiverType = isPassenger ? 'DRIVER' : 'USER';
+        const notificationTitle = isPassenger
+          ? `Passenger (${senderName})`
+          : `Driver (${senderName})`;
+
+        // Emit dedicated real-time chat notification socket directly to receiver
+        try {
+          this.socketService.emitToUser(String(receiverId), 'chat:notification', {
+            ...messagePayload,
+            title: notificationTitle,
+            body: messageDoc.message,
+          });
+        } catch (e) {}
+
+        // Persist notification in DB, emit notification:new, update unread count, and dispatch FCM push
         this.notificationService
           .sendToUser(
             String(receiverId),
             {
-              title: `New message from ${senderName}`,
+              title: notificationTitle,
               body: messageDoc.message,
               data: {
                 rideId: String(ride._id),
                 senderId: String(userId),
+                senderName: String(senderName),
+                senderRole: String(senderRole),
+                message: String(messageDoc.message),
                 type: 'CHAT_MESSAGE',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
               },
               type: 'CHAT_MESSAGE',
             },

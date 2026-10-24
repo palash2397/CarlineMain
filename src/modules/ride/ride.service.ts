@@ -492,14 +492,17 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         await this.dispatchRide(rideId);
       }
 
+      const isScheduled = rideType === RideType.SCHEDULED;
       this.notificationService
         .sendToUser(
           user.id,
           {
-            title: 'Booking Confirmed',
-            body: 'Your ride booking is confirmed! Searching for nearby drivers...',
-            data: { rideId, type: 'RIDE_CREATED' },
-            type: 'RIDE_CREATED',
+            title: isScheduled ? 'Ride Scheduled' : 'Booking Confirmed',
+            body: isScheduled
+              ? `Your ride is scheduled for ${ride.scheduledAt ? new Date(ride.scheduledAt).toLocaleString() : 'the requested time'}. We will find a driver before your pickup.`
+              : 'Your ride booking is confirmed! Searching for nearby drivers...',
+            data: { rideId, type: isScheduled ? 'RIDE_SCHEDULED' : 'RIDE_CREATED' },
+            type: isScheduled ? 'RIDE_SCHEDULED' : 'RIDE_CREATED',
           },
           'USER',
         )
@@ -1047,19 +1050,49 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           )
           .catch(() => {});
       } else if (prevCandidate) {
+        const cancelPayload = {
+          _id: String(ride._id),
+          id: String(ride._id),
+          rideId: String(ride._id),
+          status: RideStatus.RIDE_CANCELLED,
+          message: 'Ride request cancelled by passenger',
+          reason: dto.reason || 'Ride request cancelled by passenger',
+          cancelReason: dto.reason || 'Ride request cancelled by passenger',
+        };
         this.socketService.emitToUser(
           String(prevCandidate),
           RIDE_EVENTS.EXPIRED,
-          {
-            rideId: String(ride._id),
-            message: 'Ride request cancelled by passenger',
-          },
+          cancelPayload,
         );
-        this.socketService.emitToUser(String(prevCandidate), RIDE_EVENTS.TAKEN, {
-          rideId: String(ride._id),
-          status: RideStatus.RIDE_CANCELLED,
-        });
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.TAKEN,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.CANCELLED,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          String(prevCandidate),
+          RIDE_EVENTS.STATUS,
+          cancelPayload,
+        );
       }
+
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Ride Cancelled',
+            body: `You have cancelled your ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+            data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+            type: 'RIDE_CANCELLED',
+          },
+          'USER',
+        )
+        .catch(() => {});
 
       const payload = {
         rideId: String(ride._id),
@@ -1133,6 +1166,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         RIDE_EVENTS.STATUS,
         this.statusPayload(claimed),
       );
+
+      this.notificationService
+        .sendToUser(
+          String(claimed.user),
+          {
+            title: 'Scheduled Ride Active',
+            body: 'Your scheduled ride is starting now! Searching for nearby drivers...',
+            data: { rideId: String(claimed._id), type: 'RIDE_CREATED' },
+            type: 'RIDE_CREATED',
+          },
+          'USER',
+        )
+        .catch(() => {});
 
       promoted += 1;
     }
@@ -1852,8 +1898,60 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           RIDE_EVENTS.ASSIGNED,
           summary,
         );
+
+        this.notificationService
+          .sendToUser(
+            String(assignedDriver._id),
+            {
+              title: 'New Trip Assigned',
+              body: `A trip #${rideId.slice(-6)} has been assigned to you by dispatcher. Pickup: ${ride.pickup?.address || 'Pickup'}.`,
+              data: { rideId, type: 'DRIVER_ASSIGNED' },
+              type: 'DRIVER_ASSIGNED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+
+        this.notificationService
+          .sendToUser(
+            passengerId,
+            {
+              title: 'Driver Assigned',
+              body: `A driver (${assignedDriver.fullName || 'Assigned Driver'}) has been assigned to your ride.`,
+              data: { rideId, driverId: String(assignedDriver._id), type: 'DRIVER_ASSIGNED' },
+              type: 'DRIVER_ASSIGNED',
+            },
+            'USER',
+          )
+          .catch(() => {});
       } else if (rideType !== RideType.SCHEDULED) {
         await this.dispatchRide(rideId);
+
+        this.notificationService
+          .sendToUser(
+            passengerId,
+            {
+              title: 'Booking Confirmed',
+              body: 'Your ride booking is confirmed! Searching for nearby drivers...',
+              data: { rideId, type: 'RIDE_CREATED' },
+              type: 'RIDE_CREATED',
+            },
+            'USER',
+          )
+          .catch(() => {});
+      } else {
+        this.notificationService
+          .sendToUser(
+            passengerId,
+            {
+              title: 'Ride Scheduled',
+              body: `Your ride is scheduled for ${ride.scheduledAt ? new Date(ride.scheduledAt).toLocaleString() : 'the requested time'}.`,
+              data: { rideId, type: 'RIDE_SCHEDULED' },
+              type: 'RIDE_SCHEDULED',
+            },
+            'USER',
+          )
+          .catch(() => {});
       }
 
       return new ApiResponse(200, summary, Msg.DISPATCHER_RIDE_BOOKED);
@@ -2026,6 +2124,34 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         RIDE_EVENTS.UPDATED,
         summary,
       );
+
+      this.notificationService
+        .sendToUser(
+          String(ride.user),
+          {
+            title: 'Ride Details Updated',
+            body: 'Your ride details have been updated successfully.',
+            data: { rideId: String(ride._id), type: 'RIDE_UPDATED' },
+            type: 'RIDE_UPDATED',
+          },
+          'USER',
+        )
+        .catch(() => {});
+
+      if (ride.driver) {
+        this.notificationService
+          .sendToUser(
+            String(ride.driver),
+            {
+              title: 'Ride Details Updated',
+              body: `Trip #${String(ride._id).slice(-6)} details have been updated.`,
+              data: { rideId: String(ride._id), type: 'RIDE_UPDATED' },
+              type: 'RIDE_UPDATED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+      }
 
       return new ApiResponse(200, summary, Msg.RIDE_MODIFIED);
     } catch (error: any) {
@@ -3018,9 +3144,12 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         ride.timeline.push(autoCancelTimeline);
 
         const cancelPayload = {
+          _id: String(ride._id),
+          id: String(ride._id),
           rideId: String(ride._id),
           status: RideStatus.RIDE_CANCELLED,
           reason: cancelReason,
+          cancelReason,
           cancelledBy: CancelledBy.SYSTEM,
           cancelledAt,
         };
@@ -3031,6 +3160,15 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           cancelPayload,
         );
         this.emitRideEvent(ride, RIDE_EVENTS.STATUS, this.statusPayload(ride));
+
+        // ALSO emit to all candidate/attempted drivers so their screen/popup closes immediately!
+        for (const drvId of attempted) {
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.CANCELLED, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.EXPIRED, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.TAKEN, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.STATUS, cancelPayload);
+          this.socketService.emitToUser(drvId, RIDE_EVENTS.MISSED, cancelPayload);
+        }
 
         this.notificationService
           .sendToUser(
@@ -3072,7 +3210,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleRequestTimeout(
+  async handleRequestTimeout(
     rideId: string,
     timedOutDriverId: string,
   ) {
@@ -3093,15 +3231,22 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Notify previous driver that request expired
-      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.EXPIRED, {
-        rideId,
-        message: 'Ride request timed out after 30 seconds',
-      });
-      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.TAKEN, {
-        rideId,
+      const timeoutPayload = {
+        _id: String(rideId),
+        id: String(rideId),
+        rideId: String(rideId),
         status: 'EXPIRED',
-      });
+        reason: 'Ride request timed out after 30 seconds',
+        cancelReason: 'Ride request timed out after 30 seconds',
+        message: 'Ride request timed out after 30 seconds',
+      };
+
+      // Notify previous driver that request expired across all socket listeners
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.EXPIRED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.TAKEN, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.CANCELLED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.STATUS, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.MISSED, timeoutPayload);
 
       // Clear candidate on ride before transferring
       await this.rideModel.updateOne(
@@ -3121,6 +3266,28 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         `Error in handleRequestTimeout for ride ${rideId}:`,
         error,
       );
+    }
+  }
+
+  // Periodic sweep for any expired searching candidate requests
+  async sweepExpiredRequests() {
+    try {
+      const expired = await this.rideModel.find({
+        status: RideStatus.SEARCHING_DRIVER,
+        candidateDriverId: { $ne: null },
+        requestExpiresAt: { $lte: new Date() },
+      });
+
+      for (const ride of expired) {
+        if (ride.candidateDriverId) {
+          await this.handleRequestTimeout(
+            String(ride._id),
+            String(ride.candidateDriverId),
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error sweeping expired requests:', err);
     }
   }
 
@@ -3604,6 +3771,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         )
         .catch(() => {});
 
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Ride Accepted',
+            body: `You have accepted ride #${String(claimed._id).slice(-6)}. Head to pickup: ${claimed.pickup?.address || 'Pickup location'}.`,
+            data: { rideId: String(claimed._id), type: 'RIDE_ACCEPTED' },
+            type: 'RIDE_ACCEPTED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(200, payload, Msg.RIDE_ACCEPTED);
     } catch (error) {
       console.error('Error while accepting ride:', error);
@@ -3647,14 +3827,17 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         },
       );
 
-      this.socketService.emitToUser(driverId, RIDE_EVENTS.EXPIRED, {
+      const rejectPayload = {
+        _id: String(dto.rideId),
+        id: String(dto.rideId),
         rideId: dto.rideId,
         status: 'REJECTED',
-      });
-      this.socketService.emitToUser(driverId, RIDE_EVENTS.TAKEN, {
-        rideId: dto.rideId,
-        status: 'REJECTED',
-      });
+        reason: 'Ride request declined',
+      };
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.EXPIRED, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.TAKEN, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.CANCELLED, rejectPayload);
+      this.socketService.emitToUser(driverId, RIDE_EVENTS.STATUS, rejectPayload);
 
       // Immediately cascade request to next available driver without waiting
       await this.dispatchRide(dto.rideId);
@@ -3726,6 +3909,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             type: 'DRIVER_ARRIVED',
           },
           'USER',
+        )
+        .catch(() => {});
+
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Arrived at Pickup',
+            body: 'You have arrived at pickup. Please ask the passenger for the 4-digit OTP to start the trip.',
+            data: { rideId: String(ride._id), type: 'DRIVER_ARRIVED' },
+            type: 'DRIVER_ARRIVED',
+          },
+          'DRIVER',
         )
         .catch(() => {});
 
@@ -3852,6 +4048,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         )
         .catch(() => {});
 
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Trip Started 🚗',
+            body: `Trip to ${ride.dropoff?.address || 'destination'} has started. Drive safely!`,
+            data: { rideId: String(ride._id), type: 'TRIP_STARTED' },
+            type: 'TRIP_STARTED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(
         200,
         await this.ridePayload(ride),
@@ -3926,6 +4135,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             type: 'DESTINATION_REACHED',
           },
           'USER',
+        )
+        .catch(() => {});
+
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Destination Reached',
+            body: 'You have arrived at the destination. Proceed to complete the trip.',
+            data: { rideId: String(ride._id), type: 'DESTINATION_REACHED' },
+            type: 'DESTINATION_REACHED',
+          },
+          'DRIVER',
         )
         .catch(() => {});
 
@@ -4190,6 +4412,27 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         )
         .catch(() => {});
 
+      if (driverId || ride.driver) {
+        const targetDriverId = String(driverId || ride.driver);
+        this.notificationService
+          .sendToUser(
+            targetDriverId,
+            {
+              title: 'Trip Completed 🎉',
+              body: `Trip #${String(ride._id).slice(-6)} completed. Total fare is $${ride.payableFare || ride.totalFare}.${ride.driverEarnings ? ` Earnings: $${ride.driverEarnings}.` : ''}`,
+              data: {
+                rideId: String(ride._id),
+                payableFare: String(ride.payableFare || ride.totalFare),
+                driverEarnings: String(ride.driverEarnings || ''),
+                type: 'TRIP_COMPLETED',
+              },
+              type: 'TRIP_COMPLETED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+      }
+
       // Send Ride Receipt / Invoice Email to passenger
       if (ride.user) {
         this.userModel
@@ -4288,6 +4531,44 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       }
       this.socketService.leaveRideRoom(String(ride._id));
 
+      if (ride.user) {
+        this.notificationService
+          .sendToUser(
+            String(ride.user),
+            {
+              title: 'Payment Received',
+              body: `Payment of $${ride.payableFare || ride.totalFare} received via ${collectedMethod}. Thank you for riding with Carline!`,
+              data: {
+                rideId: String(ride._id),
+                payableFare: String(ride.payableFare || ride.totalFare),
+                paymentMethod: collectedMethod,
+                type: 'PAYMENT_COMPLETED',
+              },
+              type: 'PAYMENT_COMPLETED',
+            },
+            'USER',
+          )
+          .catch(() => {});
+      }
+
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Payment Confirmed',
+            body: `Payment of $${ride.payableFare || ride.totalFare} recorded successfully via ${collectedMethod}.`,
+            data: {
+              rideId: String(ride._id),
+              payableFare: String(ride.payableFare || ride.totalFare),
+              paymentMethod: collectedMethod,
+              type: 'PAYMENT_COMPLETED',
+            },
+            type: 'PAYMENT_COMPLETED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
+
       return new ApiResponse(200, payload, Msg.PAYMENT_COLLECTED);
     } catch (error) {
       console.error('Error while collecting payment:', error);
@@ -4359,6 +4640,19 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             type: 'RIDE_CANCELLED',
           },
           'USER',
+        )
+        .catch(() => {});
+
+      this.notificationService
+        .sendToUser(
+          driverId,
+          {
+            title: 'Ride Cancelled',
+            body: `You have cancelled ride #${String(ride._id).slice(-6)}.`,
+            data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+            type: 'RIDE_CANCELLED',
+          },
+          'DRIVER',
         )
         .catch(() => {});
 
@@ -4524,6 +4818,26 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         RIDE_EVENTS.STATUS,
         this.statusPayload(ride),
       );
+
+      if (ride.user) {
+        this.notificationService
+          .sendToUser(
+            String(ride.user),
+            {
+              title: 'Waiting Charge Adjusted',
+              body: `Waiting charges updated to $${newCharge}. Total payable fare: $${ride.payableFare || ride.totalFare}.`,
+              data: {
+                rideId: String(ride._id),
+                waitingCharge: String(newCharge),
+                payableFare: String(ride.payableFare || ride.totalFare),
+                type: 'FARE_ADJUSTED',
+              },
+              type: 'FARE_ADJUSTED',
+            },
+            'USER',
+          )
+          .catch(() => {});
+      }
 
       return new ApiResponse(
         200,

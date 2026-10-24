@@ -60,6 +60,18 @@ export class RideSchedulerService {
       );
     }
   }
+
+  // 5-second sweep to ensure candidate driver 30s timeout expires cleanly even if in-memory timer slips
+  @Cron('*/5 * * * * *')
+  async sweepExpiredRequests() {
+    try {
+      await this.rideService.sweepExpiredRequests();
+    } catch (error) {
+      this.logger.error(
+        `Error while sweeping expired ride requests: ${String(error)}`,
+      );
+    }
+  }
 }
 
 
