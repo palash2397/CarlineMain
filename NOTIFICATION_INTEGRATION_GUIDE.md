@@ -263,26 +263,39 @@ Backend in sabhi events par User ke phone par Push Notification + In-App notific
 
 | Event | `type` in Payload | Title | Body Example | Data Payload (`notification.data`) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Ride Booked** | `RIDE_BOOKED` | Ride Confirmed | *"Your ride has been confirmed. Finding nearby drivers..."* | `{ "rideId": "...", "type": "RIDE_BOOKED" }` |
-| **Driver Assigned** | `DRIVER_ASSIGNED` | Driver Assigned | *"Driver {Name} is on the way. Vehicle: {VehicleName}"* | `{ "rideId": "...", "type": "DRIVER_ASSIGNED" }` |
-| **Driver Arrived** | `DRIVER_ARRIVED` | Driver Arrived | *"Driver has arrived at pickup. Share OTP: {OTP} to start trip."* | `{ "rideId": "...", "otp": "XXXX", "type": "DRIVER_ARRIVED" }` |
-| **Trip Started** | `TRIP_STARTED` | Trip Started | *"Your ride to {Dropoff} has started. Have a safe journey!"* | `{ "rideId": "...", "type": "TRIP_STARTED" }` |
-| **Destination Reached**| `DESTINATION_REACHED` | Reached Destination | *"You have reached your destination. Please pay ${TotalFare}."* | `{ "rideId": "...", "type": "DESTINATION_REACHED" }` |
-| **Trip Completed** | `TRIP_COMPLETED` | Trip Completed | *"Thank you for riding with Carline! Please rate your driver."* *(+ HTML Invoice Receipt Email sent to passenger)* | `{ "rideId": "...", "type": "TRIP_COMPLETED" }` |
-| **Ride Cancelled** | `RIDE_CANCELLED` | Ride Cancelled | *"Your ride was cancelled. Reason: {Reason}"* | `{ "rideId": "...", "type": "RIDE_CANCELLED" }` |
-| **Chat Message** | `CHAT_MESSAGE` | New Message from Driver | *"{MessageContent}"* | `{ "rideId": "...", "type": "CHAT_MESSAGE" }` |
+| **Ride Booked** | `RIDE_CREATED` | Booking Confirmed | *"Your ride booking is confirmed! Searching for nearby drivers..."* | `{ "rideId": "...", "type": "RIDE_CREATED" }` |
+| **Scheduled Ride Booked** | `RIDE_SCHEDULED` | Ride Scheduled | *"Your ride is scheduled for Oct 25, 2026, 10:30 AM. We will find a driver before your pickup."* | `{ "rideId": "...", "type": "RIDE_SCHEDULED" }` |
+| **Scheduled Ride Due** | `RIDE_CREATED` | Scheduled Ride Active | *"Your scheduled ride is starting now! Searching for nearby drivers..."* | `{ "rideId": "...", "type": "RIDE_CREATED" }` |
+| **Driver Assigned** | `DRIVER_ASSIGNED` | Driver Assigned | *"Driver John Doe has accepted your ride request and is on the way."* | `{ "rideId": "...", "driverId": "...", "type": "DRIVER_ASSIGNED" }` |
+| **Driver Arrived** | `DRIVER_ARRIVED` | Driver Arrived | *"Your driver has arrived at the pickup location. Share OTP 4921 to start your ride."* | `{ "rideId": "...", "otp": "4921", "type": "DRIVER_ARRIVED" }` |
+| **Trip Started** | `TRIP_STARTED` | Trip Started | *"Your trip to Airport Terminal 2 has started. Have a safe journey!"* | `{ "rideId": "...", "type": "TRIP_STARTED" }` |
+| **Destination Reached**| `DESTINATION_REACHED` | Destination Reached | *"You have arrived at your destination."* | `{ "rideId": "...", "type": "DESTINATION_REACHED" }` |
+| **Trip Completed** | `TRIP_COMPLETED` | Trip Completed | *"Trip completed! Total fare is $25.50. Thank you for riding with Carline."* *(+ HTML Invoice Receipt Email sent to passenger)* | `{ "rideId": "...", "payableFare": "25.50", "type": "TRIP_COMPLETED" }` |
+| **Payment Received** | `PAYMENT_COMPLETED` | Payment Received | *"Payment of $25.50 received via CASH. Thank you for riding with Carline!"* | `{ "rideId": "...", "payableFare": "25.50", "paymentMethod": "CASH", "type": "PAYMENT_COMPLETED" }` |
+| **Ride Cancelled** | `RIDE_CANCELLED` | Ride Cancelled | *"Your driver cancelled the ride. Reason: Flat tire"* OR *"You have cancelled your ride."* OR *"No driver accepted the request within the time limit"* | `{ "rideId": "...", "type": "RIDE_CANCELLED" }` |
+| **Ride Details Updated** | `RIDE_UPDATED` | Ride Details Updated | *"Your ride details have been updated successfully."* | `{ "rideId": "...", "type": "RIDE_UPDATED" }` |
+| **Waiting Charge Adjusted** | `FARE_ADJUSTED` | Waiting Charge Adjusted | *"Waiting charges updated to $5.00. Total payable fare: $30.50."* | `{ "rideId": "...", "waitingCharge": "5.00", "payableFare": "30.50", "type": "FARE_ADJUSTED" }` |
+| **Chat Message** | `CHAT_MESSAGE` | Driver (John Doe) | *"I am waiting near the red building entrance."* | `{ "rideId": "...", "senderRole": "DRIVER", "senderName": "John Doe", "type": "CHAT_MESSAGE" }` |
 
 ---
 
 ## 4. Driver Lifecycle Events
 
-Driver App ke liye automatic Push Notifications:
+Driver App ke liye automatic Push Notifications & In-App Alerts:
 
 | Event | `type` in Payload | Title | Body Example | Action in App |
 | :--- | :--- | :--- | :--- | :--- |
-| **New Ride Request** | `RIDE_REQUEST` | New Ride Request | *"Pickup: {Address} • Fare: ${Fare}. 30s to accept!"* | Ring bell / show incoming ride screen with 30s countdown timer |
-| **Rider Cancelled** | `RIDE_CANCELLED` | Ride Cancelled by Rider | *"The customer cancelled this ride."* | Clear current trip & go back to Active radar screen |
-| **Chat Message** | `CHAT_MESSAGE` | New Message from Rider | *"{MessageContent}"* | Open in-ride chat screen |
+| **New Ride Request** | `RIDE_REQUEST` | New Ride Request | *"New ride request nearby. Pickup: 123 Main St. Fare: $25.50"* | Ring bell / show incoming ride popup with 30s countdown timer |
+| **Trip Assigned (Dispatcher)**| `DRIVER_ASSIGNED` | New Trip Assigned | *"A trip #354d has been assigned to you by dispatcher. Pickup: 123 Main St."* | Open trip details screen |
+| **Ride Accepted Confirmation**| `RIDE_ACCEPTED` | Ride Accepted | *"You have accepted ride #354d. Head to pickup: 123 Main St."* | Navigate to pickup on map |
+| **Driver Arrived Confirmation**| `DRIVER_ARRIVED` | Arrived at Pickup | *"You have arrived at pickup. Please ask the passenger for the 4-digit OTP to start the trip."* | Show OTP input dialog |
+| **Trip Started Confirmation**| `TRIP_STARTED` | Trip Started 🚗 | *"Trip to Airport Terminal 2 has started. Drive safely!"* | Turn-by-turn navigation to dropoff |
+| **Destination Reached** | `DESTINATION_REACHED`| Destination Reached | *"You have arrived at the destination. Proceed to complete the trip."* | Show End Trip / Complete button |
+| **Trip Completed & Earnings** | `TRIP_COMPLETED` | Trip Completed 🎉 | *"Trip #354d completed. Total fare is $25.50. Earnings: $20.40."* | Show fare summary & cash to collect (if cash trip) |
+| **Payment Confirmed** | `PAYMENT_COMPLETED` | Payment Confirmed | *"Payment of $25.50 recorded successfully via CASH."* | Return driver to active duty radar |
+| **Ride Cancelled** | `RIDE_CANCELLED` | Ride Cancelled | *"Passenger has cancelled the ride. Reason: Change of plans"* OR *"You have cancelled ride #354d."* | Clear trip & restore Active duty status |
+| **Ride Details Updated** | `RIDE_UPDATED` | Ride Details Updated | *"Trip #354d details have been updated."* | Refresh ride details & route |
+| **Chat Message** | `CHAT_MESSAGE` | Passenger (Alice) | *"I am wearing a yellow jacket near gate 1."* | Open in-ride chat conversation |
 
 ---
 
