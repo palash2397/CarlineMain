@@ -170,11 +170,23 @@ export class NotificationService implements OnModuleInit {
         let fcmToken: string | null = null;
 
         if (targetType === 'DRIVER') {
-          const driver = await this.driverModel.findById(targetUserId).select('fcmToken');
-          fcmToken = driver?.fcmToken || null;
+          if (Types.ObjectId.isValid(targetUserId)) {
+            const driver = await this.driverModel.findById(targetUserId).select('fcmToken');
+            fcmToken = driver?.fcmToken || null;
+            if (!fcmToken) {
+              const user = await this.userModel.findById(targetUserId).select('fcmToken');
+              fcmToken = user?.fcmToken || null;
+            }
+          }
         } else {
-          const user = await this.userModel.findById(targetUserId).select('fcmToken');
-          fcmToken = user?.fcmToken || null;
+          if (Types.ObjectId.isValid(targetUserId)) {
+            const user = await this.userModel.findById(targetUserId).select('fcmToken');
+            fcmToken = user?.fcmToken || null;
+            if (!fcmToken) {
+              const driver = await this.driverModel.findById(targetUserId).select('fcmToken');
+              fcmToken = driver?.fcmToken || null;
+            }
+          }
         }
 
         if (fcmToken) {
