@@ -13,9 +13,6 @@ export default {
   },
 };
 
-// ---------------------------------------------------------------
-// Ride booking (passenger app + driver app) shared values.
-// ---------------------------------------------------------------
 export const ROAD_DISTANCE_FACTOR = 1.3;
 export const AVERAGE_SPEED_KMH = 25;
 export const DRIVER_SEARCH_RADIUS_KM = 5;
@@ -24,32 +21,21 @@ export const DEFAULT_CURRENCY = 'USD';
 export const MAX_PASSENGERS = 8;
 export const DRIVER_REQUEST_LIMIT = 20;
 
-// A scheduled ride moves to driver search this many minutes before its pickup
-// time, so the driver reaches the pickup point on time.
 export const SCHEDULED_DISPATCH_LEAD_MINUTES = 15;
 
-// How many due scheduled rides one scheduler run promotes.
 export const SCHEDULED_DISPATCH_BATCH_SIZE = 50;
 
-// A recurring booking creates the ride of its next pickup this many minutes
-// before the pickup time. From there the normal scheduled dispatch takes over,
-// so a recurring ride reaches the drivers exactly like a one time ride.
 export const RECURRING_MATERIALIZE_LEAD_MINUTES = 60;
 
-// How many recurring series one scheduler run turns into a ride.
 export const RECURRING_DISPATCH_BATCH_SIZE = 50;
 
-// How far ahead the next pickup of a series is looked up (one year of days).
 export const RECURRING_LOOKAHEAD_DAYS = 370;
 
-// Request countdown time before cascading to the next driver (30 seconds)
 export const DRIVER_REQUEST_TIMEOUT_SECONDS = 30;
 
-// Customer pickup waiting defaults (5 minutes free, then $0.30 per minute)
 export const DEFAULT_FREE_WAITING_MINUTES = 5;
 export const DEFAULT_WAITING_CHARGE_PER_MINUTE = 0.3;
 
-// Socket events shared by the passenger app and the driver app.
 export const RIDE_EVENTS = {
   CREATED: 'ride:created',
   STATUS: 'ride:status',
@@ -72,12 +58,9 @@ export const RIDE_EVENTS = {
 
 export const DRIVER_ROOM = 'drivers';
 
-// Online drivers of one vehicle type get their own room, so a Sedan driver never
-// receives an SUV request.
 export const driverRoomFor = (vehicleTypeId: string) =>
   `drivers:${vehicleTypeId}`;
 
-// Statuses in which a ride is running with a driver (the driver is busy).
 export const DRIVER_RUNNING_STATUSES = [
   RideStatus.DRIVER_ASSIGNED,
   RideStatus.DRIVER_ARRIVED,
