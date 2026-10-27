@@ -31,14 +31,16 @@ jobs:
           chmod 600 .env
 
       - name: Create Firebase Service Account file and inject into .env
+        env:
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           mkdir -p src/config dist/src/config dist/config
-          printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > src/config/firebase-service-account.json
+          echo "$FIREBASE_SECRET" > src/config/firebase-service-account.json
           chmod 600 src/config/firebase-service-account.json
-          B64=$(printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" | base64 -w 0)
+          B64=$(echo -n "$FIREBASE_SECRET" | base64 -w 0)
           echo "" >> .env
           echo "FIREBASE_SERVICE_ACCOUNT=$B64" >> .env
-          echo "FIREBASE_CREDENTIALS_PATH=./src/config/firebase-service-account.json" >> .env
+          echo "FIREBASE_CREDENTIALS_PATH=$(pwd)/src/config/firebase-service-account.json" >> .env
 
       - name: Add Node & PM2 to PATH
         run: echo "/home/nodeteam/.local/share/fnm/node-versions/v22.21.1/installation/bin" >> $GITHUB_PATH
@@ -47,9 +49,23 @@ jobs:
         run: npm run build
 
       - name: Run backend
+        env:
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           mkdir -p dist/src/config dist/config
           cp src/config/firebase-service-account.json dist/src/config/ 2>/dev/null || true
           cp src/config/firebase-service-account.json dist/config/ 2>/dev/null || true
+          B64=$(echo -n "$FIREBASE_SECRET" | base64 -w 0)
+          PM2_CWD=$(pm2 jlist 2>/dev/null | node -e "const fs = require('fs'); try { const list = JSON.parse(fs.readFileSync(0, 'utf8')); const app = list.find(a => a.name === 'carline-main'); console.log(app && app.pm2_env ? app.pm2_env.pm_cwd : ''); } catch {}" 2>/dev/null || true)
+          if [ -n "$PM2_CWD" ] && [ "$PM2_CWD" != "$(pwd)" ]; then
+            mkdir -p "$PM2_CWD/src/config" "$PM2_CWD/dist/src/config" "$PM2_CWD/dist/config"
+            echo "$FIREBASE_SECRET" > "$PM2_CWD/src/config/firebase-service-account.json"
+            chmod 600 "$PM2_CWD/src/config/firebase-service-account.json"
+            cp src/config/firebase-service-account.json "$PM2_CWD/dist/src/config/" 2>/dev/null || true
+            cp src/config/firebase-service-account.json "$PM2_CWD/dist/config/" 2>/dev/null || true
+            echo "" >> "$PM2_CWD/.env"
+            echo "FIREBASE_SERVICE_ACCOUNT=$B64" >> "$PM2_CWD/.env"
+            echo "FIREBASE_CREDENTIALS_PATH=$PM2_CWD/src/config/firebase-service-account.json" >> "$PM2_CWD/.env"
+          fi
           pm2 restart carline-main --update-env || pm2 start dist/main.js --name carline-main --update-env
           pm2 save
