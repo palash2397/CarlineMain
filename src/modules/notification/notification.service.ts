@@ -75,21 +75,35 @@ export class NotificationService implements OnModuleInit {
         }
       }
 
-      // 2. Fallback to file path
+      // 2. Fallback to candidate file paths
       if (!serviceAccount) {
-        const credPath =
-          process.env.FIREBASE_CREDENTIALS_PATH ||
-          './src/config/firebase-service-account.json';
-        const resolvedPath = path.isAbsolute(credPath)
-          ? credPath
-          : path.resolve(process.cwd(), credPath);
+        const candidatePaths = [
+          process.env.FIREBASE_CREDENTIALS_PATH,
+          './src/config/firebase-service-account.json',
+          path.resolve(process.cwd(), './src/config/firebase-service-account.json'),
+          path.resolve(__dirname, '../../src/config/firebase-service-account.json'),
+          path.resolve(__dirname, '../config/firebase-service-account.json'),
+          path.resolve(__dirname, './firebase-service-account.json'),
+          '/home/nodeteam/carline-main/actions-runner/_work/CarlineMain/CarlineMain/src/config/firebase-service-account.json',
+        ].filter(Boolean) as string[];
 
-        if (fs.existsSync(resolvedPath)) {
-          const fileContent = fs.readFileSync(resolvedPath, 'utf8');
-          serviceAccount = JSON.parse(fileContent);
-        } else {
+        for (const p of candidatePaths) {
+          const resolved = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+          if (fs.existsSync(resolved)) {
+            try {
+              const fileContent = fs.readFileSync(resolved, 'utf8');
+              serviceAccount = JSON.parse(fileContent);
+              this.logger.log(`Found Firebase credentials at: ${resolved}`);
+              break;
+            } catch (err: any) {
+              this.logger.warn(`Failed reading credentials from ${resolved}: ${err.message}`);
+            }
+          }
+        }
+
+        if (!serviceAccount) {
           this.logger.warn(
-            `Firebase service account credentials not found at: ${resolvedPath}`,
+            `Firebase service account credentials not found in any candidate path: ${candidatePaths.join(', ')}`,
           );
         }
       }
