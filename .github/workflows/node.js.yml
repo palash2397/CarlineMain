@@ -32,10 +32,12 @@ jobs:
 
       - name: Create Firebase Service Account file and inject into .env
         run: |
-          mkdir -p src/config
+          mkdir -p src/config dist/src/config dist/config
           printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > src/config/firebase-service-account.json
           chmod 600 src/config/firebase-service-account.json
+          B64=$(printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" | base64 -w 0)
           echo "" >> .env
+          echo "FIREBASE_SERVICE_ACCOUNT=$B64" >> .env
           echo "FIREBASE_CREDENTIALS_PATH=./src/config/firebase-service-account.json" >> .env
 
       - name: Add Node & PM2 to PATH
@@ -46,5 +48,8 @@ jobs:
 
       - name: Run backend
         run: |
-          pm2 reload carline-main --update-env || pm2 restart carline-main --update-env || pm2 start dist/main.js --name carline-main
+          mkdir -p dist/src/config dist/config
+          cp src/config/firebase-service-account.json dist/src/config/ 2>/dev/null || true
+          cp src/config/firebase-service-account.json dist/config/ 2>/dev/null || true
+          pm2 restart carline-main --update-env || pm2 start dist/main.js --name carline-main --update-env
           pm2 save
