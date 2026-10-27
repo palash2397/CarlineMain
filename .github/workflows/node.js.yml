@@ -30,6 +30,14 @@ jobs:
           printf "%s" "${{ secrets.PROD_ENV_FILE }}" > .env
           chmod 600 .env
 
+      - name: Create Firebase Service Account file and inject into .env
+        run: |
+          mkdir -p src/config
+          printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > src/config/firebase-service-account.json
+          chmod 600 src/config/firebase-service-account.json
+          echo "" >> .env
+          echo "FIREBASE_CREDENTIALS_PATH=./src/config/firebase-service-account.json" >> .env
+
       - name: Add Node & PM2 to PATH
         run: echo "/home/nodeteam/.local/share/fnm/node-versions/v22.21.1/installation/bin" >> $GITHUB_PATH
 
