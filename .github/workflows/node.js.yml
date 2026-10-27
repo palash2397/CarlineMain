@@ -31,11 +31,13 @@ jobs:
           chmod 600 .env
 
       - name: Create Firebase Service Account file and inject into .env
+        env:
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           mkdir -p src/config dist/src/config dist/config
-          printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > src/config/firebase-service-account.json
+          echo "$FIREBASE_SECRET" > src/config/firebase-service-account.json
           chmod 600 src/config/firebase-service-account.json
-          B64=$(printf "%s" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" | base64 -w 0)
+          B64=$(echo -n "$FIREBASE_SECRET" | base64 -w 0)
           echo "" >> .env
           echo "FIREBASE_SERVICE_ACCOUNT=$B64" >> .env
           echo "FIREBASE_CREDENTIALS_PATH=./src/config/firebase-service-account.json" >> .env
