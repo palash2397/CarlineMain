@@ -1939,6 +1939,73 @@ export class CompanyTripsService {
         { new: true },
       );
 
+      const cancelMsg = cancelReason ? `Trip cancelled by dispatcher. Reason: ${cancelReason}` : 'Trip has been cancelled by dispatcher';
+      const cancelPayload = {
+        rideId: String(tripId),
+        status: RideStatus.RIDE_CANCELLED,
+        reason: cancelReason || 'Cancelled by dispatcher',
+        cancelledBy: CancelledBy.ADMIN,
+        cancelledAt: new Date(),
+      };
+
+      if (ride.driver) {
+        await this.driverModel.updateOne(
+          { _id: ride.driver },
+          { $set: { status: DriverStatus.ACTIVE } },
+        );
+        this.socketService.emitToUser(String(ride.driver), RIDE_EVENTS.CANCELLED, cancelPayload);
+        this.socketService.emitToUser(String(ride.driver), RIDE_EVENTS.EXPIRED, cancelPayload);
+        this.socketService.emitToUser(String(ride.driver), RIDE_EVENTS.STATUS, cancelPayload);
+        this.notificationService
+          .sendToUser(
+            String(ride.driver),
+            {
+              title: 'Ride Cancelled',
+              body: cancelMsg,
+              data: { rideId: String(tripId), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+      }
+
+      if (ride.candidateDriverId) {
+        this.socketService.emitToUser(String(ride.candidateDriverId), RIDE_EVENTS.CANCELLED, cancelPayload);
+        this.socketService.emitToUser(String(ride.candidateDriverId), RIDE_EVENTS.EXPIRED, cancelPayload);
+        this.notificationService
+          .sendToUser(
+            String(ride.candidateDriverId),
+            {
+              title: 'Ride Cancelled',
+              body: cancelMsg,
+              data: { rideId: String(tripId), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'DRIVER',
+          )
+          .catch(() => {});
+      }
+
+      if (ride.user) {
+        this.socketService.emitToUser(String(ride.user), RIDE_EVENTS.CANCELLED, cancelPayload);
+        this.socketService.emitToUser(String(ride.user), RIDE_EVENTS.STATUS, cancelPayload);
+        this.notificationService
+          .sendToUser(
+            String(ride.user),
+            {
+              title: 'Ride Cancelled',
+              body: cancelMsg,
+              data: { rideId: String(tripId), type: 'RIDE_CANCELLED' },
+              type: 'RIDE_CANCELLED',
+            },
+            'USER',
+          )
+          .catch(() => {});
+      }
+
+      this.socketService.emitToRide(String(tripId), RIDE_EVENTS.CANCELLED, cancelPayload);
+
       return new ApiResponse(
         200,
         {
