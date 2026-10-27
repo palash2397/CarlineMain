@@ -61,27 +61,46 @@ export class NotificationService implements OnModuleInit {
         return;
       }
 
-      const credPath =
-        process.env.FIREBASE_CREDENTIALS_PATH ||
-        './src/config/firebase-service-account.json';
-      const resolvedPath = path.isAbsolute(credPath)
-        ? credPath
-        : path.resolve(process.cwd(), credPath);
+      let serviceAccount: any = null;
 
-      if (fs.existsSync(resolvedPath)) {
-        const fileContent = fs.readFileSync(resolvedPath, 'utf8');
-        const serviceAccount = JSON.parse(fileContent);
+      // 1. Direct JSON string or Base64 from environment variable
+      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try {
+          const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+          serviceAccount = raw.startsWith('{')
+            ? JSON.parse(raw)
+            : JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+        } catch (e: any) {
+          this.logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT from env:', e.message);
+        }
+      }
 
+      // 2. Fallback to file path
+      if (!serviceAccount) {
+        const credPath =
+          process.env.FIREBASE_CREDENTIALS_PATH ||
+          './src/config/firebase-service-account.json';
+        const resolvedPath = path.isAbsolute(credPath)
+          ? credPath
+          : path.resolve(process.cwd(), credPath);
+
+        if (fs.existsSync(resolvedPath)) {
+          const fileContent = fs.readFileSync(resolvedPath, 'utf8');
+          serviceAccount = JSON.parse(fileContent);
+        } else {
+          this.logger.warn(
+            `Firebase service account credentials not found at: ${resolvedPath}`,
+          );
+        }
+      }
+
+      if (serviceAccount) {
         this.firebaseApp = initializeApp({
           credential: cert(serviceAccount),
         });
 
         this.logger.log(
           `Firebase initialized successfully with project: ${serviceAccount.project_id}`,
-        );
-      } else {
-        this.logger.warn(
-          `Firebase service account credentials not found at: ${resolvedPath}`,
         );
       }
     } catch (error: any) {
