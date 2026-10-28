@@ -2282,7 +2282,6 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
             etaMinutes: Math.max(Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60), 1),
           };
         })
-        .filter((driver) => driver.distanceKm <= DRIVER_SEARCH_RADIUS_KM)
         .sort((a, b) => a.distanceKm - b.distanceKm);
 
       return new ApiResponse(
@@ -2988,8 +2987,11 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         isOnline: true,
       };
 
-      if (ride.vehicleTypeId) {
-        driverFilter.vehicleTypeId = ride.vehicleTypeId;
+      if (ride.vehicleTypeId || ride.vehicleTypeName) {
+        driverFilter.$or = [
+          ...(ride.vehicleTypeId ? [{ vehicleTypeId: ride.vehicleTypeId }] : []),
+          ...(ride.vehicleTypeName ? [{ vehicleType: new RegExp(`^${ride.vehicleTypeName}$`, 'i') }] : []),
+        ];
       }
 
       const availableDrivers = await this.driverModel.find(driverFilter);
@@ -3022,12 +3024,8 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
         };
       });
 
-      // Filter within DRIVER_SEARCH_RADIUS_KM if any exist, otherwise fallback to any available matching driver
-      const withinRadius = candidates.filter(
-        (c) => c.distanceKm === null || c.distanceKm <= DRIVER_SEARCH_RADIUS_KM,
-      );
-
-      const sortedCandidates = (withinRadius.length > 0 ? withinRadius : candidates).sort(
+      // Universal driver dispatch: sort by distance (closest first), all matching online drivers qualify
+      const sortedCandidates = candidates.sort(
         (a, b) => {
           if (a.distanceKm !== null && b.distanceKm !== null) {
             return a.distanceKm - b.distanceKm;

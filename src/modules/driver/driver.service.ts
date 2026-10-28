@@ -155,13 +155,13 @@ export class DriverService {
       let vehicleTypeId: string | null = null;
 
       if (vehicleType) {
-        if (isValidObjectId(vehicleType)) {
+        const resolvedVt =
+          await this.vehicleTypeService.findVehicleTypeByIdOrName(vehicleType);
+        if (resolvedVt) {
+          vehicleTypeId = resolvedVt._id.toString();
+          vehicleType = resolvedVt.name;
+        } else if (isValidObjectId(vehicleType)) {
           vehicleTypeId = vehicleType;
-          const vType =
-            await this.vehicleTypeService.getVehicleTypeById(vehicleType);
-          if (vType?.data && (vType.data as any).name) {
-            vehicleType = (vType.data as any).name;
-          }
         }
       }
 
