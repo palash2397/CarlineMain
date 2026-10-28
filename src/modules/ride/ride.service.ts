@@ -143,6 +143,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export class RideService implements OnModuleInit, OnModuleDestroy {
   // Active 30-second timers for cascading ride requests
   private requestTimers = new Map<string, NodeJS.Timeout>();
+  private sweepInterval?: NodeJS.Timeout;
 
   constructor(
     @InjectModel(Ride.name)
@@ -208,12 +209,21 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
+      // Sweep for any expired requests every 5 seconds to ensure rides are removed after 30 seconds
+      this.sweepInterval = setInterval(() => {
+        this.sweepExpiredRequests().catch((err) =>
+          console.error('Error sweeping expired requests:', err),
+        );
+      }, 5000);
     } catch (err) {
       console.error('Error during RideService onModuleInit recovering dispatches:', err);
     }
   }
 
   onModuleDestroy() {
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+    }
     for (const timer of this.requestTimers.values()) {
       clearTimeout(timer);
     }
@@ -3178,6 +3188,27 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           this.socketService.emitToUser(drvId, RIDE_EVENTS.TAKEN, cancelPayload);
           this.socketService.emitToUser(drvId, RIDE_EVENTS.STATUS, cancelPayload);
           this.socketService.emitToUser(drvId, RIDE_EVENTS.MISSED, cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:timeout', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request:timeout', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request:expired', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request_timeout', cancelPayload);
+
+          this.notificationService
+            .sendToUser(
+              drvId,
+              {
+                title: 'Ride Cancelled',
+                body: 'Ride request is no longer available.',
+                data: {
+                  rideId: String(ride._id),
+                  type: 'RIDE_CANCELLED',
+                  status: 'CANCELLED',
+                },
+                type: 'RIDE_CANCELLED',
+              },
+              'DRIVER',
+            )
+            .catch(() => {});
         }
 
         this.notificationService
@@ -3257,6 +3288,28 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.CANCELLED, timeoutPayload);
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.STATUS, timeoutPayload);
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.MISSED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:timeout', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request:timeout', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request:expired', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request_timeout', timeoutPayload);
+
+      // Send push notification so background ringtone and popup dismiss immediately
+      this.notificationService
+        .sendToUser(
+          timedOutDriverId,
+          {
+            title: 'Ride Request Expired',
+            body: 'Ride request timed out after 30 seconds',
+            data: {
+              rideId: String(rideId),
+              type: 'RIDE_EXPIRED',
+              status: 'EXPIRED',
+            },
+            type: 'RIDE_EXPIRED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
 
       // Clear candidate on ride before transferring
       await this.rideModel.updateOne(
@@ -3532,11 +3585,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           {
             status: RideStatus.SEARCHING_DRIVER,
             candidateDriverId: driverId,
-            $or: [
-              { requestExpiresAt: { $gt: new Date() } },
-              { requestExpiresAt: null },
-              { requestExpiresAt: { $exists: false } },
-            ],
+            requestExpiresAt: { $gt: new Date() },
           },
           { status: RideStatus.DRIVER_ASSIGNED, driver: driverId },
         ],
