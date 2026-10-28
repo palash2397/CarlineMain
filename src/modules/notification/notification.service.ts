@@ -206,7 +206,11 @@ export class NotificationService implements OnModuleInit {
       }
 
       // 3. Dispatch Firebase Push Notification
-      if (this.firebaseApp) {
+      if (!this.firebaseApp) {
+        this.logger.warn(
+          `Firebase Admin not initialized. Push notification skipped for ${targetType} ${targetUserId}`,
+        );
+      } else {
         let fcmToken: string | null = null;
 
         if (targetType === 'DRIVER') {
@@ -230,9 +234,14 @@ export class NotificationService implements OnModuleInit {
         }
 
         if (fcmToken) {
+          this.logger.log(
+            `Dispatching Firebase push to ${targetType} ${targetUserId} with type=${payload.type || 'GENERAL'}`,
+          );
           await this.sendFcmMessage(fcmToken, payload, targetUserId, targetType);
         } else {
-          this.logger.debug(`No FCM token registered for ${targetType} ${targetUserId}`);
+          this.logger.warn(
+            `No FCM device token registered in database for ${targetType} ${targetUserId}. Mobile push cannot be delivered until the driver/user opens app and registers token.`,
+          );
         }
       }
 
