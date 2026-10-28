@@ -131,27 +131,34 @@ export class NotificationService implements OnModuleInit {
    */
   async updateFcmToken(userId: string, role: string, dto: UpdateFcmTokenDto) {
     try {
-      const isDriver = role === 'DRIVER';
+      const isDriver = role === 'DRIVER' || (role && String(role).toUpperCase() === 'DRIVER');
       const fcmToken = dto.fcmToken.trim();
 
+      let updated: any = null;
       if (isDriver) {
-        const driver = await this.driverModel.findByIdAndUpdate(
+        updated = await this.driverModel.findByIdAndUpdate(
           userId,
           { $set: { fcmToken } },
           { new: true },
         );
-        if (!driver) {
-          return new ApiResponse(404, {}, 'Driver not found');
-        }
-      } else {
-        const user = await this.userModel.findByIdAndUpdate(
+      }
+      if (!updated) {
+        updated = await this.userModel.findByIdAndUpdate(
           userId,
           { $set: { fcmToken } },
           { new: true },
         );
-        if (!user) {
-          return new ApiResponse(404, {}, Msg.USER_NOT_FOUND);
-        }
+      }
+      if (!updated && !isDriver) {
+        updated = await this.driverModel.findByIdAndUpdate(
+          userId,
+          { $set: { fcmToken } },
+          { new: true },
+        );
+      }
+
+      if (!updated) {
+        return new ApiResponse(404, {}, 'User/Driver not found');
       }
 
       return new ApiResponse(200, { fcmToken }, 'FCM token registered successfully');
@@ -259,15 +266,17 @@ export class NotificationService implements OnModuleInit {
         sanitizedData.sound = 'default';
       }
 
+      const channelId = payload.data?.channelId || 'carline_rides';
+      sanitizedData.channelId = channelId;
+      sanitizedData.click_action = 'FLUTTER_NOTIFICATION_CLICK';
+
       const androidNotification: any = {
         sound: 'default',
         defaultSound: true,
         defaultVibrateTimings: true,
         priority: 'high',
+        channelId: channelId,
       };
-      if (payload.data?.channelId && payload.data.channelId !== 'carline_rides') {
-        androidNotification.channelId = payload.data.channelId;
-      }
 
       const message: Message = {
         token: fcmToken,

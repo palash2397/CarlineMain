@@ -143,6 +143,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export class RideService implements OnModuleInit, OnModuleDestroy {
   // Active 30-second timers for cascading ride requests
   private requestTimers = new Map<string, NodeJS.Timeout>();
+  private sweepInterval?: NodeJS.Timeout;
 
   constructor(
     @InjectModel(Ride.name)
@@ -208,12 +209,21 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
+      // Sweep for any expired requests every 5 seconds to ensure rides are removed after 30 seconds
+      this.sweepInterval = setInterval(() => {
+        this.sweepExpiredRequests().catch((err) =>
+          console.error('Error sweeping expired requests:', err),
+        );
+      }, 5000);
     } catch (err) {
       console.error('Error during RideService onModuleInit recovering dispatches:', err);
     }
   }
 
   onModuleDestroy() {
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+    }
     for (const timer of this.requestTimers.values()) {
       clearTimeout(timer);
     }
@@ -1032,60 +1042,93 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
 
       this.clearRequestTimeout(dto.rideId);
 
+      const cancelPayload = {
+        _id: String(ride._id),
+        id: String(ride._id),
+        rideId: String(ride._id),
+        status: RideStatus.RIDE_CANCELLED,
+        message: 'Ride cancelled by passenger',
+        reason: dto.reason || 'Ride cancelled by passenger',
+        cancelReason: dto.reason || 'Ride cancelled by passenger',
+        cancelledBy: CancelledBy.USER,
+        cancelledAt: ride.cancelledAt,
+      };
+
       if (ride.driver) {
         await this.driverModel.updateOne(
           { _id: ride.driver },
           { $set: { status: DriverStatus.ACTIVE } },
         );
-        this.notificationService
-          .sendToUser(
-            String(ride.driver),
-            {
-              title: 'Ride Cancelled',
-              body: `Passenger has cancelled the ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
-              data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
-              type: 'RIDE_CANCELLED',
-            },
-            'DRIVER',
-          )
-          .catch(() => {});
-      } else if (prevCandidate) {
-        const cancelPayload = {
-          _id: String(ride._id),
-          id: String(ride._id),
-          rideId: String(ride._id),
-          status: RideStatus.RIDE_CANCELLED,
-          message: 'Ride request cancelled by passenger',
-          reason: dto.reason || 'Ride request cancelled by passenger',
-          cancelReason: dto.reason || 'Ride request cancelled by passenger',
-        };
+      }
+
+      // Collect all affected drivers (assigned driver, candidate driver, and attempted drivers)
+      const affectedDriverIds = new Set<string>();
+      if (ride.driver) affectedDriverIds.add(String(ride.driver));
+      if (prevCandidate) affectedDriverIds.add(String(prevCandidate));
+      if (Array.isArray(ride.attemptedDriverIds)) {
+        for (const drvId of ride.attemptedDriverIds) {
+          if (drvId) affectedDriverIds.add(String(drvId));
+        }
+      }
+
+      // Dispatch real-time sockets and push notifications to every affected driver
+      for (const driverId of affectedDriverIds) {
         this.socketService.emitToUser(
-          String(prevCandidate),
-          RIDE_EVENTS.EXPIRED,
-          cancelPayload,
-        );
-        this.socketService.emitToUser(
-          String(prevCandidate),
-          RIDE_EVENTS.TAKEN,
-          cancelPayload,
-        );
-        this.socketService.emitToUser(
-          String(prevCandidate),
+          driverId,
           RIDE_EVENTS.CANCELLED,
           cancelPayload,
         );
         this.socketService.emitToUser(
-          String(prevCandidate),
+          driverId,
+          RIDE_EVENTS.EXPIRED,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          driverId,
+          RIDE_EVENTS.TAKEN,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          driverId,
           RIDE_EVENTS.STATUS,
           cancelPayload,
         );
+        this.socketService.emitToUser(
+          driverId,
+          RIDE_EVENTS.MISSED,
+          cancelPayload,
+        );
+        this.socketService.emitToUser(driverId, 'ride:cancelled', cancelPayload);
+        this.socketService.emitToUser(driverId, 'ride:status', cancelPayload);
+        this.socketService.emitToUser(driverId, 'ride:timeout', cancelPayload);
+        this.socketService.emitToUser(
+          driverId,
+          'ride:request:timeout',
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          driverId,
+          'ride:request:expired',
+          cancelPayload,
+        );
+        this.socketService.emitToUser(
+          driverId,
+          'ride:request_timeout',
+          cancelPayload,
+        );
+
         this.notificationService
           .sendToUser(
-            String(prevCandidate),
+            driverId,
             {
               title: 'Ride Cancelled',
-              body: `Passenger has cancelled the ride request.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
-              data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+              body: `Passenger has cancelled the ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
+              data: {
+                rideId: String(ride._id),
+                type: 'RIDE_CANCELLED',
+                status: 'CANCELLED',
+                channelId: 'carline_rides',
+              },
               type: 'RIDE_CANCELLED',
             },
             'DRIVER',
@@ -1099,28 +1142,26 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           {
             title: 'Ride Cancelled',
             body: `You have cancelled your ride.${dto.reason ? ` Reason: ${dto.reason}` : ''}`,
-            data: { rideId: String(ride._id), type: 'RIDE_CANCELLED' },
+            data: {
+              rideId: String(ride._id),
+              type: 'RIDE_CANCELLED',
+              status: 'CANCELLED',
+              channelId: 'carline_rides',
+            },
             type: 'RIDE_CANCELLED',
           },
           'USER',
         )
         .catch(() => {});
 
-      const payload = {
-        rideId: String(ride._id),
-        status: ride.status,
-        reason: ride.cancelReason,
-        cancelledBy: ride.cancelledBy,
-        cancelledAt: ride.cancelledAt,
-      };
-
       this.socketService.emitToRide(
         String(ride._id),
         RIDE_EVENTS.CANCELLED,
-        payload,
+        cancelPayload,
       );
+      this.emitRideEvent(ride, RIDE_EVENTS.STATUS, this.statusPayload(ride));
 
-      return new ApiResponse(200, payload, Msg.RIDE_CANCELLED);
+      return new ApiResponse(200, cancelPayload, Msg.RIDE_CANCELLED);
     } catch (error) {
       console.error('Error while cancelling ride:', error);
       return new ApiResponse(500, {}, Msg.SERVER_ERROR);
@@ -3178,6 +3219,27 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           this.socketService.emitToUser(drvId, RIDE_EVENTS.TAKEN, cancelPayload);
           this.socketService.emitToUser(drvId, RIDE_EVENTS.STATUS, cancelPayload);
           this.socketService.emitToUser(drvId, RIDE_EVENTS.MISSED, cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:timeout', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request:timeout', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request:expired', cancelPayload);
+          this.socketService.emitToUser(drvId, 'ride:request_timeout', cancelPayload);
+
+          this.notificationService
+            .sendToUser(
+              drvId,
+              {
+                title: 'Ride Cancelled',
+                body: 'Ride request is no longer available.',
+                data: {
+                  rideId: String(ride._id),
+                  type: 'RIDE_CANCELLED',
+                  status: 'CANCELLED',
+                },
+                type: 'RIDE_CANCELLED',
+              },
+              'DRIVER',
+            )
+            .catch(() => {});
         }
 
         this.notificationService
@@ -3257,6 +3319,28 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.CANCELLED, timeoutPayload);
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.STATUS, timeoutPayload);
       this.socketService.emitToUser(timedOutDriverId, RIDE_EVENTS.MISSED, timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:timeout', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request:timeout', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request:expired', timeoutPayload);
+      this.socketService.emitToUser(timedOutDriverId, 'ride:request_timeout', timeoutPayload);
+
+      // Send push notification so background ringtone and popup dismiss immediately
+      this.notificationService
+        .sendToUser(
+          timedOutDriverId,
+          {
+            title: 'Ride Request Expired',
+            body: 'Ride request timed out after 30 seconds',
+            data: {
+              rideId: String(rideId),
+              type: 'RIDE_EXPIRED',
+              status: 'EXPIRED',
+            },
+            type: 'RIDE_EXPIRED',
+          },
+          'DRIVER',
+        )
+        .catch(() => {});
 
       // Clear candidate on ride before transferring
       await this.rideModel.updateOne(
@@ -3532,11 +3616,7 @@ export class RideService implements OnModuleInit, OnModuleDestroy {
           {
             status: RideStatus.SEARCHING_DRIVER,
             candidateDriverId: driverId,
-            $or: [
-              { requestExpiresAt: { $gt: new Date() } },
-              { requestExpiresAt: null },
-              { requestExpiresAt: { $exists: false } },
-            ],
+            requestExpiresAt: { $gt: new Date() },
           },
           { status: RideStatus.DRIVER_ASSIGNED, driver: driverId },
         ],
