@@ -27,8 +27,6 @@ async function bootstrap() {
   // morgan for logging
   app.use(morgan('dev'));
 
-  // Serve uploaded files statically
-  // Serve test client HTML files from test folder
   const testDir = join(process.cwd(), 'test');
   app.useStaticAssets(testDir, { prefix: '/test' });
   app.useStaticAssets(testDir);
@@ -130,13 +128,14 @@ async function bootstrap() {
     )
     .build();
 
-
   const document = SwaggerModule.createDocument(app, config);
 
   Object.values(document.paths).forEach((pathItem) => {
     Object.values(pathItem).forEach((operation: any) => {
       if (Array.isArray(operation.tags) && operation.tags.length > 1) {
-        operation.tags = operation.tags.filter((tag: string) => tag !== 'Ride' && tag !== 'Payment');
+        operation.tags = operation.tags.filter(
+          (tag: string) => tag !== 'Ride' && tag !== 'Payment',
+        );
       }
     });
   });

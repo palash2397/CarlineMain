@@ -1,15 +1,16 @@
 import { CommissionType } from 'src/common/enums/commission/commission-type.enum';
 import { CommissionConfig } from 'src/common/schemas/commission-config.schema';
 
-/**
- * Calculates commission amount based on fare and commission configuration.
- * Supports both PERCENTAGE (e.g. 10%) and FLAT (e.g. $2 per ride).
- */
 export function calculateCommissionAmount(
   fareAmount: number,
   config?: CommissionConfig | null,
 ): number {
-  if (!config || config.isEnabled === false || !config.value || config.value <= 0) {
+  if (
+    !config ||
+    config.isEnabled === false ||
+    !config.value ||
+    config.value <= 0
+  ) {
     return 0;
   }
 
@@ -44,14 +45,6 @@ export interface RideCommissionResult {
   platformEarnings: number;
 }
 
-/**
- * Calculates two-tier commission for a completed ride:
- * Tier 1 (Superadmin -> Company): SuperAdmin takes commission from Company on the ride.
- * Tier 2 (Company -> Driver): Company takes commission from Driver (custom driver rate or company default).
- * Driver Net Earnings = fareAmount - companyCommission.amount
- * Company Net Earnings = companyCommission.amount - superAdminCommission.amount
- * Platform Net Earnings = superAdminCommission.amount
- */
 export function calculateRideCommissions(params: {
   fareAmount: number;
   company?: any | null;
@@ -69,15 +62,19 @@ export function calculateRideCommissions(params: {
         : null;
 
     const isCustom = Boolean(customDriverConfig);
-    const superAdminDriverConfig: CommissionConfig =
-      customDriverConfig || {
-        type: CommissionType.PERCENTAGE,
-        value: 15,
-        isEnabled: true,
-      };
+    const superAdminDriverConfig: CommissionConfig = customDriverConfig || {
+      type: CommissionType.PERCENTAGE,
+      value: 15,
+      isEnabled: true,
+    };
 
-    const commissionAmount = calculateCommissionAmount(fare, superAdminDriverConfig);
-    const driverEarnings = Number(Math.max(0, fare - commissionAmount).toFixed(2));
+    const commissionAmount = calculateCommissionAmount(
+      fare,
+      superAdminDriverConfig,
+    );
+    const driverEarnings = Number(
+      Math.max(0, fare - commissionAmount).toFixed(2),
+    );
 
     return {
       fareAmount: fare,
@@ -101,7 +98,8 @@ export function calculateRideCommissions(params: {
   }
 
   // 1. Tier 1: Superadmin -> Company
-  const superAdminConfig: CommissionConfig = params.company?.superAdminCommission || {
+  const superAdminConfig: CommissionConfig = params.company
+    ?.superAdminCommission || {
     type: CommissionType.PERCENTAGE,
     value: 5,
     isEnabled: true,
@@ -115,8 +113,7 @@ export function calculateRideCommissions(params: {
       : null;
 
   const isCustom = Boolean(customDriverConfig);
-  const driverConfig: CommissionConfig =
-    customDriverConfig ||
+  const driverConfig: CommissionConfig = customDriverConfig ||
     params.company?.defaultDriverCommission || {
       type: CommissionType.PERCENTAGE,
       value: 15,
